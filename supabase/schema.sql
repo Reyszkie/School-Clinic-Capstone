@@ -173,7 +173,7 @@ insert into public.clinic_users (
   id, name, last_name, first_name, role, username, password_hash, status
 )
 values (
-  'NRS-TEST', 'Test Nurse', 'Nurse', 'Test', 'Staff Nurse', 'testnurse', crypt('test12345', gen_salt('bf')), 'Active'
+  'NRS-TEST', 'Test Nurse', 'Nurse', 'Test', 'Staff Nurse', 'testnurse', extensions.crypt('test12345', extensions.gen_salt('bf')), 'Active'
 )
 on conflict (username) do update set
   name = excluded.name,
@@ -195,7 +195,7 @@ as $$
   where username = p_username
     and status = 'Active'
     and password_hash is not null
-    and crypt(p_password, password_hash) = password_hash;
+    and extensions.crypt(p_password, password_hash) = password_hash;
 $$;
 
 revoke all on function public.authenticate_clinic_user(text, text) from public;
