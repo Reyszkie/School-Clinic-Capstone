@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { clinicStateTable, db } from "@workspace/db";
+import { clinicStateTable, getDb } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ async function readLegacyClinicState() {
 }
 
 async function saveClinicState(state: Record<string, unknown>) {
-  await db
+  await getDb()
     .insert(clinicStateTable)
     .values({ id: clinicStateId, state })
     .onConflictDoUpdate({
@@ -32,7 +32,7 @@ async function saveClinicState(state: Record<string, unknown>) {
 
 export async function GET() {
   try {
-    const [storedState] = await db
+    const [storedState] = await getDb()
       .select({ state: clinicStateTable.state })
       .from(clinicStateTable)
       .where(eq(clinicStateTable.id, clinicStateId));
