@@ -36,7 +36,10 @@ function applyStoredData(data){
   if(Array.isArray(data.students)) STUDENTS.splice(0, STUDENTS.length, ...data.students.filter(s=>!s.deleted));
   if(Array.isArray(data.medicines)) MEDICINES = data.medicines;
   if(Array.isArray(data.equipment)) EQUIPMENT = data.equipment;
-  const medicalToolNames=new Set(["Cotton Swabs","Cotton Balls","Alcohol (70% Isopropyl)","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads"]);
+  const medicalToolNames=new Set([
+    "Cotton Swabs","Cotton Balls","Alcohol (70% Isopropyl)","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads",
+    "Medical Tape","Hand Sanitizer","Disposable Face Masks","Gloves (Nitrile, Medium)"
+  ]);
   const movedTools=MEDICINES.filter(m=>medicalToolNames.has(m.name));
   let migratedInventory=false;
   if(movedTools.length){

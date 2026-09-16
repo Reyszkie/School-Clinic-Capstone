@@ -58,10 +58,6 @@ let MEDICINES = [
   {code:"MED-005",name:"Oral Rehydration Salts (ORS)",category:"Electrolyte",qty:45,unit:"sachet",batch:"ORS-2404",exp:"2027-06-30",supplier:"MediPharma Corp",deleted:false},
   {code:"MED-006",name:"Antibiotic Ointment",category:"Topical",qty:18,unit:"tube",batch:"AO-2312",exp:"2026-07-28",supplier:"CarePlus Distributors",deleted:false},
   {code:"MED-007",name:"Antiseptic Solution (Povidone-Iodine)",category:"Antiseptic",qty:22,unit:"bottle",batch:"AS-2403",exp:"2027-02-14",supplier:"CarePlus Distributors",deleted:false},
-  {code:"MED-011",name:"Medical Tape",category:"Supplies",qty:8,unit:"roll",batch:"MT-2311",exp:"2027-09-01",supplier:"CarePlus Distributors",deleted:false},
-  {code:"MED-014",name:"Hand Sanitizer",category:"Hygiene",qty:32,unit:"bottle",batch:"HS-2404",exp:"2027-05-11",supplier:"CarePlus Distributors",deleted:false},
-  {code:"MED-016",name:"Disposable Face Masks",category:"PPE",qty:600,unit:"piece",batch:"FM-2401",exp:"2029-01-01",supplier:"HealthFirst Supply",deleted:false},
-  {code:"MED-017",name:"Gloves (Nitrile, Medium)",category:"PPE",qty:250,unit:"piece",batch:"GL-2403",exp:"2028-06-01",supplier:"CarePlus Distributors",deleted:false},
 ];
 
 let EQUIPMENT = [
@@ -81,6 +77,10 @@ let EQUIPMENT = [
   {id:"EQP-014",name:"Elastic Bandage",qty:26,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
   {id:"EQP-015",name:"Adhesive Bandages (Band-Aids)",qty:400,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
   {id:"EQP-016",name:"Gauze Pads",qty:150,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
+  {id:"EQP-017",name:"Medical Tape",qty:8,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
+  {id:"EQP-018",name:"Hand Sanitizer",qty:32,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
+  {id:"EQP-019",name:"Disposable Face Masks",qty:600,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
+  {id:"EQP-020",name:"Gloves (Nitrile, Medium)",qty:250,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
 ];
 
 const COMPLAINTS = ["Headache","Fever","Dizziness","Stomachache","Nausea/Vomiting","Injury","Cough/Cold","Difficulty Breathing","Menstrual Pain","Weakness/Fatigue"];
