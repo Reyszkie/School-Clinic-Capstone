@@ -37,10 +37,11 @@ function toNumber(value: unknown): number | null {
 }
 
 function normalizeUserRow(row: Record<string, unknown>) {
+  const computedName = row.name ?? [row.lastName ?? row.last_name ?? "", row.firstName ?? row.first_name ?? ""].filter(Boolean).join(", ");
   return {
     id: row.id ?? null,
     auth_user_id: row.authUserId ?? row.auth_user_id ?? null,
-    name: row.name ?? `${row.lastName ?? ""}${row.lastName && row.firstName ? ", " : ""}${row.firstName ?? ""}`.trim() || null,
+    name: computedName || null,
     last_name: row.lastName ?? row.last_name ?? "",
     first_name: row.firstName ?? row.first_name ?? "",
     middle_initial: row.middleInitial ?? row.middle_initial ?? null,
