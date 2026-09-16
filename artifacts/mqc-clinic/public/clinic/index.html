@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MQC Clinic — School Clinic Management System</title>
+<meta name="description" content="MQC School Clinic workspace for dependable, student-first care operations.">
+<meta name="theme-color" content="#0D1E36">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="toast-wrap"></div>
+<div id="app"></div>
+
+<!--
+  This app is plain HTML/CSS/JS split into small files per feature, loaded
+  in order below. There's no build step and no bundler — just open this
+  index.html file directly in a browser and everything works, since all
+  scripts share one global scope (same as if they were one big file).
+
+  Load order matters: each file depends on globals declared by the ones
+  above it (icons before code that renders them, data before code that
+  reads it, state before code that touches state, storage before init).
+-->
+<script src="js/icons.js"></script>
+<script src="js/data.js"></script>
+<script src="js/state.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/login.js"></script>
+<script src="js/shell.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/patients.js"></script>
+<script src="js/inventory.js"></script>
+<script src="js/reports.js"></script>
+<script src="js/admin.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+{
+  "buildCommand": "pnpm --filter @workspace/mqc-clinic run build",
+  "framework": "nextjs"
+}
