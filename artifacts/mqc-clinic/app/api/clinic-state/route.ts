@@ -30,7 +30,19 @@ async function saveClinicState(state: Record<string, unknown>) {
     });
 }
 
+function hasDatabaseConnection() {
+  return Boolean(process.env.DATABASE_URL);
+}
+
 export async function GET() {
+  if (!hasDatabaseConnection()) {
+    const legacyState = await readLegacyClinicState();
+    if (!legacyState) {
+      return Response.json({ message: "No shared clinic state has been saved yet." }, { status: 404 });
+    }
+    return Response.json(legacyState, { headers: { "Cache-Control": "no-store" } });
+  }
+
   try {
     const [storedState] = await getDb()
       .select({ state: clinicStateTable.state })
@@ -63,6 +75,10 @@ export async function PUT(request: Request) {
 
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return Response.json({ message: "Clinic state must be a JSON object." }, { status: 400 });
+  }
+
+  if (!hasDatabaseConnection()) {
+    return Response.json({ message: "Shared clinic storage is not configured." }, { status: 503 });
   }
 
   try {
