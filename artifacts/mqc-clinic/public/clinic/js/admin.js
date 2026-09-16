@@ -53,7 +53,7 @@ function openUserForm(existing=null){
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="uf-save">${ICONS.check} Save User</button></div>`;
   openModal(html);
   document.querySelectorAll("[data-toggle-password]").forEach(btn=>btn.onclick=()=>{const input=document.getElementById(btn.dataset.togglePassword);input.type=input.type==="password"?"text":"password";btn.textContent=input.type==="password"?"SHOW":"HIDE";});
-  document.getElementById('uf-save').onclick=()=>{
+  document.getElementById('uf-save').onclick=async()=>{
     const last=document.getElementById('uf-lastname').value.trim();
     const first=document.getElementById('uf-firstname').value.trim();
     const middle=document.getElementById('uf-middle').value.trim();
@@ -65,6 +65,10 @@ function openUserForm(existing=null){
     if(password!==confirm){ toast('Passwords do not match','Enter the same password in both fields.','err'); return; }
     const name=`${last}, ${first}${middle?' '+middle.replace(/\.$/,'')+'.':''}`;
     const rec={ id:f.id, name, lastName:last, firstName:first, middleInitial:middle, role:document.getElementById('uf-role').value, username, password:password||f.password||'', status:document.getElementById('uf-status').value };
+    if(!isEdit){
+      const response=await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lastName:last,firstName:first,middleInitial:middle,role:rec.role,username,password,status:rec.status})});
+      if(!response.ok){const result=await response.json().catch(()=>({}));toast('Account creation failed',result.message||'Unable to create the Supabase account.','err');return;}
+    }
     if(isEdit){ const idx=state.users.findIndex(u=>u.id===f.id); state.users[idx]=rec; logAudit(`User Updated — ${name}`,"User Management"); toast('User updated', `${name} has been updated.`,'ok'); }
     else{ state.users.unshift(rec); logAudit(`User Added — ${name}`,"User Management"); toast('User added', `${name} added as ${rec.role}.`,'ok'); }
     closeModal(); renderAdminTabBody();
