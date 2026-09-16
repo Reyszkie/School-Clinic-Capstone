@@ -275,6 +275,27 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Automatic inventory migration for older saved data.
 - Saved timestamp in clinic snapshots.
 
+### Supabase Database Schema
+
+The repository includes a normalized Supabase schema at `supabase/schema.sql`. It creates:
+
+- `clinic_users` for staff accounts and future Supabase Auth user links.
+- `patients` for student and patient profiles.
+- `clinical_visits` for consultation records, vital signs, assessments, treatments, outcomes, and visit revisions.
+- `medicines` for medicine stock, batches, expiration dates, suppliers, and soft deletion.
+- `equipment` for medical tools, quantities, maintenance dates, conditions, statuses, and soft deletion.
+- `audit_logs` for user actions and module activity.
+- `clinic_settings` for clinic configuration and alert thresholds.
+- `clinic_state` for backward compatibility with the current shared snapshot API.
+
+Run `supabase/schema.sql` in the Supabase SQL Editor, or use the Drizzle schema with:
+
+```powershell
+corepack pnpm db:push
+```
+
+The current browser application continues to read and write `clinic_state`. The normalized tables are the database foundation for replacing the snapshot API with record-level CRUD. Row-level security is enabled on all tables; add Supabase Auth policies before allowing direct browser access to these tables.
+
 ## Technology
 
 - Next.js App Router
