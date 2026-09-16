@@ -99,7 +99,12 @@ function attachLoginFormEvents(){
     const rememberMe=document.getElementById('remember-me').checked;
     spinner.style.display='block'; btnText.textContent='Signing in...';
     document.getElementById('login-btn').disabled=true;
-    setTimeout(()=>openIdentityVerification(found,rememberMe,pass), 450);
+    state.currentUser=found;
+    state.loggedIn=true;
+    saveAuthSession(found,rememberMe);
+    logAudit("Signed In","Authentication");
+    render();
+    toast("Signed in",`Welcome back, ${state.currentUser.name}.`,"ok");
   });
 }
 

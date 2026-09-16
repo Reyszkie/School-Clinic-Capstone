@@ -183,6 +183,24 @@ on conflict (username) do update set
   password_hash = excluded.password_hash,
   status = excluded.status,
   updated_at = now();
+
+create or replace function public.authenticate_clinic_user(p_username text, p_password text)
+returns table (id text, name text, role text, username text, status text)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, name, role, username, status
+  from public.clinic_users
+  where username = p_username
+    and status = 'Active'
+    and password_hash is not null
+    and crypt(p_password, password_hash) = password_hash;
+$$;
+
+revoke all on function public.authenticate_clinic_user(text, text) from public;
+grant execute on function public.authenticate_clinic_user(text, text) to service_role;
+
 alter table public.patients enable row level security;
 alter table public.medicines enable row level security;
 alter table public.equipment enable row level security;
