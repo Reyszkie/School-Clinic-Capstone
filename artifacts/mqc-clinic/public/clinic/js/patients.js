@@ -143,7 +143,7 @@ function openStudentForm(existing=null){
        STUDENTS.unshift(rec);editingStudent=rec;state.selectedStudent=rec;
        logAudit(`Patient Added — ${rec.name} (${rec.id})`,"Patient Visits");toast("Patient added",`Welcome, ${rec.name}! Added to patient records.`,"ok");
     }
-     saveToLocalStorage();
+    saveToClinicState();
      if(!wasEdit){
        closeModal();
        renderConsultTabBody();
@@ -179,7 +179,7 @@ function deleteStudent(s){
     DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id);
     DELETED_STUDENTS.unshift(deleted);
     if(state.selectedStudent?.id===s.id)state.selectedStudent=null;
-    logAudit(`Record Deleted — Patient ${s.name} (${s.id})`,"Patient Visits","Warning");saveToLocalStorage();toast("Patient deleted",`${s.name} moved to Deleted Records.`,"warn");renderConsultTabBody();
+    logAudit(`Record Deleted — Patient ${s.name} (${s.id})`,"Patient Visits","Warning");saveToClinicState();toast("Patient deleted",`${s.name} moved to Deleted Records.`,"warn");renderConsultTabBody();
   }});
 }
 
@@ -266,7 +266,7 @@ function openConsultationForm(student, existing=null){
        logAudit(`Patient Visit Saved — ${rec.id}`,"Patient Visits");
        toast("Visit saved",`Recorded visit for ${student.name}.`,"ok");
      }
-    saveToLocalStorage();closeModal();renderPage();
+    saveToClinicState();closeModal();renderPage();
   };
 }
 
@@ -332,8 +332,8 @@ function bindConsultHistory(){
    document.querySelectorAll("[data-view-consult]").forEach(b=>b.onclick=()=>viewConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.viewConsult)));
   document.querySelectorAll("[data-print]").forEach(b=>b.onclick=()=>printConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.print)));
   document.querySelectorAll("[data-edit-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.editConsult);openConsultationForm(STUDENTS.find(s=>s.id===c.studentId)||{id:c.studentId,name:c.studentName},c);});
-  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:()=>{c.deleted=true;logAudit(`Record Deleted — Patient Visit ${c.id}`,"Patient Visits","Warning");saveToLocalStorage();toast("Visit deleted",`Record ${c.id} moved to Deleted Records.`,"warn");rerender();}});});
-  document.querySelectorAll("[data-restore-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.restoreConsult);c.deleted=false;logAudit(`Record Restored — Patient Visit ${c.id}`,"Patient Visits");saveToLocalStorage();rerender();});
+  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:()=>{c.deleted=true;logAudit(`Record Deleted — Patient Visit ${c.id}`,"Patient Visits","Warning");saveToClinicState();toast("Visit deleted",`Record ${c.id} moved to Deleted Records.`,"warn");rerender();}});});
+  document.querySelectorAll("[data-restore-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.restoreConsult);c.deleted=false;logAudit(`Record Restored — Patient Visit ${c.id}`,"Patient Visits");saveToClinicState();rerender();});
 }
 
 function renderConsultTabBody(){const body=document.getElementById("consult-body");if(state.consultTab==="search"){body.innerHTML=renderConsultSearchTab();bindConsultSearch();}else{body.innerHTML=renderConsultHistory();bindConsultHistory();}}

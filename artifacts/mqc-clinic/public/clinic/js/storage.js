@@ -1,9 +1,6 @@
 /* ================= SHARED CLINIC STORAGE =================
-   The API is the shared source of truth so edits are available after
-   signing in from another device. localStorage remains a fast offline
-   cache and migration source for the standalone clinic page.
+  Supabase is the source of truth for clinic data.
 ================================================================= */
-const STORAGE_KEY = "mqc_clinic_data_v3";
 const AUTH_SESSION_KEY = "mqc_clinic_auth_v1";
 const SHARED_STORAGE_URL = "/api/clinic-state";
 let serverHydrationPromise;
@@ -25,13 +22,8 @@ function snapshotData(){
   };
 }
 
-function saveToLocalStorage(){
+function saveToClinicState(){
   localChangeVersion+=1;
-  try{
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshotData()));
-  }catch(err){
-    console.warn("MQC Clinic: local storage isn't available — using shared storage only.", err);
-  }
   const payload=snapshotData();
   serverSaveChain=serverSaveChain.then(()=>fetch(SHARED_STORAGE_URL,{
     method:"PUT",
@@ -63,20 +55,6 @@ function applyStoredData(data){
   return migratedInventory;
 }
 
-function loadFromLocalStorage(){
-  try{
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if(!raw) return false;
-    const data = JSON.parse(raw);
-    const migratedInventory=applyStoredData(data);
-    if(migratedInventory) saveToLocalStorage();
-    return true;
-  }catch(err){
-    console.warn("MQC Clinic: couldn't read saved data — starting from the sample dataset instead.", err);
-    return false;
-  }
-}
-
 async function hydrateFromSharedStorage(){
   const hydrationVersion=localChangeVersion;
   try{
@@ -84,40 +62,26 @@ async function hydrateFromSharedStorage(){
     if(response.ok){
       const data=await response.json();
       if(localChangeVersion!==hydrationVersion) return false;
-      const migratedInventory=applyStoredData(data);
-      try{ window.localStorage.setItem(STORAGE_KEY,JSON.stringify(snapshotData())); }catch(err){ /* cache is optional */ }
-      if(migratedInventory) saveToLocalStorage();
+      applyStoredData(data);
       return true;
     }
-    if(response.status===404){
-      let cached=null;
-      try{ cached=window.localStorage.getItem(STORAGE_KEY); }catch(err){ /* cache is optional */ }
-      if(cached){
-        await fetch(SHARED_STORAGE_URL,{method:"PUT",headers:{"Content-Type":"application/json"},body:cached});
-      }
-    }
+    console.warn("MQC Clinic: shared clinic state could not be loaded.", response.status);
   }catch(err){
-    console.warn("MQC Clinic: shared storage is unavailable — continuing with the local cache.",err);
+    console.warn("MQC Clinic: shared storage is unavailable.",err);
   }
   return false;
-}
-
-function clearSavedData(){
-  try{ window.localStorage.removeItem(STORAGE_KEY); }catch(err){ /* ignore */ }
 }
 
 function saveAuthSession(user, rememberMe=false){
   const authData=JSON.stringify({username:user.username});
   try{
-    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
-    window.localStorage.removeItem(AUTH_SESSION_KEY);
-    (rememberMe ? window.localStorage : window.sessionStorage).setItem(AUTH_SESSION_KEY,authData);
+    window.sessionStorage.setItem(AUTH_SESSION_KEY,authData);
   }catch(err){ console.warn("MQC Clinic: couldn't save the login session.",err); }
 }
 
 function restoreAuthSession(){
   try{
-    const raw=window.localStorage.getItem(AUTH_SESSION_KEY)||window.sessionStorage.getItem(AUTH_SESSION_KEY);
+    const raw=window.sessionStorage.getItem(AUTH_SESSION_KEY);
     if(!raw) return false;
     const saved=JSON.parse(raw);
     const user=state.users.find(candidate=>candidate.username===saved.username && candidate.status!=='Disabled');
@@ -133,7 +97,6 @@ function restoreAuthSession(){
 
 function clearAuthSession(){
   try{
-    window.localStorage.removeItem(AUTH_SESSION_KEY);
     window.sessionStorage.removeItem(AUTH_SESSION_KEY);
   }catch(err){ /* ignore */ }
 }

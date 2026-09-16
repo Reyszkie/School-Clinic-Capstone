@@ -27,7 +27,6 @@ function afterPageRender(){
 }
 
 /* ================= INIT ================= */
-loadFromLocalStorage();
 restoreAuthSession();
 render();
 serverHydrationPromise=hydrateFromSharedStorage().then((hydrated)=>{

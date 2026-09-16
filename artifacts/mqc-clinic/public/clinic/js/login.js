@@ -77,15 +77,21 @@ function attachLoginFormEvents(){
     errEl.style.display='none';
     if(!user || !pass){ errEl.textContent='Please enter both username and password.'; errEl.style.display='block'; return; }
     if(serverHydrationPromise) await serverHydrationPromise;
-    let remoteUser=null;
+    let response;
     try{
-      const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
-      if(response.ok) remoteUser=await response.json();
-    }catch(err){ /* Continue with the local account when the API is unavailable. */ }
-    const found = remoteUser || state.users.find(u=>
-      u.username.toLowerCase()===user.toLowerCase() &&
-      u.password===pass
-    );
+      response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
+    }catch(err){
+      errEl.textContent='Unable to connect to Supabase. Please try again.';
+      errEl.style.display='block';
+      return;
+    }
+    if(!response.ok){
+      const result=await response.json().catch(()=>({}));
+      errEl.textContent=result.message||'Invalid username or password.';
+      errEl.style.display='block';
+      return;
+    }
+    const found=await response.json();
     if(found && found.status==='Disabled'){ errEl.textContent='This account has been disabled. Contact the administrator.'; errEl.style.display='block'; return; }
     if(!found){ errEl.textContent='Invalid username or password.'; errEl.style.display='block'; return; }
     const spinner=document.getElementById('login-spinner');

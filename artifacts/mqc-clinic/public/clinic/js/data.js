@@ -41,9 +41,7 @@ function educationGroupFor(course, year=""){
   if(/^Grade [789]$|^Grade 10$/.test(year)) return "Junior High School";
   return "Elementary School";
 }
-const NURSES = [
-  {id:"NRS-001", name:"Nurse Bolando", role:"Head Nurse & Administrator", username:"NurseBolando", password:"nurse12345", status:"Active"},
-];
+const NURSES = [];
 
 function seedStudents(){
   // Start with an empty patient directory. Staff add real records through

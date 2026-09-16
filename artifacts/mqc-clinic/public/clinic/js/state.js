@@ -46,7 +46,7 @@ function toast(title, msg, type="ok"){
 }
 function logAudit(action, module, status="Success"){
   AUDIT_LOGS.unshift({date:todayDateString(), time:manilaNow().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), user: state.currentUser?state.currentUser.name:"System", action, module, status});
-  saveToLocalStorage();
+  saveToClinicState();
 }
 let modalStack=[];
 function openModal(html, size=""){

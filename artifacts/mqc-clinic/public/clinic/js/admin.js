@@ -163,7 +163,7 @@ function bindDeletedTab(){
   document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id); state.users.unshift(u); logAudit(`User Restored — ${u.name}`,"User Management"); toast('Restored', `${u.name} restored.`,'ok'); rerender(); });
 
   const permDelete=(label, action)=>{
-    confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action is simulated but cannot be undone in this session.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToLocalStorage(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});
+    confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action is simulated but cannot be undone in this session.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToClinicState(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});
   };
   document.querySelectorAll('[data-perm-dc]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDc, ()=>{ CONSULTATIONS=CONSULTATIONS.filter(c=>c.id!==b.dataset.permDc); }));
   document.querySelectorAll('[data-perm-dp]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDp, ()=>{ DELETED_STUDENTS=DELETED_STUDENTS.filter(s=>s.id!==b.dataset.permDp); }));

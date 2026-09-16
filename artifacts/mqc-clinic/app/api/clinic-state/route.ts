@@ -1,24 +1,9 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { clinicStateTable, getDb } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
 const clinicStateId = 1;
-const dataDirectory = process.env.CLINIC_DATA_DIR ?? path.resolve(process.cwd(), "data");
-const dataFile = path.join(dataDirectory, "clinic-state.json");
-
-async function readLegacyClinicState() {
-  try {
-    return JSON.parse(await readFile(dataFile, "utf8")) as Record<string, unknown>;
-  } catch (error: unknown) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
 
 async function saveClinicState(state: Record<string, unknown>) {
   await getDb()
@@ -30,16 +15,7 @@ async function saveClinicState(state: Record<string, unknown>) {
     });
 }
 
-function hasDatabaseConnection() {
-  return Boolean(process.env.DATABASE_URL);
-}
-
 export async function GET() {
-  if (!hasDatabaseConnection()) {
-    const legacyState = await readLegacyClinicState();
-    return Response.json(legacyState ?? {}, { headers: { "Cache-Control": "no-store" } });
-  }
-
   try {
     const [storedState] = await getDb()
       .select({ state: clinicStateTable.state })
@@ -50,12 +26,7 @@ export async function GET() {
       return Response.json(storedState.state, { headers: { "Cache-Control": "no-store" } });
     }
 
-    const legacyState = await readLegacyClinicState();
-    if (legacyState) await saveClinicState(legacyState);
-    if (!legacyState) {
-      return Response.json({ message: "No shared clinic state has been saved yet." }, { status: 404 });
-    }
-    return Response.json(legacyState, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ message: "No shared clinic state has been saved yet." }, { status: 404 });
   } catch (error) {
     console.error("Unable to read shared clinic state", error);
     return Response.json({ message: "Unable to read shared clinic state." }, { status: 500 });
@@ -72,10 +43,6 @@ export async function PUT(request: Request) {
 
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return Response.json({ message: "Clinic state must be a JSON object." }, { status: 400 });
-  }
-
-  if (!hasDatabaseConnection()) {
-    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   }
 
   try {
