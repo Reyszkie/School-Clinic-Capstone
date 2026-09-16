@@ -37,10 +37,7 @@ function hasDatabaseConnection() {
 export async function GET() {
   if (!hasDatabaseConnection()) {
     const legacyState = await readLegacyClinicState();
-    if (!legacyState) {
-      return Response.json({ message: "No shared clinic state has been saved yet." }, { status: 404 });
-    }
-    return Response.json(legacyState, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(legacyState ?? {}, { headers: { "Cache-Control": "no-store" } });
   }
 
   try {
@@ -78,7 +75,7 @@ export async function PUT(request: Request) {
   }
 
   if (!hasDatabaseConnection()) {
-    return Response.json({ message: "Shared clinic storage is not configured." }, { status: 503 });
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   }
 
   try {
