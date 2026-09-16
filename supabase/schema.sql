@@ -166,6 +166,23 @@ create index if not exists audit_logs_created_at_idx
 
 -- Keep tables private to server-side code until Supabase Auth policies are added.
 alter table public.clinic_users enable row level security;
+
+-- Local test account for the clinic login endpoint.
+-- Change or remove this account before production use.
+insert into public.clinic_users (
+  id, name, last_name, first_name, role, username, password_hash, status
+)
+values (
+  'NRS-TEST', 'Test Nurse', 'Nurse', 'Test', 'Staff Nurse', 'testnurse', crypt('test12345', gen_salt('bf')), 'Active'
+)
+on conflict (username) do update set
+  name = excluded.name,
+  last_name = excluded.last_name,
+  first_name = excluded.first_name,
+  role = excluded.role,
+  password_hash = excluded.password_hash,
+  status = excluded.status,
+  updated_at = now();
 alter table public.patients enable row level security;
 alter table public.medicines enable row level security;
 alter table public.equipment enable row level security;

@@ -77,7 +77,12 @@ function attachLoginFormEvents(){
     errEl.style.display='none';
     if(!user || !pass){ errEl.textContent='Please enter both username and password.'; errEl.style.display='block'; return; }
     if(serverHydrationPromise) await serverHydrationPromise;
-    const found = state.users.find(u=>
+    let remoteUser=null;
+    try{
+      const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
+      if(response.ok) remoteUser=await response.json();
+    }catch(err){ /* Continue with the local account when the API is unavailable. */ }
+    const found = remoteUser || state.users.find(u=>
       u.username.toLowerCase()===user.toLowerCase() &&
       u.password===pass
     );
@@ -88,11 +93,11 @@ function attachLoginFormEvents(){
     const rememberMe=document.getElementById('remember-me').checked;
     spinner.style.display='block'; btnText.textContent='Signing in...';
     document.getElementById('login-btn').disabled=true;
-    setTimeout(()=>openIdentityVerification(found,rememberMe), 450);
+    setTimeout(()=>openIdentityVerification(found,rememberMe,pass), 450);
   });
 }
 
-function openIdentityVerification(user,rememberMe=false){
+function openIdentityVerification(user,rememberMe=false,loginPassword=""){
   const roleLabel=user.role||"Clinic staff";
   openModal(`<div class="modal-head"><div><div class="eyebrow">IDENTITY CHECK</div><h3>Verify your identity</h3></div><button class="modal-close" id="verification-close" aria-label="Close">${ICONS.x}</button></div>
     <div class="modal-body">
@@ -120,7 +125,7 @@ function openIdentityVerification(user,rememberMe=false){
     e.preventDefault();
     const password=document.getElementById("verification-password").value;
     const error=document.getElementById("verification-error");
-    if(password!==user.password){
+    if(password!==(user.password||loginPassword)){
       error.textContent="That password does not match this clinic account.";
       error.style.display="block";
       return;
