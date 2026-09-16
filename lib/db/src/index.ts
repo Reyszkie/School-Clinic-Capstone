@@ -16,6 +16,7 @@ export function getDb() {
 
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
       max: Number(process.env.PG_POOL_MAX ?? 1),
       idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 10_000,
