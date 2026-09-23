@@ -201,6 +201,15 @@ on conflict (username) do update set
   status = excluded.status,
   updated_at = now();
 
+-- Repair legacy audit rows created before the logged-in user was attached.
+update public.audit_logs as logs
+set user_id = users.id,
+    user_name = users.name
+from public.clinic_users as users
+where logs.user_id is null
+  and logs.user_name = 'System'
+  and users.id = 'NRS-TEST';
+
 create or replace function public.authenticate_clinic_user(p_username text, p_password text)
 returns table (id text, name text, role text, username text, status text)
 language sql

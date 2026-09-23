@@ -175,6 +175,16 @@ function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
   return { id: row.id === null || row.id === undefined ? stableId || 1 : row.id, ...normalized };
 }
 
+async function resolveAuditUsers(rows: Array<Record<string, unknown>>) {
+  const userIds = [...new Set(rows.map((row) => row.user_id).filter((value): value is string => typeof value === "string" && value.length > 0))];
+  if (!userIds.length) return rows;
+  const response = await supabaseRequest(`clinic_users?id=in.(${userIds.map(encodeURIComponent).join(",")})&select=id,name`);
+  if (!response.ok) return rows;
+  const users = (await response.json()) as Array<{ id?: string; name?: string }>;
+  const names = new Map(users.map((user) => [user.id, user.name]));
+  return rows.map((row) => ({ ...row, user_name: names.get(String(row.user_id)) ?? row.user_name }));
+}
+
 async function readTable(tableName: string) {
   const response = await supabaseRequest(`${tableName}?select=*`);
   if (!response.ok) throw new Error(`${tableName} read returned ${response.status}`);
@@ -430,7 +440,8 @@ export async function PUT(request: Request) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
     }
     if (Array.isArray(snapshot.auditLogs)) {
-      await upsertTableRows("audit_logs", "id", snapshot.auditLogs.map((row, index) => normalizeAuditLogRow(row as Record<string, unknown>, index)));
+      const auditRows = snapshot.auditLogs.map((row, index) => normalizeAuditLogRow(row as Record<string, unknown>, index));
+      await upsertTableRows("audit_logs", "id", await resolveAuditUsers(auditRows));
     }
     if (Array.isArray(snapshot.users)) {
       try {
