@@ -422,7 +422,11 @@ export async function PUT(request: Request) {
       await upsertTableRows("audit_logs", "id", snapshot.auditLogs.map((row) => normalizeAuditLogRow(row as Record<string, unknown>)));
     }
     if (Array.isArray(snapshot.users)) {
-      await upsertTableRows("clinic_users", "id", snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>)));
+      try {
+        await upsertTableRows("clinic_users", "id", snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>)));
+      } catch (error) {
+        console.warn("Unable to synchronize one or more clinic user profiles; other clinic data was saved.", error);
+      }
     }
     if (snapshot.settings && typeof snapshot.settings === "object") {
       const settings = snapshot.settings as Record<string, unknown>;
