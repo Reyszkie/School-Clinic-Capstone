@@ -59,6 +59,7 @@ function renderShell(){
           </div>
         </div>
         <div class="top-actions">
+          <span class="sync-status" id="sync-status" data-state="saved" aria-live="polite">Saved</span>
            <div class="datetime-chip mono" id="clock" aria-label="Current date and time">${manilaDateTime()}</div>
           <button class="icon-btn" id="alert-btn" title="Alerts" aria-label="Alerts">${ICONS.bell}${(lowStockCount>0||referralFlagCount>0)?'<span class="dot-alert"></span>':''}</button>
           <button class="icon-btn settings-btn" id="settings-btn" title="Settings" aria-label="Settings"><span class="settings-icon">${ICONS.settings}</span><span class="settings-label">Settings</span></button>

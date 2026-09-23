@@ -166,14 +166,14 @@ function bindDeletedTab(){
   document.querySelectorAll('[data-restore-de]').forEach(b=> b.onclick=()=>{ const r=EQUIPMENT.find(e=>e.id===b.dataset.restoreDe); r.deleted=false; logAudit(`Record Restored — ${r.name}`,"Inventory"); toast('Restored', `${r.name} restored.`,'ok'); rerender(); });
   document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id); state.users.unshift(u); logAudit(`User Restored — ${u.name}`,"User Management"); toast('Restored', `${u.name} restored.`,'ok'); rerender(); });
 
-  const permDelete=(label, action)=>{
-    confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action is simulated but cannot be undone in this session.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToClinicState(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});
+  const permDelete=(label, table, key, value, action)=>{
+    confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); PURGED_RECORDS.push({table,key,value}); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToClinicState(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});
   };
-  document.querySelectorAll('[data-perm-dc]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDc, ()=>{ CONSULTATIONS=CONSULTATIONS.filter(c=>c.id!==b.dataset.permDc); }));
-  document.querySelectorAll('[data-perm-dp]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDp, ()=>{ DELETED_STUDENTS=DELETED_STUDENTS.filter(s=>s.id!==b.dataset.permDp); }));
-  document.querySelectorAll('[data-perm-dm]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDm, ()=>{ MEDICINES=MEDICINES.filter(m=>m.code!==b.dataset.permDm); }));
-  document.querySelectorAll('[data-perm-de]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDe, ()=>{ EQUIPMENT=EQUIPMENT.filter(e=>e.id!==b.dataset.permDe); }));
-  document.querySelectorAll('[data-perm-du]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDu, ()=>{ DELETED_USERS=DELETED_USERS.filter(u=>u.id!==b.dataset.permDu); }));
+  document.querySelectorAll('[data-perm-dc]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDc,"clinical_visits","id",b.dataset.permDc,()=>{ CONSULTATIONS=CONSULTATIONS.filter(c=>c.id!==b.dataset.permDc); }));
+  document.querySelectorAll('[data-perm-dp]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDp,"patients","id",b.dataset.permDp,()=>{ DELETED_STUDENTS=DELETED_STUDENTS.filter(s=>s.id!==b.dataset.permDp); }));
+  document.querySelectorAll('[data-perm-dm]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDm,"medicines","code",b.dataset.permDm,()=>{ MEDICINES=MEDICINES.filter(m=>m.code!==b.dataset.permDm); }));
+  document.querySelectorAll('[data-perm-de]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDe,"equipment","id",b.dataset.permDe,()=>{ EQUIPMENT=EQUIPMENT.filter(e=>e.id!==b.dataset.permDe); }));
+  document.querySelectorAll('[data-perm-du]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDu,"clinic_users","id",b.dataset.permDu,()=>{ DELETED_USERS=DELETED_USERS.filter(u=>u.id!==b.dataset.permDu); }));
 }
 function renderAdminTabBody(){
   const body=document.getElementById('admin-body');

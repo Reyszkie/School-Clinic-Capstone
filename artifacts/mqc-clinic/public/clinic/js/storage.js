@@ -7,16 +7,24 @@ let serverHydrationPromise;
 let serverSaveChain=Promise.resolve();
 let localChangeVersion=0;
 
+function setSyncStatus(label, stateName="idle"){
+  const indicator=document.getElementById("sync-status");
+  if(!indicator)return;
+  indicator.textContent=label;
+  indicator.dataset.state=stateName;
+}
+
 function snapshotData(){
   return {
-    students: STUDENTS,
+    students: [...STUDENTS, ...DELETED_STUDENTS],
     medicines: MEDICINES,
     equipment: EQUIPMENT,
     consultations: CONSULTATIONS,
     auditLogs: AUDIT_LOGS,
     deletedStudents: DELETED_STUDENTS,
     deletedUsers: DELETED_USERS,
-    users: state.users,
+    purged: PURGED_RECORDS,
+    users: [...state.users, ...DELETED_USERS],
     settings: state.settings,
     savedAt: new Date().toISOString(),
   };
@@ -25,11 +33,13 @@ function snapshotData(){
 function saveToClinicState(){
   localChangeVersion+=1;
   const payload=snapshotData();
-  serverSaveChain=serverSaveChain.then(()=>fetch(SHARED_STORAGE_URL,{
-    method:"PUT",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(payload),
-  })).catch(err=>console.warn("MQC Clinic: shared storage is temporarily unavailable.",err));
+  setSyncStatus("Saving", "saving");
+  serverSaveChain=serverSaveChain.then(async()=>{
+    const response=await fetch(SHARED_STORAGE_URL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(!response.ok)throw new Error(`Supabase sync returned ${response.status}`);
+    setSyncStatus("Saved", "saved");
+  }).catch(err=>{setSyncStatus("Sync failed", "error");console.warn("MQC Clinic: shared storage is temporarily unavailable.",err);});
+  return serverSaveChain;
 }
 
 function applyStoredData(data){
