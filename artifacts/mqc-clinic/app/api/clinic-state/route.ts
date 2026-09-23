@@ -339,9 +339,13 @@ async function purgeRows(rows: unknown) {
 
 export async function GET() {
   try {
-    const response = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
-    if (!response.ok) throw new Error(`Supabase returned ${response.status}`);
-    const rows = (await response.json()) as Array<{ state: Record<string, unknown> }>;
+    let rows: Array<{ state: Record<string, unknown> }> = [];
+    try {
+      const response = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
+      if (response.ok) rows = (await response.json()) as Array<{ state: Record<string, unknown> }>;
+    } catch (error) {
+      console.warn("Unable to read optional clinic_state snapshot", error);
+    }
     const snapshot = rows[0]?.state ?? {};
     const [patients, medicines, equipment, visits, users, auditLogs] = await Promise.all([
       readTable("patients"),
@@ -387,12 +391,6 @@ export async function PUT(request: Request) {
 
   try {
     const snapshot = state as Record<string, unknown>;
-    const response = await supabaseRequest("clinic_state", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ id: clinicStateId, state: snapshot }),
-    });
-    if (!response.ok) throw new Error(`Supabase returned ${response.status}`);
 
     if (Array.isArray(snapshot.students)) {
       await upsertTableRows("patients", "id", snapshot.students.map((row) => normalizePatientRow(row as Record<string, unknown>)));
@@ -437,9 +435,23 @@ export async function PUT(request: Request) {
     }
     await purgeRows(snapshot.purged);
 
+    try {
+      const snapshotResponse = await supabaseRequest("clinic_state", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ id: clinicStateId, state: snapshot }),
+      });
+      if (!snapshotResponse.ok) {
+        console.warn(`Optional clinic_state snapshot returned ${snapshotResponse.status}`);
+      }
+    } catch (error) {
+      console.warn("Unable to save optional clinic_state snapshot", error);
+    }
+
     return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Unable to save shared clinic state", error);
-    return Response.json({ message: "Unable to save shared clinic state." }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unable to save shared clinic state.";
+    return Response.json({ message }, { status: 500 });
   }
 }

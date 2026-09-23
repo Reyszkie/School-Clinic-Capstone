@@ -38,7 +38,10 @@ function saveToClinicState(){
   setSyncStatus("Saving", "saving");
   serverSaveChain=serverSaveChain.then(async()=>{
     const response=await fetch(SHARED_STORAGE_URL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    if(!response.ok)throw new Error(`Supabase sync returned ${response.status}`);
+    if(!response.ok){
+      const result=await response.json().catch(()=>({}));
+      throw new Error(result.message||`Supabase sync returned ${response.status}`);
+    }
     setSyncStatus("Saved", "saved");
   }).catch(err=>{setSyncStatus("Sync failed", "error");console.warn("MQC Clinic: shared storage is temporarily unavailable.",err);});
   return serverSaveChain;
