@@ -315,6 +315,8 @@ where id = 1
   and exists (select 1 from public.clinic_users);
 
 -- Repair legacy audit rows when the old snapshot still contains a verifiable user ID.
+-- To reset audit history once, run: delete from public.audit_logs;
+
 update public.audit_logs as logs
 set user_name = users.name
 from public.clinic_users as users

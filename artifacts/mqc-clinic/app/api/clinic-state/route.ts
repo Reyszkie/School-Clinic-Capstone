@@ -488,7 +488,10 @@ export async function PUT(request: Request) {
     if (Array.isArray(snapshot.consultations)) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
     }
-    if (Array.isArray(snapshot.auditLogs)) {
+    if (snapshot.resetAuditLogs === true) {
+      const auditResetResponse = await supabaseRequest("audit_logs?id=not.is.null", { method: "DELETE" });
+      if (!auditResetResponse.ok) throw new Error(`audit_logs reset returned ${auditResetResponse.status}`);
+    } else if (Array.isArray(snapshot.auditLogs)) {
       const auditRows = snapshot.auditLogs.map((row, index) => normalizeAuditLogRow(row as Record<string, unknown>, index));
       const ownedAuditRows = auditRows.filter((row) => row.user_id);
       await upsertTableRows("audit_logs", "id", await resolveAuditUsers(ownedAuditRows));

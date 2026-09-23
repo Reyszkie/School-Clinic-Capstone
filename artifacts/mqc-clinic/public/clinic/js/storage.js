@@ -16,7 +16,7 @@ function setSyncStatus(label, stateName="idle"){
   indicator.dataset.state=stateName;
 }
 
-function snapshotData(){
+function snapshotData(resetAuditLogs=false){
   return {
     students: [...STUDENTS, ...DELETED_STUDENTS],
     medicines: MEDICINES,
@@ -28,13 +28,14 @@ function snapshotData(){
     purged: PURGED_RECORDS,
     users: [...state.users, ...DELETED_USERS],
     settings: state.settings,
+    resetAuditLogs,
     savedAt: new Date().toISOString(),
   };
 }
 
-function saveToClinicState(){
+function saveToClinicState(resetAuditLogs=false){
   localChangeVersion+=1;
-  const payload=snapshotData();
+  const payload=snapshotData(resetAuditLogs);
   setSyncStatus("Saving", "saving");
   serverSaveChain=serverSaveChain.then(async()=>{
     const response=await fetch(SHARED_STORAGE_URL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
