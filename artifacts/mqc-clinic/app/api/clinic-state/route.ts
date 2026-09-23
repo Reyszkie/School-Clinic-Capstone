@@ -434,18 +434,19 @@ export async function GET() {
     if (!hasNormalizedData && !rows[0]) {
       return Response.json({ message: "No shared clinic state has been saved yet." }, { status: 404 });
     }
+    const usersNeedBootstrap = users.length === 0 && Array.isArray(snapshot.users) && snapshot.users.length > 0;
     const normalized = hasNormalizedData ? {
       ...snapshot,
       students: patients.map(patientFromRow),
       medicines: medicines.map(medicineFromRow),
       equipment: equipment.map(equipmentFromRow),
       consultations: visits.map((visit) => visitFromRow(visit, patients)),
-      users: users.filter((user) => !user.deleted_at).map(userFromRow),
+      users: usersNeedBootstrap ? snapshot.users : users.filter((user) => !user.deleted_at).map(userFromRow),
       deletedStudents: patients.filter((patient) => patient.deleted_at).map(patientFromRow),
       deletedUsers: users.filter((user) => user.deleted_at).map(userFromRow),
       auditLogs: auditLogs.map((audit) => auditFromRow(audit, users)),
       ...(settingsRows[0] ? { settings: settingsFromRow(settingsRows[0]) } : {}),
-      bootstrapRequired: false,
+      bootstrapRequired: usersNeedBootstrap,
     } : { ...snapshot, bootstrapRequired: true };
     return Response.json(normalized, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -486,12 +487,8 @@ export async function PUT(request: Request) {
       await upsertTableRows("audit_logs", "id", await resolveAuditUsers(ownedAuditRows));
     }
     if (Array.isArray(snapshot.users)) {
-      try {
-        const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));
-        await upsertTableRows("clinic_users", "id", await resolveClinicUsers(userRows));
-      } catch (error) {
-        console.warn("Unable to synchronize one or more clinic user profiles; other clinic data was saved.", error);
-      }
+      const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));
+      await upsertTableRows("clinic_users", "id", await resolveClinicUsers(userRows));
     }
     if (snapshot.settings && typeof snapshot.settings === "object") {
       const settings = snapshot.settings as Record<string, unknown>;
