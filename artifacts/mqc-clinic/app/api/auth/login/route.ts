@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
   try {
     const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SECRET_KEY;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
     if (!url || !key) throw new Error("Supabase server configuration is missing.");
     const response = await fetch(`${url}/rest/v1/rpc/authenticate_clinic_user`, {
       method: "POST",
