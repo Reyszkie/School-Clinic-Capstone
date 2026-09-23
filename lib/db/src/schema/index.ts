@@ -81,7 +81,7 @@ export const equipmentTable = pgTable("equipment", {
 
 export const clinicalVisitsTable = pgTable("clinical_visits", {
 	id: text("id").primaryKey(),
-	patientId: text("patient_id").notNull().references(() => patientsTable.id),
+	patientId: text("patient_id").notNull().references(() => patientsTable.id, { onDelete: "cascade" }),
 	nurseId: text("nurse_id").references(() => clinicUsersTable.id),
 	nurseName: text("nurse_name").notNull(),
 	visitDate: date("visit_date").notNull(),
