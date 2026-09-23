@@ -103,7 +103,7 @@ function attachLoginFormEvents(){
     if(found && found.status==='Disabled'){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='This account has been disabled. Contact the administrator.'; errEl.style.display='block'; return; }
     if(!found){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='Invalid username or password.'; errEl.style.display='block'; return; }
     const rememberMe=document.getElementById('remember-me').checked;
-    state.currentUser=found;
+    state.currentUser=ensureVisibleClinicUser(found);
     state.loggedIn=true;
     saveAuthSession(found,rememberMe);
     logAudit("Signed In","Authentication");
@@ -145,7 +145,7 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
       error.style.display="block";
       return;
     }
-    state.currentUser=user;
+    state.currentUser=ensureVisibleClinicUser(user);
     state.loggedIn=true;
     saveAuthSession(user,rememberMe);
     closeModal();

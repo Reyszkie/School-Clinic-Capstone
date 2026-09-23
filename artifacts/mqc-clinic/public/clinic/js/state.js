@@ -34,6 +34,25 @@ function uid(prefix){ return prefix+"-"+Math.floor(1000+Math.random()*9000); }
 function greetingWord(){ const h=new Date().getHours(); return h<12?"Good morning":h<18?"Good afternoon":"Good evening"; }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+function ensureVisibleClinicUser(user){
+  if(!user?.id || !user?.username) return user;
+  const name=String(user.name||user.username);
+  const parts=name.split(",");
+  const normalized={
+    ...user,
+    name,
+    lastName:user.lastName||parts[0].trim(),
+    firstName:user.firstName||(parts[1]||parts[0]).trim(),
+    middleInitial:user.middleInitial||"",
+    role:user.role||"Staff Nurse",
+    status:user.status||"Active",
+  };
+  const index=state.users.findIndex(candidate=>candidate.id===normalized.id||candidate.username===normalized.username);
+  if(index<0) state.users.unshift(normalized);
+  else state.users[index]={...state.users[index],...normalized};
+  return normalized;
+}
+
 function toast(title, msg, type="ok"){
   const wrap=document.getElementById('toast-wrap');
   const el=document.createElement('div');
