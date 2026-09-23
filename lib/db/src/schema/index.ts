@@ -180,3 +180,9 @@ export const clinicStateTable = pgTable("clinic_state", {
 	state: jsonb("state").$type<Record<string, unknown>>().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const clinicSyncMetaTable = pgTable("clinic_sync_meta", {
+	id: integer("id").primaryKey(),
+	normalizedReady: boolean("normalized_ready").notNull().default(false),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

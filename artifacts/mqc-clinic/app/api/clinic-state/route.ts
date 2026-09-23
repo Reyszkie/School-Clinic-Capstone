@@ -336,6 +336,27 @@ function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, 
   return { date, time, user: linkedUser?.name ?? row.user_name, userId: row.user_id, action: row.action, module: row.module, status: row.status };
 }
 
+function settingsFromRow(row: Record<string, unknown>) {
+  return {
+    clinicName: row.clinic_name,
+    address: row.address,
+    contactNumber: row.contact_number,
+    email: row.email,
+    clinicOpen: row.clinic_open,
+    clinicClose: row.clinic_close,
+    clinicDays: row.clinic_days,
+    patientIdPrefix: row.patient_id_prefix,
+    lowStockThreshold: row.low_stock_threshold,
+    expirationAlertDays: row.expiration_alert_days,
+    passwordMinLength: row.password_min_length,
+    sessionTimeout: row.session_timeout_minutes,
+    dateFormat: row.date_format,
+    timeFormat: row.time_format,
+    timezone: row.timezone,
+    language: row.language,
+  };
+}
+
 async function upsertTableRows(tableName: string, conflictKey: string, rows: Array<Record<string, unknown>>) {
   if (!rows.length) return;
   const batches = new Map<string, Array<Record<string, unknown>>>();
@@ -397,30 +418,35 @@ export async function GET() {
       console.warn("Unable to read optional clinic_state snapshot", error);
     }
     const snapshot = rows[0]?.state ?? {};
-    const [patients, medicines, equipment, visits, users, auditLogs] = await Promise.all([
+    const [patients, medicines, equipment, visits, users, auditLogs, settingsRows, syncMeta] = await Promise.all([
       readTable("patients"),
       readTable("medicines"),
       readTable("equipment"),
       readTable("clinical_visits"),
       readTable("clinic_users"),
       readTable("audit_logs"),
+      readTable("clinic_settings"),
+      readTable("clinic_sync_meta"),
     ]);
-    const hasNormalizedData = [patients, medicines, equipment, visits, users, auditLogs].some((table) => table.length > 0);
+    const normalizedReady = syncMeta[0]?.normalized_ready === true;
+    const hasAnyNormalizedRows = [patients, medicines, equipment, visits, users, auditLogs, settingsRows].some((table) => table.length > 0);
+    const hasNormalizedData = normalizedReady || (!rows[0] && hasAnyNormalizedRows);
     if (!hasNormalizedData && !rows[0]) {
       return Response.json({ message: "No shared clinic state has been saved yet." }, { status: 404 });
     }
     const normalized = hasNormalizedData ? {
       ...snapshot,
-      students: patients.length ? patients.map(patientFromRow) : snapshot.students ?? [],
-      ...(medicines.length || snapshot.medicines ? { medicines: medicines.length ? medicines.map(medicineFromRow) : snapshot.medicines } : {}),
-      ...(equipment.length || snapshot.equipment ? { equipment: equipment.length ? equipment.map(equipmentFromRow) : snapshot.equipment } : {}),
-      consultations: visits.length ? visits.map((visit) => visitFromRow(visit, patients)) : snapshot.consultations ?? [],
-      users: users.length ? users.filter((user) => !user.deleted_at).map(userFromRow) : snapshot.users ?? [],
-      deletedStudents: patients.length ? patients.filter((patient) => patient.deleted_at).map(patientFromRow) : snapshot.deletedStudents ?? [],
-      deletedUsers: users.length ? users.filter((user) => user.deleted_at).map(userFromRow) : snapshot.deletedUsers ?? [],
-      auditLogs: auditLogs.length ? auditLogs.map((audit) => auditFromRow(audit, users)) : snapshot.auditLogs ?? [],
-      bootstrapRequired: !equipment.length && !snapshot.equipment,
-    } : snapshot;
+      students: patients.map(patientFromRow),
+      medicines: medicines.map(medicineFromRow),
+      equipment: equipment.map(equipmentFromRow),
+      consultations: visits.map((visit) => visitFromRow(visit, patients)),
+      users: users.filter((user) => !user.deleted_at).map(userFromRow),
+      deletedStudents: patients.filter((patient) => patient.deleted_at).map(patientFromRow),
+      deletedUsers: users.filter((user) => user.deleted_at).map(userFromRow),
+      auditLogs: auditLogs.map((audit) => auditFromRow(audit, users)),
+      ...(settingsRows[0] ? { settings: settingsFromRow(settingsRows[0]) } : {}),
+      bootstrapRequired: false,
+    } : { ...snapshot, bootstrapRequired: true };
     return Response.json(normalized, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Unable to read shared clinic state", error);
@@ -503,6 +529,15 @@ export async function PUT(request: Request) {
       }
     } catch (error) {
       console.warn("Unable to save optional clinic_state snapshot", error);
+    }
+
+    const syncMetaResponse = await supabaseRequest("clinic_sync_meta?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id: 1, normalized_ready: true, updated_at: new Date().toISOString() }),
+    });
+    if (!syncMetaResponse.ok) {
+      console.warn(`clinic_sync_meta returned ${syncMetaResponse.status}`);
     }
 
     return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });

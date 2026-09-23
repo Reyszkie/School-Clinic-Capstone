@@ -172,6 +172,68 @@ create table if not exists public.clinic_state (
   updated_at timestamptz not null default now()
 );
 
+-- Marks the point at which normalized tables become the source of truth.
+create table if not exists public.clinic_sync_meta (
+  id integer primary key check (id = 1),
+  normalized_ready boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.clinic_sync_meta (id, normalized_ready)
+values (1, false)
+on conflict (id) do nothing;
+
+-- Keep modification times reliable for both the application and Supabase Table Editor.
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists clinic_users_set_updated_at on public.clinic_users;
+create trigger clinic_users_set_updated_at
+before update on public.clinic_users
+for each row execute function public.set_updated_at();
+
+drop trigger if exists patients_set_updated_at on public.patients;
+create trigger patients_set_updated_at
+before update on public.patients
+for each row execute function public.set_updated_at();
+
+drop trigger if exists medicines_set_updated_at on public.medicines;
+create trigger medicines_set_updated_at
+before update on public.medicines
+for each row execute function public.set_updated_at();
+
+drop trigger if exists equipment_set_updated_at on public.equipment;
+create trigger equipment_set_updated_at
+before update on public.equipment
+for each row execute function public.set_updated_at();
+
+drop trigger if exists clinical_visits_set_updated_at on public.clinical_visits;
+create trigger clinical_visits_set_updated_at
+before update on public.clinical_visits
+for each row execute function public.set_updated_at();
+
+drop trigger if exists clinic_settings_set_updated_at on public.clinic_settings;
+create trigger clinic_settings_set_updated_at
+before update on public.clinic_settings
+for each row execute function public.set_updated_at();
+
+drop trigger if exists clinic_state_set_updated_at on public.clinic_state;
+create trigger clinic_state_set_updated_at
+before update on public.clinic_state
+for each row execute function public.set_updated_at();
+
+drop trigger if exists clinic_sync_meta_set_updated_at on public.clinic_sync_meta;
+create trigger clinic_sync_meta_set_updated_at
+before update on public.clinic_sync_meta
+for each row execute function public.set_updated_at();
+
 create index if not exists clinical_visits_patient_date_idx
   on public.clinical_visits (patient_id, visit_date desc);
 create index if not exists clinical_visits_date_idx
@@ -265,3 +327,4 @@ alter table public.clinical_visits enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.clinic_settings enable row level security;
 alter table public.clinic_state enable row level security;
+alter table public.clinic_sync_meta enable row level security;
