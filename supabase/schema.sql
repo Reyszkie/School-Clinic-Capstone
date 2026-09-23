@@ -209,20 +209,37 @@ where logs.user_id = users.id
   and lower(logs.user_name) = 'system';
 
 update public.audit_logs as logs
-set user_id = source.user_id,
-    user_name = source.user_name
-from lateral (
-  select users.id as user_id, users.name as user_name
-  from public.clinic_state as snapshots
-  cross join lateral jsonb_array_elements(coalesce(snapshots.state->'auditLogs', '[]'::jsonb)) as entries(entry)
-  join public.clinic_users as users on users.id = nullif(entries.entry->>'userId', '')
-  where logs.action = entries.entry->>'action'
-    and logs.module = entries.entry->>'module'
-    and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
-  limit 1
-) as source
+set user_id = (
+      select users.id
+      from public.clinic_state as snapshots
+      cross join lateral jsonb_array_elements(coalesce(snapshots.state->'auditLogs', '[]'::jsonb)) as entries(entry)
+      join public.clinic_users as users on users.id = nullif(entries.entry->>'userId', '')
+      where logs.action = entries.entry->>'action'
+        and logs.module = entries.entry->>'module'
+        and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
+      limit 1
+    ),
+    user_name = (
+      select users.name
+      from public.clinic_state as snapshots
+      cross join lateral jsonb_array_elements(coalesce(snapshots.state->'auditLogs', '[]'::jsonb)) as entries(entry)
+      join public.clinic_users as users on users.id = nullif(entries.entry->>'userId', '')
+      where logs.action = entries.entry->>'action'
+        and logs.module = entries.entry->>'module'
+        and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
+      limit 1
+    )
 where logs.user_id is null
-  and lower(logs.user_name) = 'system';
+  and lower(logs.user_name) = 'system'
+  and exists (
+    select 1
+    from public.clinic_state as snapshots
+    cross join lateral jsonb_array_elements(coalesce(snapshots.state->'auditLogs', '[]'::jsonb)) as entries(entry)
+    join public.clinic_users as users on users.id = nullif(entries.entry->>'userId', '')
+    where logs.action = entries.entry->>'action'
+      and logs.module = entries.entry->>'module'
+      and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
+  );
 
 create or replace function public.authenticate_clinic_user(p_username text, p_password text)
 returns table (id text, name text, role text, username text, status text)
