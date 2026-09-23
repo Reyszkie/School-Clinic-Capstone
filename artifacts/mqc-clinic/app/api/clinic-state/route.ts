@@ -358,13 +358,14 @@ export async function GET() {
     const normalized = hasNormalizedData ? {
       ...snapshot,
       students: patients.length ? patients.map(patientFromRow) : snapshot.students ?? [],
-      medicines: medicines.length ? medicines.map(medicineFromRow) : snapshot.medicines ?? [],
-      equipment: equipment.length ? equipment.map(equipmentFromRow) : snapshot.equipment ?? [],
+      ...(medicines.length || snapshot.medicines ? { medicines: medicines.length ? medicines.map(medicineFromRow) : snapshot.medicines } : {}),
+      ...(equipment.length || snapshot.equipment ? { equipment: equipment.length ? equipment.map(equipmentFromRow) : snapshot.equipment } : {}),
       consultations: visits.length ? visits.map((visit) => visitFromRow(visit, patients)) : snapshot.consultations ?? [],
       users: users.length ? users.filter((user) => !user.deleted_at).map(userFromRow) : snapshot.users ?? [],
       deletedStudents: patients.length ? patients.filter((patient) => patient.deleted_at).map(patientFromRow) : snapshot.deletedStudents ?? [],
       deletedUsers: users.length ? users.filter((user) => user.deleted_at).map(userFromRow) : snapshot.deletedUsers ?? [],
       auditLogs: auditLogs.length ? auditLogs.map(auditFromRow) : snapshot.auditLogs ?? [],
+      bootstrapRequired: !equipment.length && !snapshot.equipment,
     } : snapshot;
     return Response.json(normalized, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

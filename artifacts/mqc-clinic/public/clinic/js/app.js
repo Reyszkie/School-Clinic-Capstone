@@ -34,5 +34,8 @@ serverHydrationPromise=hydrateFromSharedStorage().then((hydrated)=>{
     const wasLoggedIn=state.loggedIn;
     if(!wasLoggedIn) restoreAuthSession();
     if(state.loggedIn || wasLoggedIn) render();
+    if(sharedStorageNeedsBootstrap) saveToClinicState();
+  }else if(sharedStorageMissing || sharedStorageNeedsBootstrap){
+    saveToClinicState();
   }
 });

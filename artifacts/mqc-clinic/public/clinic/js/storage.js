@@ -6,6 +6,8 @@ const SHARED_STORAGE_URL = "/api/clinic-state";
 let serverHydrationPromise;
 let serverSaveChain=Promise.resolve();
 let localChangeVersion=0;
+let sharedStorageMissing=false;
+let sharedStorageNeedsBootstrap=false;
 
 function setSyncStatus(label, stateName="idle"){
   const indicator=document.getElementById("sync-status");
@@ -75,9 +77,11 @@ async function hydrateFromSharedStorage(){
     if(response.ok){
       const data=await response.json();
       if(localChangeVersion!==hydrationVersion) return false;
+      sharedStorageNeedsBootstrap=Boolean(data.bootstrapRequired);
       applyStoredData(data);
       return true;
     }
+    sharedStorageMissing=response.status===404;
     console.warn("MQC Clinic: shared clinic state could not be loaded.", response.status);
   }catch(err){
     console.warn("MQC Clinic: shared storage is unavailable.",err);
