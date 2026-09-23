@@ -160,8 +160,8 @@ function normalizeVisitRow(row: Record<string, unknown>) {
 }
 
 function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
-  const createdAt = toDateValue(row.createdAt ?? row.created_at) ?? new Date().toISOString();
-  const identity = `${createdAt}|${row.date ?? ""}|${row.time ?? ""}|${row.user ?? row.user_name ?? ""}|${row.action ?? ""}|${row.module ?? ""}|${fallbackIndex}`;
+  const createdAt = toDateValue(row.createdAt ?? row.created_at) ?? auditTimestamp(row.date, row.time);
+  const identity = `${createdAt}|${row.user ?? row.user_name ?? ""}|${row.userId ?? row.user_id ?? ""}|${row.action ?? ""}|${row.module ?? ""}|${row.status ?? ""}`;
   let stableId = 0;
   for (const character of identity) stableId = (stableId * 31 + character.charCodeAt(0)) % 2147483647;
   const normalized = {
@@ -172,7 +172,14 @@ function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
     status: row.status ?? "Success",
     created_at: createdAt,
   };
-  return { id: row.id === null || row.id === undefined ? stableId || 1 : row.id, ...normalized };
+  const suppliedId = Number(row.id);
+  return { id: Number.isSafeInteger(suppliedId) && suppliedId > 0 ? suppliedId : stableId || fallbackIndex + 1, ...normalized };
+}
+
+function auditTimestamp(date: unknown, time: unknown) {
+  if (typeof date !== "string" || !date) return new Date().toISOString();
+  const parsed = new Date(`${date}T${typeof time === "string" && time ? time : "00:00"}`);
+  return Number.isNaN(parsed.getTime()) ? `${date}T00:00:00.000Z` : parsed.toISOString();
 }
 
 async function resolveAuditUsers(rows: Array<Record<string, unknown>>) {
@@ -333,7 +340,7 @@ function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, 
   const date = createdAt.slice(0, 10);
   const time = createdAt ? new Date(createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "";
   const linkedUser = users.find((user) => user.id === row.user_id);
-  return { date, time, user: linkedUser?.name ?? row.user_name, userId: row.user_id, action: row.action, module: row.module, status: row.status };
+  return { id: row.id, date, time, user: linkedUser?.name ?? row.user_name, userId: row.user_id, action: row.action, module: row.module, status: row.status };
 }
 
 function settingsFromRow(row: Record<string, unknown>) {

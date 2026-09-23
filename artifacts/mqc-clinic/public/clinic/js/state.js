@@ -47,7 +47,8 @@ function toast(title, msg, type="ok"){
 function logAudit(action, module, status="Success"){
   const user=state.currentUser;
   if(!user?.id || !user.name) return;
-  AUDIT_LOGS.unshift({date:todayDateString(), time:manilaNow().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), user:user.name, userId:user.id, action, module, status});
+  const auditId=Date.now()*1000+Math.floor(Math.random()*1000);
+  AUDIT_LOGS.unshift({id:auditId,date:todayDateString(), time:manilaNow().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), user:user.name, userId:user.id, action, module, status});
   saveToClinicState();
 }
 let modalStack=[];

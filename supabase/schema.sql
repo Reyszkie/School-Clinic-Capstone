@@ -354,6 +354,24 @@ where logs.user_id is null
       and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
   );
 
+-- Remove duplicate audit rows created by the old snapshot sync behavior.
+with ranked_logs as (
+  select
+    id,
+    row_number() over (
+      partition by date_trunc('minute', created_at), coalesce(user_id, ''), user_name, action, module, status
+      order by id
+    ) as duplicate_rank
+  from public.audit_logs
+), duplicate_logs as (
+  select id
+  from ranked_logs
+  where duplicate_rank > 1
+)
+delete from public.audit_logs as logs
+using duplicate_logs
+where logs.id = duplicate_logs.id;
+
 create or replace function public.authenticate_clinic_user(p_username text, p_password text)
 returns table (id text, name text, role text, username text, status text)
 language sql
