@@ -263,6 +263,57 @@ on conflict (username) do update set
   status = excluded.status,
   updated_at = now();
 
+-- Migrate clinic users already saved in the legacy browser snapshot.
+insert into public.clinic_users (
+  id,
+  auth_user_id,
+  name,
+  last_name,
+  first_name,
+  middle_initial,
+  role,
+  username,
+  status,
+  deleted_at,
+  updated_at
+)
+select
+  nullif(user_row->>'id', ''),
+  nullif(user_row->>'authUserId', '')::uuid,
+  coalesce(nullif(user_row->>'name', ''), concat_ws(', ', nullif(user_row->>'lastName', ''), nullif(user_row->>'firstName', ''))),
+  coalesce(nullif(user_row->>'lastName', ''), split_part(user_row->>'name', ',', 1)),
+  coalesce(nullif(user_row->>'firstName', ''), btrim(split_part(user_row->>'name', ',', 2))),
+  nullif(user_row->>'middleInitial', ''),
+  case when user_row->>'role' in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse') then user_row->>'role' else 'Staff Nurse' end,
+  nullif(user_row->>'username', ''),
+  case when user_row->>'status' = 'Disabled' then 'Disabled' else 'Active' end,
+  case when coalesce((user_row->>'deleted')::boolean, false) then now() else null end,
+  now()
+from public.clinic_state as snapshots
+cross join lateral jsonb_array_elements(coalesce(snapshots.state->'users', '[]'::jsonb)) as entries(user_row)
+where snapshots.id = 1
+  and nullif(user_row->>'id', '') is not null
+  and nullif(user_row->>'username', '') is not null
+  and coalesce(nullif(user_row->>'name', ''), concat_ws(', ', nullif(user_row->>'lastName', ''), nullif(user_row->>'firstName', ''))) is not null
+  and nullif(user_row->>'lastName', '') is not null
+  and nullif(user_row->>'firstName', '') is not null
+on conflict (username) do update set
+  auth_user_id = coalesce(excluded.auth_user_id, public.clinic_users.auth_user_id),
+  name = excluded.name,
+  last_name = excluded.last_name,
+  first_name = excluded.first_name,
+  middle_initial = excluded.middle_initial,
+  role = excluded.role,
+  status = excluded.status,
+  deleted_at = excluded.deleted_at,
+  updated_at = now();
+
+update public.clinic_sync_meta
+set normalized_ready = true,
+    updated_at = now()
+where id = 1
+  and exists (select 1 from public.clinic_users);
+
 -- Repair legacy audit rows when the old snapshot still contains a verifiable user ID.
 update public.audit_logs as logs
 set user_name = users.name
