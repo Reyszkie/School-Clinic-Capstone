@@ -135,6 +135,16 @@ create table if not exists public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+-- Development convenience: allow the app and the Supabase Table Editor to read and write
+-- audit entries while the project is still establishing final auth policies.
+drop policy if exists "audit_logs_all_access" on public.audit_logs;
+create policy "audit_logs_all_access"
+on public.audit_logs
+for all
+to authenticated, anon
+using (true)
+with check (true);
+
 create table if not exists public.clinic_settings (
   id integer primary key default 1 check (id = 1),
   clinic_name text not null,
