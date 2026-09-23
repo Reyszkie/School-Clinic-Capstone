@@ -441,14 +441,21 @@ export async function GET() {
     if (!hasNormalizedData && !rows[0]) {
       return Response.json({ message: "No shared clinic state has been saved yet." }, { status: 404 });
     }
-    const usersNeedBootstrap = users.length === 0 && Array.isArray(snapshot.users) && snapshot.users.length > 0;
+    const snapshotUsers = Array.isArray(snapshot.users) ? snapshot.users.filter((user): user is Record<string, unknown> => Boolean(user) && typeof user === "object") : [];
+    const storedUsernames = new Set(users.map((user) => String(user.username ?? "").toLowerCase()).filter(Boolean));
+    const missingSnapshotUsers = snapshotUsers.filter((user) => {
+      const username = String(user.username ?? "").toLowerCase();
+      return username && !storedUsernames.has(username);
+    });
+    const usersNeedBootstrap = missingSnapshotUsers.length > 0;
+    const normalizedUsers = users.filter((user) => !user.deleted_at).map(userFromRow);
     const normalized = hasNormalizedData ? {
       ...snapshot,
       students: patients.map(patientFromRow),
       medicines: medicines.map(medicineFromRow),
       equipment: equipment.map(equipmentFromRow),
       consultations: visits.map((visit) => visitFromRow(visit, patients)),
-      users: usersNeedBootstrap ? snapshot.users : users.filter((user) => !user.deleted_at).map(userFromRow),
+      users: [...normalizedUsers, ...missingSnapshotUsers],
       deletedStudents: patients.filter((patient) => patient.deleted_at).map(patientFromRow),
       deletedUsers: users.filter((user) => user.deleted_at).map(userFromRow),
       auditLogs: auditLogs.map((audit) => auditFromRow(audit, users)),

@@ -279,7 +279,11 @@ insert into public.clinic_users (
 )
 select
   nullif(user_row->>'id', ''),
-  nullif(user_row->>'authUserId', '')::uuid,
+  case
+    when user_row->>'authUserId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    then (user_row->>'authUserId')::uuid
+    else null
+  end,
   coalesce(nullif(user_row->>'name', ''), concat_ws(', ', nullif(user_row->>'lastName', ''), nullif(user_row->>'firstName', ''))),
   coalesce(nullif(user_row->>'lastName', ''), split_part(user_row->>'name', ',', 1)),
   coalesce(nullif(user_row->>'firstName', ''), btrim(split_part(user_row->>'name', ',', 2))),
@@ -312,7 +316,27 @@ update public.clinic_sync_meta
 set normalized_ready = true,
     updated_at = now()
 where id = 1
-  and exists (select 1 from public.clinic_users);
+  and (
+    not exists (
+      select 1
+      from public.clinic_state as snapshots
+      cross join lateral jsonb_array_elements(coalesce(snapshots.state->'users', '[]'::jsonb)) as entries(user_row)
+      where snapshots.id = 1
+        and nullif(entries.user_row->>'username', '') is not null
+    )
+    or not exists (
+      select 1
+      from public.clinic_state as snapshots
+      cross join lateral jsonb_array_elements(coalesce(snapshots.state->'users', '[]'::jsonb)) as entries(user_row)
+      where snapshots.id = 1
+        and nullif(entries.user_row->>'username', '') is not null
+        and not exists (
+          select 1
+          from public.clinic_users as users
+          where users.username = entries.user_row->>'username'
+        )
+    )
+  );
 
 -- Repair legacy audit rows when the old snapshot still contains a verifiable user ID.
 -- To reset audit history once, run: delete from public.audit_logs;
