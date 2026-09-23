@@ -61,7 +61,7 @@ function closeModal(){
   const b=modalStack.pop();
   if(b) b.remove();
 }
-function confirmDialog({title, msg, okLabel="Confirm", danger=true, onConfirm}){
+function confirmDialog({title, msg, okLabel="Confirm", danger=true, loadingLabel="Processing...", onConfirm}){
   const html=`
     <div class="modal-body">
       <div class="confirm-icon ${danger?'':'good'}">${danger?ICONS.alert:ICONS.check}</div>
@@ -74,5 +74,14 @@ function confirmDialog({title, msg, okLabel="Confirm", danger=true, onConfirm}){
     </div>`;
   openModal(html,"sm");
   document.getElementById('cf-cancel').onclick=closeModal;
-  document.getElementById('cf-ok').onclick=()=>{ closeModal(); onConfirm(); };
+  document.getElementById('cf-ok').onclick=async()=>{
+    const button=document.getElementById('cf-ok');
+    button.disabled=true;
+    button.innerHTML=`<span class="button-spinner"></span>${escapeHtml(loadingLabel)}`;
+    try{
+      await onConfirm();
+    }finally{
+      closeModal();
+    }
+  };
 }

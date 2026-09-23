@@ -74,31 +74,35 @@ function attachLoginFormEvents(){
     const user=document.getElementById('login-user').value.trim();
     const pass=document.getElementById('login-pass').value.trim();
     const errEl=document.getElementById('login-error');
+    const loginButton=document.getElementById('login-btn');
+    const spinner=document.getElementById('login-spinner');
+    const btnText=document.getElementById('login-btn-text');
     errEl.style.display='none';
     if(!user || !pass){ errEl.textContent='Please enter both username and password.'; errEl.style.display='block'; return; }
+    spinner.style.display='block';
+    btnText.textContent='Signing in...';
+    loginButton.disabled=true;
     if(serverHydrationPromise) await serverHydrationPromise;
     let response;
     try{
       response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
     }catch(err){
+      spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
       errEl.textContent='Unable to connect to Supabase. Please try again.';
       errEl.style.display='block';
       return;
     }
     if(!response.ok){
+      spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
       const result=await response.json().catch(()=>({}));
       errEl.textContent=result.message||'Invalid username or password.';
       errEl.style.display='block';
       return;
     }
     const found=await response.json();
-    if(found && found.status==='Disabled'){ errEl.textContent='This account has been disabled. Contact the administrator.'; errEl.style.display='block'; return; }
-    if(!found){ errEl.textContent='Invalid username or password.'; errEl.style.display='block'; return; }
-    const spinner=document.getElementById('login-spinner');
-    const btnText=document.getElementById('login-btn-text');
+    if(found && found.status==='Disabled'){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='This account has been disabled. Contact the administrator.'; errEl.style.display='block'; return; }
+    if(!found){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='Invalid username or password.'; errEl.style.display='block'; return; }
     const rememberMe=document.getElementById('remember-me').checked;
-    spinner.style.display='block'; btnText.textContent='Signing in...';
-    document.getElementById('login-btn').disabled=true;
     state.currentUser=found;
     state.loggedIn=true;
     saveAuthSession(found,rememberMe);

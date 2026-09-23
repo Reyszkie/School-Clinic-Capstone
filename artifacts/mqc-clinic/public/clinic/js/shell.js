@@ -90,8 +90,9 @@ function attachShellEvents(){
     btn.onclick=()=>{ state.page=btn.dataset.nav; state.sidebarOpen=false; render(); };
   });
   document.getElementById('logout-btn').onclick=()=>{
-    confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, onConfirm:()=>{
+    confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, loadingLabel:"Signing out...", onConfirm:async()=>{
       logAudit("Logout","Authentication");
+      await saveToClinicState();
       clearAuthSession();
       state.loggedIn=false; state.currentUser=null; state.page="dashboard"; render();
     }});
