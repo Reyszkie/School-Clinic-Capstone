@@ -45,7 +45,7 @@ function toast(title, msg, type="ok"){
   setTimeout(()=>{ el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3400);
 }
 function logAudit(action, module, status="Success"){
-  AUDIT_LOGS.unshift({date:todayDateString(), time:manilaNow().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), user: state.currentUser?state.currentUser.name:"System", action, module, status});
+  AUDIT_LOGS.unshift({date:todayDateString(), time:manilaNow().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), user: state.currentUser?state.currentUser.name:"System", userId: state.currentUser?.id||null, action, module, status});
   saveToClinicState();
 }
 let modalStack=[];

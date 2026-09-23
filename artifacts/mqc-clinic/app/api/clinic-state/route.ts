@@ -418,11 +418,11 @@ export async function PUT(request: Request) {
     if (Array.isArray(snapshot.consultations)) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
     }
-    if (Array.isArray(snapshot.users)) {
-      await upsertTableRows("clinic_users", "id", snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>)));
-    }
     if (Array.isArray(snapshot.auditLogs)) {
       await upsertTableRows("audit_logs", "id", snapshot.auditLogs.map((row) => normalizeAuditLogRow(row as Record<string, unknown>)));
+    }
+    if (Array.isArray(snapshot.users)) {
+      await upsertTableRows("clinic_users", "id", snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>)));
     }
     if (snapshot.settings && typeof snapshot.settings === "object") {
       const settings = snapshot.settings as Record<string, unknown>;
