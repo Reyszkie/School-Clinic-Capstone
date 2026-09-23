@@ -5,6 +5,8 @@ import {
 	integer,
 	jsonb,
 	pgTable,
+	check,
+	sql,
 	text,
 	time,
 	timestamp,
@@ -29,7 +31,11 @@ export const clinicUsersTable = pgTable(
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
-	(table) => [uniqueIndex("clinic_users_username_unique").on(table.username)],
+	(table) => [
+		uniqueIndex("clinic_users_username_unique").on(table.username),
+		check("clinic_users_role_check", sql`${table.role} in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse')`),
+		check("clinic_users_status_check", sql`${table.status} in ('Active', 'Disabled')`),
+	],
 );
 
 export const patientsTable = pgTable("patients", {
@@ -77,7 +83,10 @@ export const equipmentTable = pgTable("equipment", {
 	deletedAt: timestamp("deleted_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	check("equipment_condition_check", sql`${table.condition} in ('Good', 'Fair', 'Poor')`),
+	check("equipment_status_check", sql`${table.status} in ('Available', 'Under Maintenance', 'Damaged', 'Replacement Needed')`),
+]);
 
 export const clinicalVisitsTable = pgTable("clinical_visits", {
 	id: text("id").primaryKey(),
@@ -128,7 +137,10 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	deletedAt: timestamp("deleted_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	check("clinical_visits_status_check", sql`${table.status} in ('Active', 'Superseded', 'Deleted')`),
+	check("clinical_visits_medicine_quantity_check", sql`${table.medicineQuantity} is null or ${table.medicineQuantity} > 0`),
+]);
 
 export const auditLogsTable = pgTable("audit_logs", {
 	id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -138,7 +150,9 @@ export const auditLogsTable = pgTable("audit_logs", {
 	module: text("module").notNull(),
 	status: text("status").notNull().default("Success"),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	check("audit_logs_status_check", sql`${table.status} in ('Success', 'Warning', 'Error')`),
+]);
 
 export const clinicSettingsTable = pgTable("clinic_settings", {
 	id: integer("id").primaryKey().default(1),
