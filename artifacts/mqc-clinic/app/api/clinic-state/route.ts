@@ -38,7 +38,7 @@ function toNumber(value: unknown): number | null {
 
 function normalizeUserRow(row: Record<string, unknown>) {
   const computedName = row.name ?? [row.lastName ?? row.last_name ?? "", row.firstName ?? row.first_name ?? ""].filter(Boolean).join(", ");
-  const normalized = {
+  const normalized: Record<string, unknown> = {
     id: row.id ?? null,
     name: computedName || null,
     last_name: row.lastName ?? row.last_name ?? "",
