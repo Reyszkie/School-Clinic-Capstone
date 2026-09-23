@@ -312,14 +312,23 @@ function auditFromRow(row: Record<string, unknown>) {
 
 async function upsertTableRows(tableName: string, conflictKey: string, rows: Array<Record<string, unknown>>) {
   if (!rows.length) return;
-  const response = await supabaseRequest(`${tableName}?on_conflict=${conflictKey}`, {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify(rows),
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`${tableName} upsert returned ${response.status}: ${text}`);
+  const batches = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of rows) {
+    const shape = Object.keys(row).sort().join("|");
+    const batch = batches.get(shape) ?? [];
+    batch.push(row);
+    batches.set(shape, batch);
+  }
+  for (const batch of batches.values()) {
+    const response = await supabaseRequest(`${tableName}?on_conflict=${conflictKey}`, {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(batch),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`${tableName} upsert returned ${response.status}: ${text}`);
+    }
   }
 }
 
