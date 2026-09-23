@@ -313,11 +313,15 @@ function auditFromRow(row: Record<string, unknown>) {
 async function upsertTableRows(tableName: string, conflictKey: string, rows: Array<Record<string, unknown>>) {
   if (!rows.length) return;
   const batches = new Map<string, Array<Record<string, unknown>>>();
-  for (const row of rows) {
-    const shape = Object.keys(row).sort().join("|");
-    const batch = batches.get(shape) ?? [];
-    batch.push(row);
-    batches.set(shape, batch);
+  if (tableName === "clinic_users") {
+    rows.forEach((row, index) => batches.set(`user-${index}`, [row]));
+  } else {
+    for (const row of rows) {
+      const shape = Object.keys(row).sort().join("|");
+      const batch = batches.get(shape) ?? [];
+      batch.push(row);
+      batches.set(shape, batch);
+    }
   }
   for (const batch of batches.values()) {
     const response = await supabaseRequest(`${tableName}?on_conflict=${conflictKey}`, {
