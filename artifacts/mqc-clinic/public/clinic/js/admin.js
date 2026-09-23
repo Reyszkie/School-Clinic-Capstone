@@ -68,6 +68,8 @@ function openUserForm(existing=null){
     if(!isEdit){
       const response=await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lastName:last,firstName:first,middleInitial:middle,role:rec.role,username,password,status:rec.status})});
       if(!response.ok){const result=await response.json().catch(()=>({}));toast('Account creation failed',result.message||'Unable to create the Supabase account.','err');return;}
+      const created=await response.json();
+      Object.assign(rec,created);
     }
     if(isEdit){ const idx=state.users.findIndex(u=>u.id===f.id); state.users[idx]=rec; logAudit(`User Updated — ${name}`,"User Management"); toast('User updated', `${name} has been updated.`,'ok'); }
     else{ state.users.unshift(rec); logAudit(`User Added — ${name}`,"User Management"); toast('User added', `${name} added as ${rec.role}.`,'ok'); }

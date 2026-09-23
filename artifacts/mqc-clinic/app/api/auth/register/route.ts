@@ -73,12 +73,13 @@ export async function POST(request: Request) {
       return Response.json({ message }, { status: authResponse.status === 422 ? 409 : 502 });
     }
     authUserId = authBody.id;
+    const clinicUserId = `NRS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 
     const clinicResponse = await restRequest("clinic_users", {
       method: "POST",
       headers: { Prefer: "return=minimal" },
       body: JSON.stringify({
-        id: `NRS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+        id: clinicUserId,
         auth_user_id: authUserId,
         name: `${lastName}, ${firstName}${middleInitial ? ` ${middleInitial.replace(/\.$/, "")}.` : ""}`,
         last_name: lastName,
@@ -90,7 +91,17 @@ export async function POST(request: Request) {
       }),
     });
     if (!clinicResponse.ok) throw new Error(`clinic_users insert returned ${clinicResponse.status}`);
-    return new Response(null, { status: 204 });
+    return Response.json({
+      id: clinicUserId,
+      authUserId,
+      name: `${lastName}, ${firstName}${middleInitial ? ` ${middleInitial.replace(/\.$/, "")}.` : ""}`,
+      lastName,
+      firstName,
+      middleInitial: middleInitial ?? "",
+      role,
+      username,
+      status,
+    }, { status: 201 });
   } catch (error) {
     console.error("Unable to create clinic account", error);
     if (authUserId) {

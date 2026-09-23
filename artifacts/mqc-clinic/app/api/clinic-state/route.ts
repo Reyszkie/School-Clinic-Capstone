@@ -166,7 +166,7 @@ function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
   for (const character of identity) stableId = (stableId * 31 + character.charCodeAt(0)) % 2147483647;
   const normalized = {
     user_id: row.userId ?? row.user_id ?? null,
-    user_name: row.userName ?? row.user_name ?? "System",
+    user_name: row.userName ?? row.user_name ?? "Unknown User",
     action: row.action ?? "System Action",
     module: row.module ?? "System",
     status: row.status ?? "Success",
@@ -183,6 +183,20 @@ async function resolveAuditUsers(rows: Array<Record<string, unknown>>) {
   const users = (await response.json()) as Array<{ id?: string; name?: string }>;
   const names = new Map(users.map((user) => [user.id, user.name]));
   return rows.map((row) => ({ ...row, user_name: names.get(String(row.user_id)) ?? row.user_name }));
+}
+
+async function resolveClinicUsers(rows: Array<Record<string, unknown>>) {
+  const usernames = [...new Set(rows.map((row) => row.username).filter((value): value is string => typeof value === "string" && value.length > 0))];
+  if (!usernames.length) return rows;
+  const response = await supabaseRequest(`clinic_users?username=in.(${usernames.map(encodeURIComponent).join(",")})&select=id,username,auth_user_id`);
+  if (!response.ok) return rows;
+  const users = (await response.json()) as Array<{ id?: string; username?: string; auth_user_id?: string }>;
+  const existing = new Map(users.map((user) => [user.username, user]));
+  return rows.map((row) => {
+    const match = existing.get(String(row.username));
+    if (!match?.id) return row;
+    return { ...row, id: match.id, auth_user_id: row.auth_user_id ?? match.auth_user_id };
+  });
 }
 
 async function readTable(tableName: string) {
@@ -314,11 +328,12 @@ function userFromRow(row: Record<string, unknown>) {
   };
 }
 
-function auditFromRow(row: Record<string, unknown>) {
+function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, unknown>> = []) {
   const createdAt = String(row.created_at ?? "");
   const date = createdAt.slice(0, 10);
   const time = createdAt ? new Date(createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "";
-  return { date, time, user: row.user_name, action: row.action, module: row.module, status: row.status };
+  const linkedUser = users.find((user) => user.id === row.user_id);
+  return { date, time, user: linkedUser?.name ?? row.user_name, userId: row.user_id, action: row.action, module: row.module, status: row.status };
 }
 
 async function upsertTableRows(tableName: string, conflictKey: string, rows: Array<Record<string, unknown>>) {
@@ -403,7 +418,7 @@ export async function GET() {
       users: users.length ? users.filter((user) => !user.deleted_at).map(userFromRow) : snapshot.users ?? [],
       deletedStudents: patients.length ? patients.filter((patient) => patient.deleted_at).map(patientFromRow) : snapshot.deletedStudents ?? [],
       deletedUsers: users.length ? users.filter((user) => user.deleted_at).map(userFromRow) : snapshot.deletedUsers ?? [],
-      auditLogs: auditLogs.length ? auditLogs.map(auditFromRow) : snapshot.auditLogs ?? [],
+      auditLogs: auditLogs.length ? auditLogs.map((audit) => auditFromRow(audit, users)) : snapshot.auditLogs ?? [],
       bootstrapRequired: !equipment.length && !snapshot.equipment,
     } : snapshot;
     return Response.json(normalized, { headers: { "Cache-Control": "no-store" } });
@@ -441,11 +456,13 @@ export async function PUT(request: Request) {
     }
     if (Array.isArray(snapshot.auditLogs)) {
       const auditRows = snapshot.auditLogs.map((row, index) => normalizeAuditLogRow(row as Record<string, unknown>, index));
-      await upsertTableRows("audit_logs", "id", await resolveAuditUsers(auditRows));
+      const ownedAuditRows = auditRows.filter((row) => row.user_id);
+      await upsertTableRows("audit_logs", "id", await resolveAuditUsers(ownedAuditRows));
     }
     if (Array.isArray(snapshot.users)) {
       try {
-        await upsertTableRows("clinic_users", "id", snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>)));
+        const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));
+        await upsertTableRows("clinic_users", "id", await resolveClinicUsers(userRows));
       } catch (error) {
         console.warn("Unable to synchronize one or more clinic user profiles; other clinic data was saved.", error);
       }
