@@ -159,8 +159,9 @@ function normalizeVisitRow(row: Record<string, unknown>) {
   };
 }
 
-function normalizeAuditLogRow(row: Record<string, unknown>) {
-  const identity = `${row.date ?? row.created_at ?? ""}|${row.time ?? ""}|${row.user ?? row.user_name ?? ""}|${row.action ?? ""}`;
+function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
+  const createdAt = toDateValue(row.createdAt ?? row.created_at) ?? new Date().toISOString();
+  const identity = `${createdAt}|${row.date ?? ""}|${row.time ?? ""}|${row.user ?? row.user_name ?? ""}|${row.action ?? ""}|${row.module ?? ""}|${fallbackIndex}`;
   let stableId = 0;
   for (const character of identity) stableId = (stableId * 31 + character.charCodeAt(0)) % 2147483647;
   const normalized = {
@@ -169,7 +170,7 @@ function normalizeAuditLogRow(row: Record<string, unknown>) {
     action: row.action ?? "System Action",
     module: row.module ?? "System",
     status: row.status ?? "Success",
-    created_at: toDateValue(row.createdAt ?? row.created_at) ?? new Date().toISOString(),
+    created_at: createdAt,
   };
   return { id: row.id === null || row.id === undefined ? stableId || 1 : row.id, ...normalized };
 }
@@ -324,10 +325,20 @@ async function upsertTableRows(tableName: string, conflictKey: string, rows: Arr
     }
   }
   for (const batch of batches.values()) {
+    const uniqueBatch: Array<Record<string, unknown>> = [];
+    const seen = new Set<string>();
+    for (const row of batch) {
+      const duplicateKey = String(row[conflictKey] ?? JSON.stringify(row));
+      if (seen.has(duplicateKey)) continue;
+      seen.add(duplicateKey);
+      uniqueBatch.push(row);
+    }
+    if (!uniqueBatch.length) continue;
+
     const response = await supabaseRequest(`${tableName}?on_conflict=${conflictKey}`, {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify(batch),
+      body: JSON.stringify(uniqueBatch),
     });
     if (!response.ok) {
       const text = await response.text();
@@ -419,7 +430,7 @@ export async function PUT(request: Request) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
     }
     if (Array.isArray(snapshot.auditLogs)) {
-      await upsertTableRows("audit_logs", "id", snapshot.auditLogs.map((row) => normalizeAuditLogRow(row as Record<string, unknown>)));
+      await upsertTableRows("audit_logs", "id", snapshot.auditLogs.map((row, index) => normalizeAuditLogRow(row as Record<string, unknown>, index)));
     }
     if (Array.isArray(snapshot.users)) {
       try {
