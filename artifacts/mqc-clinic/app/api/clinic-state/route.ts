@@ -94,11 +94,12 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
 }
 
 function normalizeEquipmentRow(row: Record<string, unknown>) {
+  const condition = row.condition === "Good" || row.condition === "Fair" || row.condition === "Poor" ? row.condition : "Poor";
   return {
     id: row.id ?? null,
     name: row.name ?? "",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
-    condition: row.condition ?? "Good",
+    condition,
     last_maintenance_date: toDateValue(row.lastMaint ?? row.lastMaintenanceDate ?? row.last_maintenance_date),
     status: row.status ?? "Available",
     deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),

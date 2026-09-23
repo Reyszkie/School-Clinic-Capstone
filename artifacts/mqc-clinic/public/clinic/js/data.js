@@ -70,7 +70,7 @@ let EQUIPMENT = [
   {id:"EQP-007",name:"Scissors (Medical)",qty:8,condition:"Good",lastMaint:"2026-05-02",status:"Available",deleted:false},
   {id:"EQP-008",name:"Tweezers",qty:8,condition:"Good",lastMaint:"2026-05-02",status:"Available",deleted:false},
   {id:"EQP-009",name:"Gloves Dispenser Box",qty:10,condition:"Poor",lastMaint:"2025-11-10",status:"Replacement Needed",deleted:false},
-  {id:"EQP-010",name:"First Aid Kit (Complete Set)",qty:3,condition:"Damaged",lastMaint:"2025-12-05",status:"Damaged",deleted:false},
+  {id:"EQP-010",name:"First Aid Kit (Complete Set)",qty:3,condition:"Poor",lastMaint:"2025-12-05",status:"Damaged",deleted:false},
   {id:"EQP-011",name:"Cotton Swabs",qty:500,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
   {id:"EQP-012",name:"Cotton Balls",qty:300,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
   {id:"EQP-013",name:"Alcohol (70% Isopropyl)",qty:6,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
