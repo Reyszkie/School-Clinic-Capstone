@@ -1,6 +1,22 @@
 /* ================= RENDER ROOT ================= */
+function bindLeaveWarning(){
+  if(window.__mqcLeaveWarningBound) return;
+  window.__mqcLeaveWarningBound = true;
+
+  window.addEventListener('beforeunload', (event)=>{
+    if(!state.loggedIn) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
+  window.addEventListener('pagehide', ()=>{
+    if(state.loggedIn) clearAuthSession();
+  });
+}
+
 function render(){
   const app=document.getElementById('app');
+  bindLeaveWarning();
   if(!state.loggedIn){ app.innerHTML = renderLogin(); attachLoginEvents(); return; }
   app.innerHTML = renderShell();
   attachShellEvents();

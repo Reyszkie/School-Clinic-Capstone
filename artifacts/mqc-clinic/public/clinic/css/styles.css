@@ -202,7 +202,9 @@ input,select,textarea{font-family:inherit;}
   font-size:14px;background:#fff;color:var(--ink);transition:border-color .15s;
 }
 .field input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(42,111,176,.12);}
-.toggle-pw{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--ink-soft);font-size:12px;font-weight:600;}
+.f-field .input-row{position:relative;}
+.f-field .input-row input{padding-right:68px;}
+.toggle-pw{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--ink-soft);font-size:12px;font-weight:600;cursor:pointer;}
 .remember-row{display:flex;align-items:center;justify-content:space-between;margin:18px 0 22px;font-size:13px;}
 .remember-row label{display:flex;align-items:center;gap:8px;color:var(--ink-soft);cursor:pointer;}
 .remember-row a{color:var(--blue);text-decoration:none;font-weight:600;}
