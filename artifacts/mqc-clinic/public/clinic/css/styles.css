@@ -148,26 +148,39 @@ input,select,textarea{font-family:inherit;}
 @media(max-width:1024px){
   .login-main{width:min(92vw, 800px);gap:clamp(28px,5vw,56px);padding-top:36px;}
   .login-panel{max-width:440px;}
+  .login-intro h1{font-size:clamp(38px, 5vw, 56px);}
+  .login-intro>p{font-size:15px;}
 }
 @media(max-width:800px){
   .login-topbar{padding:0 6vw;}
   .login-topbar-label{display:none;}
   .login-main{width:min(90vw, 680px);display:block;padding:44px 0 32px;}
   .login-intro{padding-top:0;margin-bottom:28px;}
-  .login-intro h1{font-size:46px;}
-  .login-feature-list{max-width:100%;}
+  .login-intro h1{font-size:clamp(42px, 7vw, 52px); line-height:1.08;}
+  .login-intro>p{font-size:15px; line-height:1.65;}
+  .login-feature-list{max-width:100%; gap:12px;}
+  .login-feature-list b{font-size:14px;}
+  .login-feature-list small{font-size:12.5px;}
   .login-panel{max-width:520px;}
   .login-footer{width:90vw;}
+  .field label{font-size:13px;}
+  .field input{font-size:16px;}
+  .remember-row{font-size:13px;}
 }
 @media(max-width:480px){
   .login-brand strong{font-size:14px;}
   .login-brand span{font-size:12px;}
   .login-main{padding-top:28px;}
-  .login-intro h1{font-size:34px;line-height:1.08;}
-  .login-intro>p{font-size:14px;}
-  .login-feature-list>div{gap:10px;}
+  .login-intro h1{font-size:clamp(32px, 9vw, 40px); line-height:1.1;}
+  .login-intro>p{font-size:15px;}
+  .login-feature-list>div{gap:10px; padding:12px 0;}
+  .login-feature-list b{font-size:13.5px;}
+  .login-feature-list small{font-size:12px;}
   .login-panel{padding:24px 20px;}
+  .login-panel h2{font-size:28px;}
   .login-footer{font-size:10px; gap:8px; flex-direction:column; align-items:flex-start;}
+  .field{margin-bottom:14px;}
+  .toggle-pw{padding:6px;}
 }
 .login-art{
   flex:1.1;
@@ -567,10 +580,12 @@ tbody tr{transition:background-color .14s ease;}
   .modal-foot{padding:13px 16px;flex-wrap:wrap;}
   .modal-foot .btn{flex:1;justify-content:center;}
   .option-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;}
+  body,button,input,select,textarea{font-size:16px;}
 }
 @media(max-width:390px){
   .option-grid{grid-template-columns:1fr;}
   .sync-status{display:none;}
   .top-actions{gap:6px;}
   .icon-btn,.logout-btn{min-width:32px;min-height:32px;}
+  .page-title{font-size:17px;}
 }
