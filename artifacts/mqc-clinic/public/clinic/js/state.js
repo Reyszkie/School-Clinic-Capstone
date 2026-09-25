@@ -96,15 +96,14 @@ function toast(title, msg, type="ok"){
 }
 function logAudit(action, module, status="Success"){
   const user=state.currentUser;
-  if(!user?.id || !user.name) return;
   const auditId=Date.now()*1000+Math.floor(Math.random()*1000);
   const manilaStamp = manilaDateParts();
   AUDIT_LOGS.unshift({
     id:auditId,
     date:manilaStamp.date,
     time: new Intl.DateTimeFormat('en-US', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hour12:true }).format(new Date()),
-    user:user.name,
-    userId:user.id,
+    user:user?.name||"System",
+    userId:user?.id||null,
     action,
     module,
     status,

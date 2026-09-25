@@ -19,8 +19,8 @@ function setSyncStatus(label, stateName="idle"){
 function snapshotData(resetAuditLogs=false){
   const normalizedAuditLogs = (AUDIT_LOGS || []).map(log => ({
     ...log,
-    timestamp: log.timestamp || log.createdAt || `${log.date || todayDateString()}T${(log.time || '00:00').replace(' ', '')}:00+08:00`,
-    createdAt: log.createdAt || log.timestamp || `${log.date || todayDateString()}T${(log.time || '00:00').replace(' ', '')}:00+08:00`,
+    timestamp: normalizeAuditTimestamp(log),
+    createdAt: normalizeAuditTimestamp(log),
     date: log.date || todayDateString(),
     time: log.time || new Intl.DateTimeFormat('en-US', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hour12:true }).format(new Date()),
   }));
@@ -38,6 +38,24 @@ function snapshotData(resetAuditLogs=false){
     resetAuditLogs,
     savedAt: new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Manila' })).toISOString(),
   };
+}
+
+function normalizeAuditTimestamp(log){
+  const supplied = log.timestamp || log.createdAt;
+  if(supplied){
+    const parsed = new Date(supplied);
+    if(!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  const date = log.date || todayDateString();
+  const time = String(log.time || '00:00').trim();
+  const match = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  let hours = match ? Number(match[1]) : 0;
+  const minutes = match ? Number(match[2]) : 0;
+  const meridiem = match?.[3]?.toUpperCase();
+  if(meridiem === 'PM' && hours < 12) hours += 12;
+  if(meridiem === 'AM' && hours === 12) hours = 0;
+  const utcMs = Date.UTC(...date.split('-').map(Number), hours, minutes) - 8 * 60 * 60 * 1000;
+  return new Date(utcMs).toISOString();
 }
 
 function saveToClinicState(resetAuditLogs=false){

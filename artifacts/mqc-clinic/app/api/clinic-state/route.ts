@@ -193,16 +193,20 @@ function toManilaIso(dateValue: unknown, timeValue: unknown) {
 }
 
 function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
-  const createdAt = toDateValue(row.createdAt ?? row.created_at) ?? toManilaIso(row.date, row.time);
+  const suppliedCreatedAt = toDateValue(row.createdAt ?? row.created_at ?? row.timestamp);
+  const parsedCreatedAt = suppliedCreatedAt ? new Date(suppliedCreatedAt) : null;
+  const createdAt = parsedCreatedAt && !Number.isNaN(parsedCreatedAt.getTime())
+    ? parsedCreatedAt.toISOString()
+    : toManilaIso(row.date, row.time);
   const identity = `${createdAt}|${row.user ?? row.user_name ?? ""}|${row.userId ?? row.user_id ?? ""}|${row.action ?? ""}|${row.module ?? ""}|${row.status ?? ""}`;
   let stableId = 0;
   for (const character of identity) stableId = (stableId * 31 + character.charCodeAt(0)) % 2147483647;
   const normalized = {
     user_id: row.userId ?? row.user_id ?? null,
-    user_name: row.userName ?? row.user_name ?? "Unknown User",
+    user_name: row.userName ?? row.user_name ?? "System",
     action: row.action ?? "System Action",
     module: row.module ?? "System",
-    status: row.status ?? "Success",
+    status: row.status === "Warning" || row.status === "Error" ? row.status : "Success",
     created_at: createdAt,
   };
   const suppliedId = Number(row.id);
@@ -220,7 +224,15 @@ async function resolveAuditUsers(rows: Array<Record<string, unknown>>) {
   if (!response.ok) return rows;
   const users = (await response.json()) as Array<{ id?: string; name?: string }>;
   const names = new Map(users.map((user) => [user.id, user.name]));
-  return rows.map((row) => ({ ...row, user_name: names.get(String(row.user_id)) ?? row.user_name }));
+  return rows.map((row) => {
+    const userId = String(row.user_id ?? "");
+    const linkedName = names.get(userId);
+    return {
+      ...row,
+      user_id: linkedName ? row.user_id : null,
+      user_name: linkedName ?? row.user_name,
+    };
+  });
 }
 
 async function resolveClinicUsers(rows: Array<Record<string, unknown>>) {
@@ -368,8 +380,10 @@ function userFromRow(row: Record<string, unknown>) {
 
 function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, unknown>> = []) {
   const createdAt = String(row.created_at ?? "");
-  const date = createdAt.slice(0, 10);
-  const time = createdAt ? new Date(createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "";
+  const parsedCreatedAt = new Date(createdAt);
+  const validCreatedAt = createdAt && !Number.isNaN(parsedCreatedAt.getTime());
+  const date = validCreatedAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(parsedCreatedAt) : "";
+  const time = validCreatedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: true }).format(parsedCreatedAt) : "";
   const linkedUser = users.find((user) => user.id === row.user_id);
   return { id: row.id, date, time, user: linkedUser?.name ?? row.user_name, userId: row.user_id, action: row.action, module: row.module, status: row.status };
 }

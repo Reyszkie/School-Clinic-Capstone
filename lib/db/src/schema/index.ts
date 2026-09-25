@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
 	bigserial,
 	boolean,
@@ -6,7 +7,6 @@ import {
 	jsonb,
 	pgTable,
 	check,
-	sql,
 	text,
 	time,
 	timestamp,
