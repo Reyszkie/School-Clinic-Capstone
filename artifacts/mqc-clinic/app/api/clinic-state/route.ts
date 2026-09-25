@@ -443,7 +443,7 @@ async function syncAuditRows(rows: Array<Record<string, unknown>>) {
     }
   }
   if (!normalizedRows.length) return;
-  const rowsToSync = await resolveAuditUsers(normalizedRows.filter((row) => row.user_id != null && String(row.user_id).trim() !== ""));
+  const rowsToSync = await resolveAuditUsers(normalizedRows);
   await upsertTableRows("audit_logs", "id", rowsToSync);
 }
 
