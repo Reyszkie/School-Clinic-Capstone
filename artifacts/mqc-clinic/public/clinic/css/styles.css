@@ -24,6 +24,7 @@ body{
   background:var(--paper);
   color:var(--ink);
   -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
 }
 h1,h2,h3,h4{font-family:'Newsreader',serif;font-weight:600;margin:0;color:var(--navy-deep);}
 .mono{font-family:'IBM Plex Mono',monospace; font-variant-numeric: tabular-nums;}
@@ -534,6 +535,8 @@ tbody tr{transition:background-color .14s ease;}
   .page-title{font-size:18px;}
   .page-sub{max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .datetime-chip{display:none;}
+  .topbar{flex-wrap:wrap;align-items:flex-start;}
+  .top-actions{width:100%;justify-content:flex-end;flex-wrap:wrap;}
   .content{padding:16px 12px 42px;}
   .greeting-banner{padding:20px;}
   .greeting-banner h2{font-size:21px;}
@@ -542,9 +545,9 @@ tbody tr{transition:background-color .14s ease;}
   .toolbar .search-box{min-width:100%;order:0;}
   .toolbar .btn{justify-content:center;}
   .patient-level-filter{width:100%;}
-  .table-wrap{margin-left:-3px;margin-right:-3px;}
-  th{padding:8px 9px;font-size:10px;}
-  td{padding:10px 9px;}
+  .table-wrap{margin-left:-3px;margin-right:-3px;overflow-x:auto;}
+  th{padding:8px 9px;font-size:10px;white-space:normal;}
+  td{padding:10px 9px;white-space:normal;word-break:break-word;overflow-wrap:anywhere;}
   .modal-backdrop{padding:10px;}
   .modal{max-height:calc(100dvh - 20px);border-radius:14px;}
   .modal-body{padding:16px;}
@@ -556,4 +559,6 @@ tbody tr{transition:background-color .14s ease;}
 @media(max-width:390px){
   .option-grid{grid-template-columns:1fr;}
   .sync-status{display:none;}
+  .top-actions{gap:6px;}
+  .icon-btn,.logout-btn{min-width:32px;min-height:32px;}
 }
