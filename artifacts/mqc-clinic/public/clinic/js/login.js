@@ -44,7 +44,7 @@ function renderLoginCard(){
         <label>Password</label>
         <div class="input-row">
           <input type="password" id="login-pass" placeholder="Enter your password" autocomplete="current-password">
-          <button type="button" class="toggle-pw" id="toggle-pw">SHOW</button>
+          <button type="button" class="toggle-pw" id="toggle-pw" aria-label="Show password">${ICONS.eye}</button>
         </div>
       </div>
       <div class="remember-row">
@@ -67,7 +67,10 @@ function attachLoginFormEvents(){
   document.getElementById('toggle-pw').onclick=()=>{
     const pw=document.getElementById('login-pass');
     const btn=document.getElementById('toggle-pw');
-    if(pw.type==='password'){ pw.type='text'; btn.textContent='HIDE'; } else { pw.type='password'; btn.textContent='SHOW'; }
+    const showing = pw.type !== 'password';
+    pw.type = showing ? 'password' : 'text';
+    btn.innerHTML = showing ? ICONS.eye : ICONS.eye_off;
+    btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
   };
   document.getElementById('login-form').addEventListener('submit', async (e)=>{
     e.preventDefault();
@@ -119,7 +122,7 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
       <div class="verification-banner"><span class="verification-lock">${ICONS.lock||""}</span><div><b>${escapeHtml(user.name||user.username)}</b><span>${escapeHtml(roleLabel)}</span></div></div>
       <p class="verification-copy">For protected clinic access, confirm your password before entering the workspace.</p>
       <form id="identity-verification-form">
-        <div class="f-field"><label for="verification-password">Confirm password</label><div class="input-row"><input type="password" id="verification-password" autocomplete="current-password" autofocus><button type="button" class="toggle-pw" id="verification-toggle">SHOW</button></div></div>
+        <div class="f-field"><label for="verification-password">Confirm password</label><div class="input-row"><input type="password" id="verification-password" autocomplete="current-password" autofocus><button type="button" class="toggle-pw" id="verification-toggle" aria-label="Show password">${ICONS.eye}</button></div></div>
         <div class="error-msg" id="verification-error"></div>
         <div class="modal-foot"><button type="button" class="btn" id="verification-cancel">Cancel</button><button type="submit" class="btn btn-teal" id="verification-submit">Verify and continue</button></div>
       </form>
@@ -133,8 +136,10 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
   document.getElementById("verification-toggle").onclick=()=>{
     const input=document.getElementById("verification-password");
     const button=document.getElementById("verification-toggle");
-    input.type=input.type==="password"?"text":"password";
-    button.textContent=input.type==="password"?"SHOW":"HIDE";
+    const showing = input.type !== 'password';
+    input.type = showing ? 'password' : 'text';
+    button.innerHTML = showing ? ICONS.eye : ICONS.eye_off;
+    button.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
   };
   document.getElementById("identity-verification-form").onsubmit=(e)=>{
     e.preventDefault();
