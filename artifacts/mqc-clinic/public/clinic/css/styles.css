@@ -466,6 +466,56 @@ tbody tr:hover{background:#F7FAFD;}
 .report-card-clickable:focus{outline:none;}
 tr[data-view-visitor],tr[data-open-slip]{cursor:default;}
 
+/* Shared small-screen behavior for phones, tablets, and compact displays */
+@media(max-width:1024px){
+  .content{padding:22px 20px 52px;}
+  .topbar{padding:12px 18px;}
+  .main{min-width:0;}
+  .sidebar{width:220px;}
+  .main{margin-left:220px;}
+  .datetime-chip{font-size:11px;padding:8px 10px;}
+  .grid-4{grid-template-columns:repeat(2,1fr);} 
+  .grid-3{grid-template-columns:repeat(2,1fr);} 
+  .two-col{grid-template-columns:1fr;}
+  .info-grid{grid-template-columns:repeat(2,1fr);} 
+}
+@media(max-width:760px){
+  body,button,input,select,textarea{font-size:16px;}
+  .sidebar{transform:translateX(-100%);box-shadow:12px 0 28px -18px rgba(13,30,54,.6);}
+  .sidebar.force-open{transform:translateX(0);}
+  .main{margin-left:0;}
+  .menu-toggle{display:inline-flex;align-items:center;justify-content:center;background:var(--panel);color:var(--navy-deep);}
+  .top-actions{gap:7px;}
+  .sync-status{display:none;}
+  .page-title{font-size:18px;}
+  .page-sub{max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .datetime-chip{display:none;}
+  .content{padding:16px 12px 42px;}
+  .greeting-banner{padding:20px;}
+  .greeting-banner h2{font-size:21px;}
+  .card{padding:15px;}
+  .grid-4,.grid-3,.grid-2,.form-grid{grid-template-columns:1fr;}
+  .toolbar{align-items:stretch;}
+  .toolbar .search-box{min-width:100%;order:0;}
+  .toolbar .btn{justify-content:center;}
+  .patient-level-filter{width:100%;}
+  .table-wrap{margin-left:-3px;margin-right:-3px;overflow-x:auto;}
+  th{padding:8px 9px;font-size:11px;white-space:normal;}
+  td{padding:10px 9px;font-size:13px;line-height:1.5;white-space:normal;word-break:break-word;overflow-wrap:anywhere;}
+  .option-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;}
+  .modal-backdrop{padding:10px;}
+  .modal{max-height:calc(100dvh - 20px);border-radius:14px;}
+  .modal-body{padding:16px;}
+  .modal-head{padding:15px 16px;}
+  .modal-foot{padding:13px 16px;flex-wrap:wrap;}
+  .modal-foot .btn{flex:1;justify-content:center;}
+}
+@media(max-width:420px){
+  .option-grid{grid-template-columns:1fr;}
+  .page-title{font-size:17px;}
+  .icon-btn,.logout-btn{min-width:32px;min-height:32px;}
+}
+
 /* ---------- MQC polish layer ---------- */
 /* The clinic uses ink navy as its anchor and sea-glass teal as its action color.
    This keeps urgent information visible without turning the workspace clinical. */
