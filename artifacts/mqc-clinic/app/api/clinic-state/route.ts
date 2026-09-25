@@ -159,8 +159,41 @@ function normalizeVisitRow(row: Record<string, unknown>) {
   };
 }
 
+function parse12HourClock(value: unknown) {
+  if (typeof value !== "string") return "00:00";
+  const trimmed = value.trim();
+  if (!trimmed) return "00:00";
+  const match = trimmed.match(/^\s*(\d{1,2}):(\d{2})\s*(AM|PM)?\s*$/i);
+  if (match) {
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const meridiem = match[3]?.toUpperCase();
+    if (meridiem === "PM" && hours < 12) hours += 12;
+    if (meridiem === "AM" && hours === 12) hours = 0;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+  const timeOnly = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (timeOnly) {
+    const hours = Number(timeOnly[1]);
+    const minutes = Number(timeOnly[2]);
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+  return "00:00";
+}
+
+function toManilaIso(dateValue: unknown, timeValue: unknown) {
+  const fallbackNow = new Date();
+  const dateString = typeof dateValue === "string" && dateValue ? dateValue : fallbackNow.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+  const timeString = parse12HourClock(timeValue);
+  const [year, month, day] = dateString.split("-").map((part) => Number(part));
+  const [hours, minutes] = timeString.split(":").map((part) => Number(part));
+  if (!year || !month || !day) return fallbackNow.toISOString();
+  const utcMs = Date.UTC(year, month - 1, day, hours, minutes, 0) - (8 * 60 * 60 * 1000);
+  return new Date(utcMs).toISOString();
+}
+
 function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
-  const createdAt = toDateValue(row.createdAt ?? row.created_at) ?? auditTimestamp(row.date, row.time);
+  const createdAt = toDateValue(row.createdAt ?? row.created_at) ?? toManilaIso(row.date, row.time);
   const identity = `${createdAt}|${row.user ?? row.user_name ?? ""}|${row.userId ?? row.user_id ?? ""}|${row.action ?? ""}|${row.module ?? ""}|${row.status ?? ""}`;
   let stableId = 0;
   for (const character of identity) stableId = (stableId * 31 + character.charCodeAt(0)) % 2147483647;
@@ -177,9 +210,7 @@ function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
 }
 
 function auditTimestamp(date: unknown, time: unknown) {
-  if (typeof date !== "string" || !date) return new Date().toISOString();
-  const parsed = new Date(`${date}T${typeof time === "string" && time ? time : "00:00"}`);
-  return Number.isNaN(parsed.getTime()) ? `${date}T00:00:00.000Z` : parsed.toISOString();
+  return toManilaIso(date, time);
 }
 
 async function resolveAuditUsers(rows: Array<Record<string, unknown>>) {
@@ -400,6 +431,22 @@ async function upsertTableRows(tableName: string, conflictKey: string, rows: Arr
   }
 }
 
+async function syncAuditRows(rows: Array<Record<string, unknown>>) {
+  const normalizedRows = rows.map((row, index) => normalizeAuditLogRow(row, index));
+  const localIds = new Set(normalizedRows.map((row) => String(row.id)));
+  const existingRows = await readTable("audit_logs");
+  const staleRows = existingRows.filter((row) => !localIds.has(String(row.id)));
+  for (const staleRow of staleRows) {
+    const deleteResponse = await supabaseRequest(`audit_logs?id=eq.${encodeURIComponent(String(staleRow.id))}`, { method: "DELETE" });
+    if (!deleteResponse.ok) {
+      throw new Error(`audit_logs delete returned ${deleteResponse.status}`);
+    }
+  }
+  if (!normalizedRows.length) return;
+  const rowsToSync = await resolveAuditUsers(normalizedRows.filter((row) => row.user_id != null && String(row.user_id).trim() !== ""));
+  await upsertTableRows("audit_logs", "id", rowsToSync);
+}
+
 async function purgeRows(rows: unknown) {
   if (!Array.isArray(rows)) return;
   for (const item of rows) {
@@ -499,9 +546,7 @@ export async function PUT(request: Request) {
       const auditResetResponse = await supabaseRequest("audit_logs?id=not.is.null", { method: "DELETE" });
       if (!auditResetResponse.ok) throw new Error(`audit_logs reset returned ${auditResetResponse.status}`);
     } else if (Array.isArray(snapshot.auditLogs)) {
-      const auditRows = snapshot.auditLogs.map((row, index) => normalizeAuditLogRow(row as Record<string, unknown>, index));
-      const ownedAuditRows = auditRows.filter((row) => row.user_id);
-      await upsertTableRows("audit_logs", "id", await resolveAuditUsers(ownedAuditRows));
+      await syncAuditRows(snapshot.auditLogs as Array<Record<string, unknown>>);
     }
     if (Array.isArray(snapshot.users)) {
       const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));
