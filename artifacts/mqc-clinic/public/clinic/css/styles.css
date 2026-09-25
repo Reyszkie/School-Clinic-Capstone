@@ -25,6 +25,7 @@ body{
   color:var(--ink);
   -webkit-font-smoothing:antialiased;
   overflow-x:hidden;
+  min-width:320px;
 }
 h1,h2,h3,h4{font-family:'Newsreader',serif;font-weight:600;margin:0;color:var(--navy-deep);}
 .mono{font-family:'IBM Plex Mono',monospace; font-variant-numeric: tabular-nums;}
@@ -144,22 +145,29 @@ input,select,textarea{font-family:inherit;}
   align-items:stretch;
   background:var(--navy-deep);
 }
+@media(max-width:1024px){
+  .login-main{width:min(92vw, 800px);gap:clamp(28px,5vw,56px);padding-top:36px;}
+  .login-panel{max-width:440px;}
+}
 @media(max-width:800px){
   .login-topbar{padding:0 6vw;}
   .login-topbar-label{display:none;}
-  .login-main{width:88vw;display:block;padding:44px 0 32px;}
-  .login-intro{padding-top:0;margin-bottom:36px;}
+  .login-main{width:min(90vw, 680px);display:block;padding:44px 0 32px;}
+  .login-intro{padding-top:0;margin-bottom:28px;}
   .login-intro h1{font-size:46px;}
+  .login-feature-list{max-width:100%;}
   .login-panel{max-width:520px;}
-  .login-footer{width:88vw;}
+  .login-footer{width:90vw;}
 }
 @media(max-width:480px){
   .login-brand strong{font-size:14px;}
   .login-brand span{font-size:12px;}
-  .login-main{padding-top:32px;}
-  .login-intro h1{font-size:38px;}
+  .login-main{padding-top:28px;}
+  .login-intro h1{font-size:34px;line-height:1.08;}
+  .login-intro>p{font-size:14px;}
+  .login-feature-list>div{gap:10px;}
   .login-panel{padding:24px 20px;}
-  .login-footer{font-size:10px;}
+  .login-footer{font-size:10px; gap:8px; flex-direction:column; align-items:flex-start;}
 }
 .login-art{
   flex:1.1;
@@ -520,8 +528,12 @@ tbody tr{transition:background-color .14s ease;}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes modalIn{from{transform:translateY(8px);opacity:.85}to{transform:translateY(0);opacity:1}}
 
+@media(max-width:1100px){
+  .sidebar{width:210px;}
+  .main{margin-left:210px;}
+}
 @media(max-width:900px){
-  .sidebar{transform:translateX(-100%);box-shadow:12px 0 28px -18px rgba(13,30,54,.6);}
+  .sidebar{transform:translateX(-100%);box-shadow:12px 0 28px -18px rgba(13,30,54,.6);width:236px;}
   .sidebar.force-open{transform:translateX(0);}
   .main{margin-left:0;}
   .menu-toggle{display:inline-flex;align-items:center;justify-content:center;background:var(--panel);color:var(--navy-deep);}
