@@ -24,8 +24,6 @@ body{
   background:var(--paper);
   color:var(--ink);
   -webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
-  min-width:320px;
 }
 h1,h2,h3,h4{font-family:'Newsreader',serif;font-weight:600;margin:0;color:var(--navy-deep);}
 .mono{font-family:'IBM Plex Mono',monospace; font-variant-numeric: tabular-nums;}
@@ -145,42 +143,22 @@ input,select,textarea{font-family:inherit;}
   align-items:stretch;
   background:var(--navy-deep);
 }
-@media(max-width:1024px){
-  .login-main{width:min(92vw, 800px);gap:clamp(28px,5vw,56px);padding-top:36px;}
-  .login-panel{max-width:440px;}
-  .login-intro h1{font-size:clamp(38px, 5vw, 56px);}
-  .login-intro>p{font-size:15px;}
-}
 @media(max-width:800px){
   .login-topbar{padding:0 6vw;}
   .login-topbar-label{display:none;}
-  .login-main{width:min(90vw, 680px);display:block;padding:44px 0 32px;}
-  .login-intro{padding-top:0;margin-bottom:28px;}
-  .login-intro h1{font-size:clamp(42px, 7vw, 52px); line-height:1.08;}
-  .login-intro>p{font-size:15px; line-height:1.65;}
-  .login-feature-list{max-width:100%; gap:12px;}
-  .login-feature-list b{font-size:14px;}
-  .login-feature-list small{font-size:12.5px;}
+  .login-main{width:88vw;display:block;padding:44px 0 32px;}
+  .login-intro{padding-top:0;margin-bottom:36px;}
+  .login-intro h1{font-size:46px;}
   .login-panel{max-width:520px;}
-  .login-footer{width:90vw;}
-  .field label{font-size:13px;}
-  .field input{font-size:16px;}
-  .remember-row{font-size:13px;}
+  .login-footer{width:88vw;}
 }
 @media(max-width:480px){
   .login-brand strong{font-size:14px;}
   .login-brand span{font-size:12px;}
-  .login-main{padding-top:28px;}
-  .login-intro h1{font-size:clamp(32px, 9vw, 40px); line-height:1.1;}
-  .login-intro>p{font-size:15px;}
-  .login-feature-list>div{gap:10px; padding:12px 0;}
-  .login-feature-list b{font-size:13.5px;}
-  .login-feature-list small{font-size:12px;}
+  .login-main{padding-top:32px;}
+  .login-intro h1{font-size:38px;}
   .login-panel{padding:24px 20px;}
-  .login-panel h2{font-size:28px;}
-  .login-footer{font-size:10px; gap:8px; flex-direction:column; align-items:flex-start;}
-  .field{margin-bottom:14px;}
-  .toggle-pw{padding:6px;}
+  .login-footer{font-size:10px;}
 }
 .login-art{
   flex:1.1;
@@ -224,11 +202,7 @@ input,select,textarea{font-family:inherit;}
   font-size:14px;background:#fff;color:var(--ink);transition:border-color .15s;
 }
 .field input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(42,111,176,.12);}
-.f-field .input-row{position:relative;}
-.f-field .input-row input{padding-right:68px;}
-.toggle-pw{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--ink-soft);font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:4px;border-radius:6px;}
-.toggle-pw:hover{background:#F3F7FB;color:var(--navy-deep);}
-.toggle-pw svg{width:16px;height:16px;display:block;}
+.toggle-pw{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--ink-soft);font-size:12px;font-weight:600;}
 .remember-row{display:flex;align-items:center;justify-content:space-between;margin:18px 0 22px;font-size:13px;}
 .remember-row label{display:flex;align-items:center;gap:8px;color:var(--ink-soft);cursor:pointer;}
 .remember-row a{color:var(--blue);text-decoration:none;font-weight:600;}
@@ -541,12 +515,9 @@ tbody tr{transition:background-color .14s ease;}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes modalIn{from{transform:translateY(8px);opacity:.85}to{transform:translateY(0);opacity:1}}
 
-@media(max-width:1100px){
-  .sidebar{width:210px;}
-  .main{margin-left:210px;}
-}
 @media(max-width:900px){
-  .sidebar{transform:translateX(-100%);box-shadow:12px 0 28px -18px rgba(13,30,54,.6);width:236px;}
+  body,button,input,select,textarea{font-size:16px;}
+  .sidebar{transform:translateX(-100%);box-shadow:12px 0 28px -18px rgba(13,30,54,.6);}
   .sidebar.force-open{transform:translateX(0);}
   .main{margin-left:0;}
   .menu-toggle{display:inline-flex;align-items:center;justify-content:center;background:var(--panel);color:var(--navy-deep);}
@@ -555,13 +526,15 @@ tbody tr{transition:background-color .14s ease;}
   .datetime-chip{font-size:11px;padding:8px 9px;}
   .top-actions{gap:7px;}
   .sync-status{font-size:10px;min-width:auto;}
+  th{font-size:11px;}
+  td{font-size:14px;line-height:1.45;}
+  .nav-item{font-size:14px;}
 }
 @media(max-width:620px){
+  body,button,input,select,textarea{font-size:16px;}
   .page-title{font-size:18px;}
   .page-sub{max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .datetime-chip{display:none;}
-  .topbar{flex-wrap:wrap;align-items:flex-start;}
-  .top-actions{width:100%;justify-content:flex-end;flex-wrap:wrap;}
   .content{padding:16px 12px 42px;}
   .greeting-banner{padding:20px;}
   .greeting-banner h2{font-size:21px;}
@@ -571,8 +544,8 @@ tbody tr{transition:background-color .14s ease;}
   .toolbar .btn{justify-content:center;}
   .patient-level-filter{width:100%;}
   .table-wrap{margin-left:-3px;margin-right:-3px;overflow-x:auto;}
-  th{padding:8px 9px;font-size:10px;white-space:normal;}
-  td{padding:10px 9px;white-space:normal;word-break:break-word;overflow-wrap:anywhere;}
+  th{padding:8px 9px;font-size:11px;white-space:normal;}
+  td{padding:10px 9px;font-size:13px;line-height:1.5;white-space:normal;word-break:break-word;overflow-wrap:anywhere;}
   .modal-backdrop{padding:10px;}
   .modal{max-height:calc(100dvh - 20px);border-radius:14px;}
   .modal-body{padding:16px;}
@@ -580,12 +553,11 @@ tbody tr{transition:background-color .14s ease;}
   .modal-foot{padding:13px 16px;flex-wrap:wrap;}
   .modal-foot .btn{flex:1;justify-content:center;}
   .option-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;}
-  body,button,input,select,textarea{font-size:16px;}
 }
 @media(max-width:390px){
+  body,button,input,select,textarea{font-size:16px;}
   .option-grid{grid-template-columns:1fr;}
   .sync-status{display:none;}
-  .top-actions{gap:6px;}
-  .icon-btn,.logout-btn{min-width:32px;min-height:32px;}
   .page-title{font-size:17px;}
+  .icon-btn,.logout-btn{min-width:32px;min-height:32px;}
 }
