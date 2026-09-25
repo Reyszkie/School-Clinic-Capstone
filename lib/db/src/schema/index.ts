@@ -79,6 +79,7 @@ export const equipmentTable = pgTable("equipment", {
 	quantity: integer("quantity").notNull().default(0),
 	condition: text("condition").notNull().default("Good"),
 	lastMaintenanceDate: date("last_maintenance_date"),
+	expirationDate: date("expiration_date"),
 	status: text("status").notNull().default("Available"),
 	deletedAt: timestamp("deleted_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

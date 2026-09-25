@@ -156,6 +156,7 @@ function renderEquipmentTab(){
       <td class="mono">${e.qty}</td>
       <td>${e.condition}</td>
       <td>${fmtDate(e.lastMaint)}</td>
+      <td>${fmtDate(e.exp)}</td>
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-eq="${e.id}" title="Edit">${ICONS.edit}</button>
@@ -173,7 +174,7 @@ function renderEquipmentTab(){
       <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Equipment</button>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>ID</th><th>Equipment</th><th>Qty</th><th>Condition</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>ID</th><th>Equipment</th><th>Qty</th><th>Condition</th><th>Last Maintenance</th><th>Expiration</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
@@ -183,7 +184,7 @@ function renderEquipmentTab(){
 }
 function openEquipmentForm(existing=null){
   const isEdit=!!existing;
-  const f=existing||{id:uid("EQP"), name:"", qty:1, condition:"Good", lastMaint:"2026-07-01", status:"Available"};
+  const f=existing||{id:uid("EQP"), name:"", qty:1, condition:"Good", lastMaint:"2026-07-01", exp:"", status:"Available"};
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} Equipment</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
@@ -192,7 +193,8 @@ function openEquipmentForm(existing=null){
       <div class="f-field full"><label>Equipment Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="ef-qty" value="${f.qty}"></div>
       <div class="f-field"><label>Condition</label><select id="ef-condition">${["Good","Fair","Poor"].map(c=>`<option ${f.condition===c?'selected':''}>${c}</option>`).join("")}</select></div>
-      <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint}"></div>
+      <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
+      <div class="f-field"><label>Expiration Date</label><input type="date" id="ef-exp" value="${f.exp||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
     </form>
   </div>
@@ -203,6 +205,7 @@ function openEquipmentForm(existing=null){
     if(!name){ toast('Missing information','Equipment name is required.','err'); return; }
     const rec={ id:document.getElementById('ef-id').value, name, qty:parseInt(document.getElementById('ef-qty').value)||0,
       condition:document.getElementById('ef-condition').value, lastMaint:document.getElementById('ef-maint').value,
+      exp:document.getElementById('ef-exp').value,
       status:document.getElementById('ef-status').value, deleted:false };
     if(isEdit){ const idx=EQUIPMENT.findIndex(e=>e.id===existing.id); EQUIPMENT[idx]=rec; logAudit(`Inventory Updated — ${rec.name}`,"Inventory"); toast('Equipment updated', `${rec.name} has been updated.`,'ok'); }
     else { EQUIPMENT.unshift(rec); logAudit(`Inventory Item Added — ${rec.name}`,"Inventory"); toast('Equipment added', `${rec.name} added to inventory.`,'ok'); }
