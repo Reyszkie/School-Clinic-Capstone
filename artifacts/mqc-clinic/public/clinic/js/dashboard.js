@@ -46,4 +46,5 @@ function bindDashboard(){
   const bindRows=()=>document.querySelectorAll("[data-view-records]").forEach(b=>b.onclick=()=>openStudentRecordsModal(STUDENTS.find(s=>s.id===b.dataset.viewRecords)));
   input?.addEventListener("input",()=>{const q=input.value.trim().toLowerCase();tbody.innerHTML=q?dashSearchRows(STUDENTS.filter(s=>[s.id,s.name,s.course,s.year].join(" ").toLowerCase().includes(q))):`<tr><td colspan="5">${emptyState("Start typing a student ID or name to search.")}</td></tr>`;bindRows();});
   document.querySelectorAll("[data-open-med5],[data-open-med6]").forEach(row=>{row.style.cursor="pointer";row.onclick=()=>{const med=MEDICINES.find(m=>m.code===(row.dataset.openMed5||row.dataset.openMed6));if(med)openMedicineForm(med);};});
+  document.querySelectorAll("[data-open-eq]").forEach(row=>{row.style.cursor="pointer";row.onclick=()=>{const equipment=EQUIPMENT.find(e=>e.id===row.dataset.openEq);if(equipment)openEquipmentForm(equipment);};});
 }
