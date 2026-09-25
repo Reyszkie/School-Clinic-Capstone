@@ -71,11 +71,12 @@ function logAudit(action, module, status="Success"){
   saveToClinicState();
 }
 let modalStack=[];
-function openModal(html, size=""){
+function openModal(html, size="", options={}){
+  const { closeOnBackdrop = false } = options;
   const backdrop=document.createElement('div');
   backdrop.className='modal-backdrop';
   backdrop.innerHTML=`<div class="modal ${size}">${html}</div>`;
-  backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeModal(); });
+  if(closeOnBackdrop){ backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeModal(); }); }
   document.body.appendChild(backdrop);
   modalStack.push(backdrop);
 }

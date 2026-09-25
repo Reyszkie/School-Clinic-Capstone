@@ -46,13 +46,13 @@ function openUserForm(existing=null){
       <div class="f-field"><label>Role</label><select id="uf-role">${["Head Nurse & Administrator","Head Nurse","Staff Nurse"].map(r=>`<option ${f.role===r?'selected':''}>${r}</option>`).join("")}</select></div>
       <div class="f-field"><label>Username <span class="req">*</span></label><input type="text" id="uf-username" value="${f.username}" required></div>
       <div class="f-field"><label>Status</label><select id="uf-status">${["Active","Disabled"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
-      <div class="f-field"><label>Password ${isEdit?"(leave blank to keep current)":'<span class="req">*</span>'}</label><div class="input-row"><input type="password" id="uf-password" value="" autocomplete="new-password"><button type="button" class="toggle-pw" data-toggle-password="uf-password" aria-label="Show or hide password">SHOW</button></div></div>
-      <div class="f-field"><label>Confirm Password ${isEdit?"":'<span class="req">*</span>'}</label><div class="input-row"><input type="password" id="uf-confirm" value="" autocomplete="new-password"><button type="button" class="toggle-pw" data-toggle-password="uf-confirm" aria-label="Show or hide password confirmation">SHOW</button></div></div>
+      <div class="f-field"><label>Password ${isEdit?"(leave blank to keep current)":'<span class="req">*</span>'}</label><div class="input-row"><input type="password" id="uf-password" value="" autocomplete="new-password"><button type="button" class="toggle-pw" data-toggle-password="uf-password" aria-label="Show password">${ICONS.eye}</button></div></div>
+      <div class="f-field"><label>Confirm Password ${isEdit?"":'<span class="req">*</span>'}</label><div class="input-row"><input type="password" id="uf-confirm" value="" autocomplete="new-password"><button type="button" class="toggle-pw" data-toggle-password="uf-confirm" aria-label="Show password confirmation">${ICONS.eye}</button></div></div>
     </form>
   </div>
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="uf-save">${ICONS.check} Save User</button></div>`;
   openModal(html);
-  document.querySelectorAll("[data-toggle-password]").forEach(btn=>btn.onclick=()=>{const input=document.getElementById(btn.dataset.togglePassword); if(!input) return; input.type=input.type==="password"?"text":"password"; btn.textContent=input.type==="password"?"SHOW":"HIDE"; btn.setAttribute("aria-label", input.type==="password" ? "Show or hide password" : "Hide password"); });
+  document.querySelectorAll("[data-toggle-password]").forEach(btn=>btn.onclick=()=>{const input=document.getElementById(btn.dataset.togglePassword); if(!input) return; const showing=input.type!=="password"; input.type=showing?"password":"text"; btn.innerHTML=showing?ICONS.eye:ICONS.eye_off; btn.setAttribute("aria-label", showing?"Show password":"Hide password"); });
   document.getElementById('uf-save').onclick=async()=>{
     const last=document.getElementById('uf-lastname').value.trim();
     const first=document.getElementById('uf-firstname').value.trim();

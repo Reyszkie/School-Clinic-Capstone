@@ -8,10 +8,6 @@ function bindLeaveWarning(){
     event.preventDefault();
     event.returnValue = '';
   });
-
-  window.addEventListener('pagehide', ()=>{
-    if(state.loggedIn) clearAuthSession();
-  });
 }
 
 function render(){
