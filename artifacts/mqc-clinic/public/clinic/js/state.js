@@ -25,11 +25,42 @@ const state = {
 };
 
 /* ================= UTIL ================= */
-function manilaNow(){ return new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Manila"})); }
-function todayDateString(){ const d=manilaNow(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
-function currentTimeString(){ return manilaNow().toLocaleTimeString("en-PH",{hour:"numeric",minute:"2-digit",hour12:true}); }
-function fmtDate(d){ if(!d) return "—"; const dt=new Date(d+"T00:00:00"); return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
-function daysUntil(dateStr){ const today=new Date(todayDateString()+"T00:00:00"); const target=new Date(dateStr+"T00:00:00"); return Math.round((target-today)/(1000*60*60*24)); }
+function manilaNow(){
+  const now = new Date();
+  const manilaOffsetMinutes = 8 * 60;
+  const localOffsetMinutes = now.getTimezoneOffset();
+  return new Date(now.getTime() + ((manilaOffsetMinutes + localOffsetMinutes) * 60000));
+}
+function manilaDateParts(date=new Date()){
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}:${values.second}`,
+    iso: `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}+08:00`,
+  };
+}
+function todayDateString(){ return manilaDateParts().date; }
+function currentTimeString(){
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  }).format(new Date());
+}
+function fmtDate(d){
+  if(!d) return "—";
+  const dt = new Date(`${d}T00:00:00+08:00`);
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    month: 'short', day: 'numeric', year: 'numeric'
+  }).format(dt);
+}
+function daysUntil(dateStr){ const today=new Date(todayDateString()+"T00:00:00+08:00"); const target=new Date(dateStr+"T00:00:00+08:00"); return Math.round((target-today)/(1000*60*60*24)); }
 function uid(prefix){ return prefix+"-"+Math.floor(1000+Math.random()*9000); }
 function greetingWord(){ const h=new Date().getHours(); return h<12?"Good morning":h<18?"Good afternoon":"Good evening"; }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
@@ -67,7 +98,19 @@ function logAudit(action, module, status="Success"){
   const user=state.currentUser;
   if(!user?.id || !user.name) return;
   const auditId=Date.now()*1000+Math.floor(Math.random()*1000);
-  AUDIT_LOGS.unshift({id:auditId,date:todayDateString(), time:manilaNow().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), user:user.name, userId:user.id, action, module, status});
+  const manilaStamp = manilaDateParts();
+  AUDIT_LOGS.unshift({
+    id:auditId,
+    date:manilaStamp.date,
+    time: new Intl.DateTimeFormat('en-US', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hour12:true }).format(new Date()),
+    user:user.name,
+    userId:user.id,
+    action,
+    module,
+    status,
+    timestamp: manilaStamp.iso,
+    createdAt: manilaStamp.iso,
+  });
   saveToClinicState();
 }
 let modalStack=[];

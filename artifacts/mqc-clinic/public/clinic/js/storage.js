@@ -17,19 +17,26 @@ function setSyncStatus(label, stateName="idle"){
 }
 
 function snapshotData(resetAuditLogs=false){
+  const normalizedAuditLogs = (AUDIT_LOGS || []).map(log => ({
+    ...log,
+    timestamp: log.timestamp || log.createdAt || `${log.date || todayDateString()}T${(log.time || '00:00').replace(' ', '')}:00+08:00`,
+    createdAt: log.createdAt || log.timestamp || `${log.date || todayDateString()}T${(log.time || '00:00').replace(' ', '')}:00+08:00`,
+    date: log.date || todayDateString(),
+    time: log.time || new Intl.DateTimeFormat('en-US', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hour12:true }).format(new Date()),
+  }));
   return {
     students: [...STUDENTS, ...DELETED_STUDENTS],
     medicines: MEDICINES,
     equipment: EQUIPMENT,
     consultations: CONSULTATIONS,
-    auditLogs: AUDIT_LOGS,
+    auditLogs: normalizedAuditLogs,
     deletedStudents: DELETED_STUDENTS,
     deletedUsers: DELETED_USERS,
     purged: PURGED_RECORDS,
     users: [...state.users, ...DELETED_USERS],
     settings: state.settings,
     resetAuditLogs,
-    savedAt: new Date().toISOString(),
+    savedAt: new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Manila' })).toISOString(),
   };
 }
 
