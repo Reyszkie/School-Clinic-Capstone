@@ -61,14 +61,13 @@ create table if not exists public.equipment (
   quantity integer not null default 0 check (quantity >= 0),
   condition text not null default 'Good' check (condition in ('Good', 'Fair', 'Poor')),
   last_maintenance_date date,
-  expiration_date date,
   status text not null default 'Available' check (status in ('Available', 'Under Maintenance', 'Damaged', 'Replacement Needed')),
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-alter table public.equipment add column if not exists expiration_date date;
+alter table public.equipment drop column if exists expiration_date;
 
 create table if not exists public.clinical_visits (
   id text primary key,
