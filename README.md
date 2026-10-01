@@ -235,7 +235,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Warning audit entry for permanent deletion.
 - Empty-state message for each category.
 
-### Settings and Data Management
+### Settings
 
 - Backup and Restore section.
 - Create Backup action.
@@ -246,10 +246,6 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Invalid-backup error message.
 - Restore of patients, consultations, medicines, equipment, users, and settings.
 - Backup-restored audit entry.
-- Clear Patient and Visit Data action.
-- Clear-data confirmation dialog.
-- Patient, visit, and audit-log clearing.
-- Inventory and user-account preservation when patient data is cleared.
 - About System panel.
 - Version and school-year display.
 
