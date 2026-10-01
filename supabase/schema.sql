@@ -76,7 +76,7 @@ create table if not exists public.clinical_visits (
   nurse_name text not null,
   visit_date date not null,
   visit_time text not null,
-  complaint text not null,``
+  complaint text not null,`
   description text,
   symptom_start text,
   pain_level text,
