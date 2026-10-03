@@ -408,6 +408,7 @@ tbody tr:hover{background:#F7FAFD;}
 .f-field textarea{resize:vertical;min-height:66px;}
 .f-field input:focus,.f-field select:focus,.f-field textarea:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(42,111,176,.1);}
 .f-field .req{color:var(--red);}
+.f-field .input-row{position:relative;}
 .option-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 14px;}
 .option-check{display:flex !important;align-items:center;gap:7px;margin:0 !important;font-size:12.5px !important;font-weight:500 !important;color:var(--ink) !important;min-width:0;}
 .option-check input{width:auto !important;flex:0 0 auto;}
