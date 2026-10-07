@@ -46,12 +46,104 @@ function inventoryItemKey(itemType,itemId){return `${itemType}:${itemId}`;}
 function recordInventoryTransaction(itemType,item,kind,quantity,date=todayDateString(),referenceId=""){
   const amount=Number(quantity);
   if(!Number.isFinite(amount)||amount===0)return;
-  INVENTORY_TRANSACTIONS.unshift({id:uid("INV"),itemType,itemId:itemType==="medicine"?item.code:item.id,itemName:item.name,kind,quantity:amount,date,referenceId,createdAt:new Date().toISOString()});
+  const transaction={id:uid("INV"),itemType,itemId:itemType==="medicine"?item.code:item.id,itemName:item.name,kind,quantity:amount,date,referenceId,createdAt:new Date().toISOString()};
+  INVENTORY_TRANSACTIONS.unshift(transaction);
+  return transaction;
 }
 function recordInventoryQuantityChange(itemType,item,previousQuantity,nextQuantity){
   const delta=Number(nextQuantity)-Number(previousQuantity);
   if(delta>0)recordInventoryTransaction(itemType,item,"added",delta);
   else if(delta<0)recordInventoryTransaction(itemType,item,"used",Math.abs(delta));
+}
+function captureInventoryState(){
+  return {
+    medicineQuantities:MEDICINES.map(item=>[item,Number(item.qty)||0]),
+    equipmentQuantities:EQUIPMENT.map(item=>[item,Number(item.qty)||0]),
+    transactions:INVENTORY_TRANSACTIONS.slice(),
+    auditLogs:AUDIT_LOGS.slice(),
+  };
+}
+function restoreInventoryState(snapshot){
+  snapshot.medicineQuantities.forEach(([item,quantity])=>{item.qty=quantity;});
+  snapshot.equipmentQuantities.forEach(([item,quantity])=>{item.qty=quantity;});
+  INVENTORY_TRANSACTIONS.splice(0,INVENTORY_TRANSACTIONS.length,...snapshot.transactions);
+  AUDIT_LOGS.splice(0,AUDIT_LOGS.length,...snapshot.auditLogs);
+}
+function inventoryItemForUsage(itemType,itemId){
+  return itemType==="medicine"
+    ? MEDICINES.find(item=>item.code===itemId)
+    : EQUIPMENT.find(item=>item.id===itemId);
+}
+function activeVisitInventoryTransactions(visitId){
+  const reversedIds=new Set(INVENTORY_TRANSACTIONS.filter(entry=>entry.kind==="reversed").map(entry=>entry.reversesTransactionId));
+  return INVENTORY_TRANSACTIONS.filter(entry=>entry.kind==="used"&&entry.referenceId===visitId&&!reversedIds.has(entry.id));
+}
+function visitInventoryRequirements(visit){
+  const requirements=new Map();
+  const add=(itemType,item,quantity)=>{
+    if(!item)return;
+    const key=inventoryItemKey(itemType,itemType==="medicine"?item.code:item.id);
+    const prior=requirements.get(key);
+    requirements.set(key,{itemType,itemId:itemType==="medicine"?item.code:item.id,item,quantity:Math.max(prior?.quantity||0,quantity)});
+  };
+  if(visit.medicine){
+    const medicine=MEDICINES.find(item=>item.name===visit.medicine);
+    if(medicine)add("medicine",medicine,Math.max(1,Number(visit.medQty)||1));
+    else{
+      const equipment=EQUIPMENT.find(item=>item.name===visit.medicine);
+      if(equipment)add("equipment",equipment,1);
+    }
+  }
+  (visit.equipmentUsed||[]).forEach(name=>{
+    const item=EQUIPMENT.find(candidate=>candidate.name===name);
+    if(item)add("equipment",item,1);
+  });
+  return [...requirements.values()];
+}
+function validateVisitInventoryUsage(visit,previousVisit=null){
+  const returning=new Map();
+  if(previousVisit)activeVisitInventoryTransactions(previousVisit.id).forEach(entry=>{
+    const key=inventoryItemKey(entry.itemType,entry.itemId);
+    returning.set(key,(returning.get(key)||0)+Number(entry.quantity||0));
+  });
+  for(const requirement of visitInventoryRequirements(visit)){
+    const available=(Number(requirement.item.qty)||0)+(returning.get(inventoryItemKey(requirement.itemType,requirement.itemId))||0);
+    if(requirement.item.deleted||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||available<requirement.quantity){
+      const label=requirement.itemType==="medicine"?`${requirement.item.name} ${requirement.item.unit||"unit(s)"}`:requirement.item.name;
+      throw new Error(`${label} has only ${available} available; ${requirement.quantity} required.`);
+    }
+  }
+}
+function applyVisitInventoryUsage(visit){
+  const requirements=visitInventoryRequirements(visit);
+  const active=activeVisitInventoryTransactions(visit.id);
+  for(const requirement of requirements){
+    const alreadyApplied=active.some(entry=>entry.itemType===requirement.itemType&&entry.itemId===requirement.itemId);
+    if(alreadyApplied)continue;
+    if(requirement.item.deleted||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||Number(requirement.item.qty)<requirement.quantity){
+      const available=Number(requirement.item.qty)||0;
+      throw new Error(`${requirement.item.name} has only ${available} available; ${requirement.quantity} required.`);
+    }
+  }
+  requirements.forEach(requirement=>{
+    if(active.some(entry=>entry.itemType===requirement.itemType&&entry.itemId===requirement.itemId))return;
+    requirement.item.qty=Number(requirement.item.qty)-requirement.quantity;
+    recordInventoryTransaction(requirement.itemType,requirement.item,"used",requirement.quantity,visit.date,visit.id);
+    logAudit(`Inventory Used — ${requirement.item.name} × ${requirement.quantity} for visit ${visit.id}`,"Inventory","Success",false);
+  });
+}
+function reverseVisitInventoryUsage(visit){
+  const active=activeVisitInventoryTransactions(visit.id);
+  active.forEach(entry=>{
+    const item=inventoryItemForUsage(entry.itemType,entry.itemId);
+    if(!item)return;
+    const quantity=Number(entry.quantity)||0;
+    item.qty=(Number(item.qty)||0)+quantity;
+    const reversal=recordInventoryTransaction(entry.itemType,item,"reversed",quantity,todayDateString(),visit.id);
+    if(reversal)reversal.reversesTransactionId=entry.id;
+    logAudit(`Inventory Restored — ${item.name} × ${quantity} from visit ${visit.id}`,"Inventory","Success",false);
+  });
+  return active.length;
 }
 function ensureInventoryLedger(){
   const known=new Set(INVENTORY_TRANSACTIONS.map(entry=>inventoryItemKey(entry.itemType,entry.itemId)));
@@ -81,19 +173,20 @@ function normalizeAuditTimestamp(log){
   return new Date(utcMs).toISOString();
 }
 
-function saveToClinicState(resetAuditLogs=false){
+function saveToClinicState(resetAuditLogs=false,throwOnError=false){
   localChangeVersion+=1;
   const payload=snapshotData(resetAuditLogs);
   setSyncStatus("Saving", "saving");
-  serverSaveChain=serverSaveChain.then(async()=>{
+  const saveOperation=serverSaveChain.then(async()=>{
     const response=await fetch(SHARED_STORAGE_URL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
     if(!response.ok){
       const result=await response.json().catch(()=>({}));
       throw new Error(result.message||`Supabase sync returned ${response.status}`);
     }
     setSyncStatus("Saved", "saved");
-  }).catch(err=>{setSyncStatus("Sync failed", "error");console.warn("MQC Clinic: shared storage is temporarily unavailable.",err);});
-  return serverSaveChain;
+  }).catch(err=>{setSyncStatus("Sync failed", "error");console.warn("MQC Clinic: shared storage is temporarily unavailable.",err);if(throwOnError)throw err;});
+  serverSaveChain=saveOperation.catch(()=>{});
+  return saveOperation;
 }
 
 function applyStoredData(data){

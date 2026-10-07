@@ -117,7 +117,7 @@ function toast(title, msg, type="ok"){
   wrap.appendChild(el);
   setTimeout(()=>{ el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3400);
 }
-function logAudit(action, module, status="Success"){
+function logAudit(action, module, status="Success", persist=true){
   const user=state.currentUser;
   const auditId=Date.now()*1000+Math.floor(Math.random()*1000);
   const manilaStamp = manilaDateParts();
@@ -133,7 +133,7 @@ function logAudit(action, module, status="Success"){
     timestamp: manilaStamp.iso,
     createdAt: manilaStamp.iso,
   });
-  saveToClinicState();
+  if(persist)saveToClinicState();
 }
 let modalStack=[];
 function openModal(html, size="", options={}){

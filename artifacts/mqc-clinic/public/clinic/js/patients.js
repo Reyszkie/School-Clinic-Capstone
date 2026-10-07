@@ -244,47 +244,62 @@ function openConsultationForm(student, existing=null){
   bindOptionFreeText("symptom-other",(f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
   bindOptionFreeText("assessment-other",f.assessmentOther||"");
   bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
+  let visitSaveInProgress=false;
   document.getElementById("cf-clear").onclick=()=>document.getElementById("consult-form").reset();
-  document.getElementById("cf-save").onclick=()=>{
+  document.getElementById("cf-save").onclick=async()=>{
+    if(visitSaveInProgress)return;
     const complaint=document.getElementById("cf-complaint").value;if(!complaint){toast("Missing information","Please select a reason for the clinic visit.","err");return;}
     const medName=document.getElementById("cf-medicine").value, medQty=parseInt(document.getElementById("cf-medqty").value)||1, med=MEDICINES.find(m=>m.name===medName);
     const previous=isEdit?CONSULTATIONS.find(c=>c.id===existing.id):null;
-    const previousMed=previous?.medicine?MEDICINES.find(m=>m.name===previous.medicine):null;
-    const availableQty=med ? med.qty + (previousMed?.name===med.name ? (Number(previous.medQty)||1) : 0) : 0;
-    if(med&&availableQty<medQty){toast("Insufficient stock",`${med.name} only has ${availableQty} ${med.unit}(s) available for this visit.`,"err");return;}
     ensureInventoryLedger();
     const symptoms=selectedChecks('[data-check-group="symptom"]'); const symptomOther=document.querySelector('[data-free-text="symptom-other"]')?.value.trim(); if(symptomOther)symptoms.push(`Other: ${symptomOther}`);
     const assessment=selectedChecks('[data-check-group="assessment"]')[0]||"";
     const assessmentOther=document.querySelector('[data-free-text="assessment-other"]')?.value.trim()||"";
     const interventions=selectedChecks('[data-check-group="intervention"]'); const interventionOther=document.querySelector('[data-free-text="intervention-other"]')?.value.trim(); if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,description:document.getElementById("cf-description").value,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:document.getElementById("cf-location").value,symptoms,knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:document.getElementById("cf-allergies").value,currentMedication:document.getElementById("cf-current-med").value,previousSimilar:document.getElementById("cf-previous").value,lastMeal:document.getElementById("cf-meal").value,weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment,assessmentOther,notes:document.getElementById("cf-notes").value,interventions,treatmentGiven:document.getElementById("cf-treatment")?.value||"",dosage:document.getElementById("cf-dosage").value,medicine:medName,medQty,outcome:document.getElementById("cf-outcome").value,releasedAt:document.getElementById("cf-released").value,remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
+    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,description:document.getElementById("cf-description").value,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:document.getElementById("cf-location").value,symptoms,knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:document.getElementById("cf-allergies").value,currentMedication:document.getElementById("cf-current-med").value,previousSimilar:document.getElementById("cf-previous").value,lastMeal:document.getElementById("cf-meal").value,weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment,assessmentOther,notes:document.getElementById("cf-notes").value,interventions,treatmentGiven:document.getElementById("cf-treatment")?.value||"",dosage:document.getElementById("cf-dosage").value,medicine:medName,medicineCode:med?.code||null,medQty,outcome:document.getElementById("cf-outcome").value,releasedAt:document.getElementById("cf-released").value,remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
     rec.respiratoryRate=document.getElementById("cf-respiratory-rate").value;
     const selectedEquipment=document.getElementById("cf-equipment").value;
     rec.equipmentUsed=selectedEquipment?[selectedEquipment]:(isEdit?(f.equipmentUsed||[]).filter(name=>!tools.some(item=>item.name===name)):[]);
-     if(isEdit){
-       if(previousMed){previousMed.qty+=Number(previous.medQty)||1;recordInventoryTransaction("medicine",previousMed,"adjustment",Number(previous.medQty)||1,todayDateString(),previous.id);}
-       if(med)med.qty=Math.max(0,med.qty-medQty);
-       if(med)recordInventoryTransaction("medicine",med,"used",medQty,rec.date,rec.id);
-       const revision=Number(previous.revision)||1;
-       rec.versionOf=previous.versionOf||previous.id;
-       rec.revision=revision+1;
-       rec.supersedesId=previous.id;
-       previous.status="Superseded";
-       previous.supersededBy=rec.id;
-       previous.supersededAt=new Date().toISOString();
-       CONSULTATIONS.unshift(rec);
-       logAudit(`Patient Visit Revised — ${previous.id} → ${rec.id}`,"Patient Visits");
-       toast("Visit revision saved",`Created new record ${rec.id}; the original remains available in Visit History.`,"ok");
-     }
-     else{
-       rec.revision=1;
-       CONSULTATIONS.unshift(rec);
-       if(med)med.qty=Math.max(0,med.qty-medQty);
-      if(med)recordInventoryTransaction("medicine",med,"used",medQty,rec.date,rec.id);
-       logAudit(`Patient Visit Saved — ${rec.id}`,"Patient Visits");
-       toast("Visit saved",`Recorded visit for ${student.name}.`,"ok");
-     }
-    saveToClinicState();closeModal();renderPage();
+    const saveButton=document.getElementById("cf-save");
+    let inventorySnapshot=null,visitsSnapshot=null,previousSnapshot=null;
+    try{
+      validateVisitInventoryUsage(rec,previous);
+      inventorySnapshot=captureInventoryState();
+      visitsSnapshot=CONSULTATIONS.slice();
+      previousSnapshot=previous?{...previous}:null;
+      visitSaveInProgress=true;
+      saveButton.disabled=true;
+      if(isEdit){
+        reverseVisitInventoryUsage(previous);
+        const revision=Number(previous.revision)||1;
+        rec.versionOf=previous.versionOf||previous.id;
+        rec.revision=revision+1;
+        rec.supersedesId=previous.id;
+        previous.status="Superseded";
+        previous.supersededBy=rec.id;
+        previous.supersededAt=new Date().toISOString();
+      }else rec.revision=1;
+      applyVisitInventoryUsage(rec);
+      CONSULTATIONS.unshift(rec);
+      if(isEdit){
+        logAudit(`Patient Visit Revised — ${previous.id} → ${rec.id}`,"Patient Visits","Success",false);
+      }else{
+        logAudit(`Patient Visit Saved — ${rec.id}`,"Patient Visits","Success",false);
+      }
+      await saveToClinicState(false,true);
+      if(isEdit)toast("Visit revision saved",`Created new record ${rec.id}; the original remains available in Visit History.`,"ok");
+      else toast("Visit saved",`Recorded visit for ${student.name}.`,"ok");
+      closeModal();renderPage();
+    }catch(error){
+      if(inventorySnapshot){
+        restoreInventoryState(inventorySnapshot);
+        CONSULTATIONS.splice(0,CONSULTATIONS.length,...visitsSnapshot);
+        if(previous&&previousSnapshot)Object.assign(previous,previousSnapshot);
+      }
+      visitSaveInProgress=false;
+      saveButton.disabled=false;
+      toast("Visit not saved",error.message||"The visit could not be saved because inventory could not be updated.","err");
+    }
   };
 }
 
@@ -351,8 +366,8 @@ function bindConsultHistory(){
    document.querySelectorAll("[data-view-consult]").forEach(b=>b.onclick=()=>viewConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.viewConsult)));
   document.querySelectorAll("[data-print]").forEach(b=>b.onclick=()=>printConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.print)));
   document.querySelectorAll("[data-edit-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.editConsult);openConsultationForm(STUDENTS.find(s=>s.id===c.studentId)||{id:c.studentId,name:c.studentName},c);});
-  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:()=>{c.deleted=true;logAudit(`Record Deleted — Patient Visit ${c.id}`,"Patient Visits","Warning");saveToClinicState();toast("Visit deleted",`Record ${c.id} moved to Deleted Records.`,"warn");rerender();}});});
-  document.querySelectorAll("[data-restore-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.restoreConsult);c.deleted=false;logAudit(`Record Restored — Patient Visit ${c.id}`,"Patient Visits");saveToClinicState();rerender();});
+  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:async()=>{const snapshot=captureInventoryState(),wasDeleted=c.deleted;try{reverseVisitInventoryUsage(c);c.deleted=true;logAudit(`Record Deleted — Patient Visit ${c.id}`,"Patient Visits","Warning",false);await saveToClinicState(false,true);toast("Visit deleted",`Record ${c.id} moved to Deleted Records; used inventory was restored.`,"warn");rerender();}catch(error){restoreInventoryState(snapshot);c.deleted=wasDeleted;toast("Visit not deleted",error.message||"The visit and inventory changes could not be saved.","err");}}});});
+  document.querySelectorAll("[data-restore-consult]").forEach(b=>b.onclick=async()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.restoreConsult),snapshot=captureInventoryState(),wasDeleted=c.deleted,previousStatus=c.status;try{validateVisitInventoryUsage(c);applyVisitInventoryUsage(c);c.deleted=false;if(c.status==="Deleted")c.status="Active";logAudit(`Record Restored — Patient Visit ${c.id}`,"Patient Visits","Success",false);await saveToClinicState(false,true);rerender();}catch(error){restoreInventoryState(snapshot);c.deleted=wasDeleted;c.status=previousStatus;toast("Visit not restored",error.message||"The visit cannot be restored because inventory or database save failed.","err");}});
 }
 
 function renderConsultTabBody(){const body=document.getElementById("consult-body");if(state.consultTab==="search"){body.innerHTML=renderConsultSearchTab();bindConsultSearch();}else{body.innerHTML=renderConsultHistory();bindConsultHistory();}}
