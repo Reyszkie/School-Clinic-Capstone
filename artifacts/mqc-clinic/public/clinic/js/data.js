@@ -99,6 +99,7 @@ let EQUIPMENT = [
   {id:"EQP-018",name:"Hand Sanitizer",qty:32,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
   {id:"EQP-019",name:"Disposable Face Masks",qty:600,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
   {id:"EQP-020",name:"Gloves (Nitrile, Medium)",qty:250,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
+  {id:"EQP-021",name:"Nebulizer",qty:1,condition:"Good",lastMaint:"2026-10-07",status:"Available",deleted:false},
 ];
 
 const COMPLAINTS = ["Headache","Fever","Dizziness","Stomachache","Nausea/Vomiting","Injury","Cough/Cold","Difficulty Breathing","Menstrual Pain","Weakness/Fatigue"];

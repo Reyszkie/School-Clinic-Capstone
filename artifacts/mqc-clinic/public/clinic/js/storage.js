@@ -113,6 +113,13 @@ function applyStoredData(data){
     const equipmentCount=EQUIPMENT.length;
     movedTools.forEach((m,index)=>{if(!existingEquipmentNames.has(m.name)){EQUIPMENT.push({id:`EQP-${String(equipmentCount+index+1).padStart(3,"0")}`,name:m.name,qty:m.qty,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:m.deleted});migratedInventory=true;}});
   }
+  if(!EQUIPMENT.some(item=>item.name.trim().toLowerCase()==="nebulizer")){
+    const usedIds=new Set(EQUIPMENT.map(item=>item.id));
+    let nextId=1;
+    while(usedIds.has(`EQP-${String(nextId).padStart(3,"0")}`))nextId++;
+    EQUIPMENT.push({id:`EQP-${String(nextId).padStart(3,"0")}`,name:"Nebulizer",qty:1,condition:"Good",lastMaint:todayDateString(),status:"Available",deleted:false});
+    migratedInventory=true;
+  }
   if(Array.isArray(data.consultations)) CONSULTATIONS = data.consultations;
   if(Array.isArray(data.auditLogs)) AUDIT_LOGS = data.auditLogs;
   if(Array.isArray(data.deletedStudents)) DELETED_STUDENTS = data.deletedStudents;
