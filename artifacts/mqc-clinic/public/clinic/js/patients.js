@@ -319,7 +319,7 @@ function openConsultationForm(student, existing=null){
       }else{
         logAudit(`Patient Visit Saved — ${rec.id}`,"Patient Visits","Success",false);
       }
-      await saveToClinicState(false,true);
+      await saveVisitToClinicState([rec.id,previous?.id],inventorySnapshot);
       if(isEdit)toast("Visit revision saved",`Created new record ${rec.id}; the original remains available in Visit History.`,"ok");
       else toast("Visit saved",`Recorded visit for ${student.name}.`,"ok");
       closeModal();renderPage();

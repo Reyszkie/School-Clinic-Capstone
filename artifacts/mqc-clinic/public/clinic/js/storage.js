@@ -179,9 +179,8 @@ function normalizeAuditTimestamp(log){
   return new Date(utcMs).toISOString();
 }
 
-function saveToClinicState(resetAuditLogs=false,throwOnError=false){
+function queueClinicStateSave(payload,throwOnError=false){
   localChangeVersion+=1;
-  const payload=snapshotData(resetAuditLogs);
   setSyncStatus("Saving", "saving");
   const saveOperation=serverSaveChain.then(async()=>{
     const response=await fetch(SHARED_STORAGE_URL,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -193,6 +192,22 @@ function saveToClinicState(resetAuditLogs=false,throwOnError=false){
   }).catch(err=>{setSyncStatus("Sync failed", "error");console.warn("MQC Clinic: shared storage is temporarily unavailable.",err);if(throwOnError)throw err;});
   serverSaveChain=saveOperation.catch(()=>{});
   return saveOperation;
+}
+
+function saveToClinicState(resetAuditLogs=false,throwOnError=false){
+  return queueClinicStateSave(snapshotData(resetAuditLogs),throwOnError);
+}
+
+function saveVisitToClinicState(visitIds,inventorySnapshot){
+  const payload=snapshotData();
+  const previousAuditIds=new Set(inventorySnapshot.auditLogs.map(log=>String(log.id)));
+  payload.visitMutation={
+    visitIds:visitIds.filter(Boolean),
+    medicineCodes:inventorySnapshot.medicineQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.code),
+    equipmentIds:inventorySnapshot.equipmentQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.id),
+    auditIds:AUDIT_LOGS.filter(log=>!previousAuditIds.has(String(log.id))).map(log=>log.id),
+  };
+  return queueClinicStateSave(payload,true);
 }
 
 function applyStoredData(data){

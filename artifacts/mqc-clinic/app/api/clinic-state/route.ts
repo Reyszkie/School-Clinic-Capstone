@@ -571,6 +571,44 @@ export async function PUT(request: Request) {
 
   try {
     const snapshot = state as Record<string, unknown>;
+    const visitMutation = snapshot.visitMutation && typeof snapshot.visitMutation === "object"
+      ? snapshot.visitMutation as Record<string, unknown>
+      : null;
+
+    if (visitMutation) {
+      const visitIds = new Set(Array.isArray(visitMutation.visitIds) ? visitMutation.visitIds.map(String) : []);
+      const medicineCodes = new Set(Array.isArray(visitMutation.medicineCodes) ? visitMutation.medicineCodes.map(String) : []);
+      const equipmentIds = new Set(Array.isArray(visitMutation.equipmentIds) ? visitMutation.equipmentIds.map(String) : []);
+      const auditIds = new Set(Array.isArray(visitMutation.auditIds) ? visitMutation.auditIds.map(String) : []);
+      const visits = Array.isArray(snapshot.consultations) ? snapshot.consultations as Array<Record<string, unknown>> : [];
+      const medicines = Array.isArray(snapshot.medicines) ? snapshot.medicines as Array<Record<string, unknown>> : [];
+      const equipment = Array.isArray(snapshot.equipment) ? snapshot.equipment as Array<Record<string, unknown>> : [];
+      const auditLogs = Array.isArray(snapshot.auditLogs) ? snapshot.auditLogs as Array<Record<string, unknown>> : [];
+      const affectedVisits = visits.filter(row => visitIds.has(String(row.id)));
+      const affectedMedicines = medicines.filter(row => medicineCodes.has(String(row.code)));
+      const affectedEquipment = equipment.filter(row => equipmentIds.has(String(row.id)));
+      const affectedAuditLogs = auditLogs.filter(row => auditIds.has(String(row.id)));
+
+      if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
+      if (affectedMedicines.length !== medicineCodes.size) throw new Error("A medicine inventory record for this save could not be found.");
+      if (affectedEquipment.length !== equipmentIds.size) throw new Error("An equipment inventory record for this save could not be found.");
+
+      const { visitMutation: _visitMutation, ...clinicSnapshot } = snapshot;
+      const auditRows = affectedAuditLogs.map((row, index) => normalizeAuditLogRow(row, index));
+      const [snapshotResponse] = await Promise.all([
+        supabaseRequest("clinic_state", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ id: clinicStateId, state: clinicSnapshot }),
+        }),
+        upsertTableRows("clinical_visits", "id", affectedVisits.map(normalizeVisitRow)),
+        upsertTableRows("medicines", "code", affectedMedicines.map(normalizeMedicineRow)),
+        upsertTableRows("equipment", "id", affectedEquipment.map(normalizeEquipmentRow)),
+        upsertTableRows("audit_logs", "id", auditRows),
+      ]);
+      if (!snapshotResponse.ok) throw new Error(`clinic_state snapshot returned ${snapshotResponse.status}`);
+      return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
 
     if (Array.isArray(snapshot.students)) {
       await upsertTableRows("patients", "id", snapshot.students.map((row) => normalizePatientRow(row as Record<string, unknown>)));
