@@ -7,7 +7,6 @@ function renderConsultation(){
 }
 
 function renderConsultSearchTab(){
-  const s=state.selectedStudent;
   return `<div class="card"><div class="toolbar">
     <div class="search-box"><span class="ic">${ICONS.search}</span><input id="stu-search" type="text" placeholder="Search by Student ID, name, course, or year/grade..."></div>
     <select class="select-sm patient-level-filter" id="stu-department-filter" aria-label="Filter by education level">
@@ -21,7 +20,7 @@ function renderConsultSearchTab(){
     <select class="select-sm hidden" id="stu-course-filter"><option value="">All Courses / Sections</option>${courseOptionsHtml("")}</select>
     <button class="btn btn-teal" id="add-student-btn">${ICONS.plus} Add New Patient</button>
   </div><div class="table-wrap"><table><thead><tr><th>Student ID</th><th>Name</th><th>Course / Section / Strand</th><th>Year / Grade</th><th>Sex</th><th></th></tr></thead>
-    <tbody id="stu-tbody"></tbody></table></div></div>${s?renderStudentDetail(s):""}`;
+    <tbody id="stu-tbody"></tbody></table></div></div>`;
 }
 
 function studentTableRows(list){
@@ -56,10 +55,10 @@ function renderStudentClinicalRecords(student){
     <tbody>${rows}</tbody></table></div></div>`;
 }
 
-function renderStudentDetail(s){
+function renderStudentDetail(s, inModal=false){
   const displayName=s.name||[s.lastName,s.firstName,s.middleInitial].filter(Boolean).join(", ");
   const initials=displayName.split(/[\s,]+/).filter(Boolean).map(x=>x[0]).slice(0,2).join("");
-  return `<div class="card" style="margin-top:16px;"><div class="student-card">
+  return `<div class="${inModal?"student-detail-content":"card"}" ${inModal?"":"style=\"margin-top:16px;\""}><div class="student-card">
     <div class="s-avatar">${escapeHtml(initials)}</div><div style="flex:1"><h3 style="font-size:19px">${escapeHtml(displayName)}</h3>
       <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.id)} · ${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</div></div>
     <button class="btn" id="edit-student-btn">${ICONS.edit} Edit Profile</button>
@@ -151,17 +150,31 @@ function openStudentForm(existing=null){
 }
 
 function bindSelectButtons(){
-  document.querySelectorAll("[data-select-stu]").forEach(b=>b.onclick=()=>{state.selectedStudent=STUDENTS.find(s=>s.id===b.dataset.selectStu);renderConsultTabBody();});
+  document.querySelectorAll("[data-select-stu]").forEach(b=>b.onclick=()=>openStudentDetailModal(STUDENTS.find(s=>s.id===b.dataset.selectStu)));
   document.querySelectorAll("[data-del-stu]").forEach(b=>b.onclick=()=>deleteStudent(STUDENTS.find(s=>s.id===b.dataset.delStu)));
-  const open=document.getElementById("open-consult-form"); if(open) open.onclick=()=>openConsultationForm(state.selectedStudent);
-  const edit=document.getElementById("edit-student-btn"); if(edit) edit.onclick=()=>openStudentForm(state.selectedStudent);
-  const del=document.getElementById("delete-student-btn"); if(del) del.onclick=()=>deleteStudent(state.selectedStudent);
-  document.querySelectorAll("[data-view-student-consult]").forEach(b=>b.onclick=()=>{
-    viewConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.viewStudentConsult));
+}
+
+function openStudentDetailModal(student){
+  if(!student)return;
+  state.selectedStudent=student;
+  openModal(`<div class="modal-head"><h3 id="student-detail-modal-title">Patient Details</h3><button class="modal-close" onclick="closeModal()" aria-label="Close patient details">${ICONS.x}</button></div><div class="modal-body">${renderStudentDetail(student,true)}</div>`,"patient-detail-modal",{closeOnBackdrop:true});
+  bindStudentDetailActions(student,modalStack[modalStack.length-1]);
+}
+
+function bindStudentDetailActions(student,root=document){
+  const find=(selector)=>root.querySelector(selector);
+  const open=document.getElementById("open-consult-form"); if(open)open.onclick=()=>{closeModal();openConsultationForm(student);};
+  const edit=find("#edit-student-btn"); if(edit)edit.onclick=()=>{closeModal();openStudentForm(student);};
+  const del=find("#delete-student-btn"); if(del)del.onclick=()=>{closeModal();deleteStudent(student);};
+  root.querySelectorAll("[data-view-student-consult]").forEach(button=>button.onclick=()=>{
+    const visit=CONSULTATIONS.find(record=>record.id===button.dataset.viewStudentConsult);
+    closeModal();
+    viewConsultation(visit);
   });
-  document.querySelectorAll("[data-edit-student-consult]").forEach(b=>b.onclick=()=>{
-    const c=CONSULTATIONS.find(x=>x.id===b.dataset.editStudentConsult);
-    if(c) openConsultationForm(state.selectedStudent,c);
+  root.querySelectorAll("[data-edit-student-consult]").forEach(button=>button.onclick=()=>{
+    const visit=CONSULTATIONS.find(record=>record.id===button.dataset.editStudentConsult);
+    closeModal();
+    if(visit)openConsultationForm(student,visit);
   });
 }
 

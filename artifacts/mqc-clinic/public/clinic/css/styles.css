@@ -465,6 +465,7 @@ tbody tr:hover{background:#F7FAFD;}
 
 .modal-backdrop{position:fixed;inset:0;background:rgba(11,28,54,.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;backdrop-filter:blur(2px);}
 .modal{background:#fff;border-radius:16px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 30px 60px -20px rgba(0,0,0,.4);}
+.modal.patient-detail-modal{max-width:980px;}
 .modal.sm{max-width:420px;}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2;}
 .modal-head h3{font-size:17px;}
@@ -592,6 +593,7 @@ tr[data-view-visitor],tr[data-open-slip]{cursor:default;}
   .option-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;}
   .modal-backdrop{padding:10px;}
   .modal{max-height:calc(100dvh - 20px);border-radius:14px;}
+  .modal.patient-detail-modal{max-width:100%;}
   .modal-body{padding:16px;}
   .modal-head{padding:15px 16px;}
   .modal-foot{padding:13px 16px;flex-wrap:wrap;}
