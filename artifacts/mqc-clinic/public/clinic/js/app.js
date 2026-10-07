@@ -12,7 +12,7 @@ function bindLeaveWarning(){
 
 function render(){
   const app=document.getElementById('app');
-  document.documentElement.dataset.theme=state.settings.appearanceTheme||"ocean";
+  applyClinicTheme();
   bindLeaveWarning();
   if(!state.loggedIn){ app.innerHTML = renderLogin(); attachLoginEvents(); return; }
   app.innerHTML = renderShell();

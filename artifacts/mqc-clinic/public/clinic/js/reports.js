@@ -55,43 +55,11 @@ function previousMonthKey(month){
 function reportMonthLabel(month){
   return new Intl.DateTimeFormat("en",{month:"long",year:"numeric",timeZone:"Asia/Manila"}).format(new Date(`${month}-01T00:00:00+08:00`));
 }
-function inventoryMovementDelta(transaction){
-  const quantity=Number(transaction.quantity)||0;
-  if(transaction.kind==="added")return quantity;
-  if(transaction.kind==="used")return -quantity;
-  if(transaction.kind==="adjustment")return quantity;
-  return 0;
+function currentMedicineInventory(){
+  return MEDICINES.filter(item=>!item.deleted).map(item=>({item,status:medStatus(item).label})).sort((a,b)=>a.item.name.localeCompare(b.item.name));
 }
-function reportMonthEnd(month){
-  const [year,monthNumber]=month.split("-").map(Number);
-  const day=new Date(Date.UTC(year,monthNumber,0)).getUTCDate();
-  return `${month}-${String(day).padStart(2,"0")}`;
-}
-function monthlyInventoryRows(itemType,month){
-  const start=`${month}-01`,monthEnd=reportMonthEnd(month);
-  const cutoff=monthEnd>todayDateString()?todayDateString():monthEnd;
-  const items=itemType==="medicine"?MEDICINES:EQUIPMENT;
-  return items.map(item=>{
-    const itemId=itemType==="medicine"?item.code:item.id;
-    const transactions=INVENTORY_TRANSACTIONS.filter(entry=>entry.itemType===itemType&&entry.itemId===itemId).sort((a,b)=>a.date.localeCompare(b.date));
-    const baseline=transactions.find(entry=>entry.kind==="baseline");
-    const additions=transactions.filter(entry=>entry.date>=start&&entry.date<=cutoff&&entry.kind==="added").reduce((sum,entry)=>sum+(Number(entry.quantity)||0),0);
-    const used=transactions.filter(entry=>entry.date>=start&&entry.date<=cutoff&&entry.kind==="used").reduce((sum,entry)=>sum+(Number(entry.quantity)||0),0);
-    const adjustment=transactions.filter(entry=>entry.date>=start&&entry.date<=cutoff&&entry.kind==="adjustment").reduce((sum,entry)=>sum+(Number(entry.quantity)||0),0);
-    if(baseline){
-      if(baseline.date>cutoff)return {item,beginning:null,ending:null,used,additions,adjustment,partial:true};
-      const afterBaseline=transactions.filter(entry=>entry.kind!=="baseline"&&entry.date>=baseline.date);
-      const beginning=baseline.date<start?Number(baseline.quantity||0)+afterBaseline.filter(entry=>entry.date<start).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0):null;
-      const ending=Number(baseline.quantity||0)+afterBaseline.filter(entry=>entry.date<=cutoff).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0);
-      return {item,beginning,ending,used,additions,adjustment,partial:beginning===null};
-    }
-    const firstMovement=transactions.find(entry=>entry.kind!=="baseline");
-    if(!firstMovement||firstMovement.date>cutoff)return {item,beginning:null,ending:null,used,additions,adjustment,partial:true};
-    const movements=transactions.filter(entry=>entry.kind!=="baseline");
-    const beginning=movements.filter(entry=>entry.date<start).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0);
-    const ending=movements.filter(entry=>entry.date<=cutoff).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0);
-    return {item,beginning,ending,used,additions,adjustment,partial:false};
-  });
+function currentEquipmentInventory(){
+  return EQUIPMENT.filter(item=>!item.deleted).sort((a,b)=>a.name.localeCompare(b.name));
 }
 function monthlyReportData(month){
   const visits=reportVisits().filter(visit=>!visit.deleted&&visit.status!=="Superseded"&&visit.date?.slice(0,7)===month);
@@ -108,15 +76,12 @@ function monthlyReportData(month){
     reasons:Object.entries(reasons).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
     medicines:Object.entries(medicines).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
     equipment:Object.entries(equipment).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
-    medicineInventory:monthlyInventoryRows("medicine",month),
-    equipmentInventory:monthlyInventoryRows("equipment",month),
+    medicineInventory:currentMedicineInventory(),
+    equipmentInventory:currentEquipmentInventory(),
   };
 }
 function monthlyTable(headers,rows,emptyText="No records for this month."){
   return `<div class="table-wrap"><table class="monthly-report-table"><thead><tr>${headers.map(header=>`<th>${header}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.join(""):`<tr><td colspan="${headers.length}">${emptyText}</td></tr>`}</tbody></table></div>`;
-}
-function inventoryTableRows(rows){
-  return rows.map(row=>`<tr><td>${escapeHtml(row.item.name)}${row.item.deleted?" (Deleted)":""}</td><td>${row.beginning===null?"Not tracked":row.beginning}</td><td>${row.used}</td><td>${row.additions}</td><td>${row.adjustment>0?`+${row.adjustment}`:row.adjustment}</td><td>${row.ending===null?"Not tracked":row.ending}</td></tr>`);
 }
 function monthlyReportHtml(month){
   const data=monthlyReportData(month),monthLabel=reportMonthLabel(month);
@@ -124,18 +89,14 @@ function monthlyReportHtml(month){
   const reasons=data.reasons.map(([reason,count])=>`<tr><td>${escapeHtml(reason)}</td><td>${count}</td></tr>`);
   const medicineUse=data.medicines.map(([name,count])=>`<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`);
   const equipmentUse=data.equipment.map(([name,count])=>`<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`);
-  const firstBaseline=INVENTORY_TRANSACTIONS.filter(entry=>entry.kind==="baseline").map(entry=>entry.date).sort()[0];
-  const monthEnd=reportMonthEnd(month),cutoff=monthEnd>todayDateString()?todayDateString():monthEnd;
-  const monthStart=`${month}-01`;
-  const ledgerMessage=firstBaseline
-    ? `Stock movement tracking began ${fmtDate(firstBaseline)}. ${firstBaseline>=monthStart?"Opening balances for this month are not fully available; values are marked Not tracked where history is incomplete.":`Inventory quantities are shown through ${fmtDate(cutoff)}.`}`
-    : "No inventory movement history is available yet.";
+  const medicineInventoryRows=data.medicineInventory.map(({item,status})=>`<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category||"—")}</td><td>${Number(item.qty)||0}</td><td>${escapeHtml(item.unit||"—")}</td><td>${escapeHtml(status)}</td></tr>`);
+  const equipmentInventoryRows=data.equipmentInventory.map(item=>`<tr><td>${escapeHtml(item.name)}</td><td>${Number(item.qty)||0}</td><td>${escapeHtml(item.condition||"—")}</td><td>${escapeHtml(item.status||"—")}</td></tr>`);
   return `<div class="monthly-report-content">
     <div class="monthly-report-kpis"><div class="monthly-report-stat"><span>Total Clinic Visits</span><strong>${data.visits.length}</strong></div><div class="monthly-report-stat"><span>Previous Month</span><strong>${data.previousMonthVisits}</strong></div></div>
     <section class="monthly-report-block"><h5>Most Frequent Visitors</h5>${monthlyTable(["Student / Patient","Year Level","Section / Course","Visits"],visitors)}</section>
     <section class="monthly-report-block"><h5>Common Reasons for Clinic Visits</h5>${monthlyTable(["Reason / Symptom","Occurrences"],reasons)}</section>
-    <section class="monthly-report-block"><h5>Medicine Inventory Before and After</h5><p class="inventory-report-note">${ledgerMessage} Adjustments are included separately in the ending balance.</p>${monthlyTable(["Medicine","Beginning Qty","Qty Used","Added / Restocked","Adjustment","Ending Qty"],inventoryTableRows(data.medicineInventory),"No medicine inventory records.")}</section>
-    <section class="monthly-report-block"><h5>Equipment &amp; Medical Tools Inventory Before and After</h5><p class="inventory-report-note">${ledgerMessage} Visit tool counts below represent recorded uses; on-hand stock changes are recorded in inventory.</p>${monthlyTable(["Equipment / Tool","Beginning Qty","Qty Used","Added","Adjustment","Ending Qty"],inventoryTableRows(data.equipmentInventory),"No equipment inventory records.")}</section>
+    <section class="monthly-report-block"><h5>Medicine Inventory</h5><p class="inventory-report-note">Current medicine stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Medicine","Category","Current Qty","Unit","Status"],medicineInventoryRows,"No medicine inventory records.")}</section>
+    <section class="monthly-report-block"><h5>Equipment &amp; Medical Tools</h5><p class="inventory-report-note">Current equipment and medical tool stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Equipment / Tool","Current Qty","Condition","Status"],equipmentInventoryRows,"No equipment inventory records.")}</section>
     <section class="monthly-report-block"><h5>Most Frequently Used Medicines / Treatments</h5>${monthlyTable(["Medicine / Treatment","Uses"],medicineUse)}</section>
     <section class="monthly-report-block"><h5>Most Frequently Used Equipment &amp; Medical Tools</h5>${monthlyTable(["Equipment / Tool","Uses"],equipmentUse)}</section>
     <p class="monthly-report-footnote">${monthLabel} · ${data.visits.length} active visit record(s)</p>

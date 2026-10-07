@@ -7,12 +7,7 @@ function renderSettings(){
   const appearanceTheme=state.settings.appearanceTheme||"ocean";
   return `<div class="card settings-appearance"><div class="panel-title"><h4>Theme &amp; Appearance</h4></div>
       <div class="appearance-setting"><div><b>Color theme</b><p>Choose a readable color palette for the clinic workspace.</p></div>
-        <select id="appearance-theme" aria-label="Color theme">
-          <option value="ocean" ${appearanceTheme==="ocean"?"selected":""}>Ocean</option>
-          <option value="forest" ${appearanceTheme==="forest"?"selected":""}>Forest</option>
-          <option value="berry" ${appearanceTheme==="berry"?"selected":""}>Berry</option>
-          <option value="terracotta" ${appearanceTheme==="terracotta"?"selected":""}>Terracotta</option>
-        </select>
+        <select id="appearance-theme" aria-label="Color theme">${CLINIC_THEMES.map(theme=>`<option value="${theme.id}" ${appearanceTheme===theme.id?"selected":""}>${theme.label}</option>`).join("")}</select>
       </div>
     </div><div class="grid grid-2">
     <div class="card"><div class="panel-title"><h4>Backup & Restore</h4></div>
@@ -25,8 +20,7 @@ function renderSettings(){
 }
 function bindSettings(){
   document.getElementById("appearance-theme")?.addEventListener("change",event=>{
-    state.settings.appearanceTheme=event.target.value;
-    document.documentElement.dataset.theme=state.settings.appearanceTheme;
+    applyClinicTheme(event.target.value);
     try{window.localStorage.setItem("mqc_clinic_appearance_theme_v1",state.settings.appearanceTheme);}catch{}
     saveToClinicState();
     toast("Appearance updated","Your color theme has been saved.","ok");

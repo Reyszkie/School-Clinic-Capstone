@@ -1,4 +1,16 @@
 /* ================= STATE ================= */
+const CLINIC_THEMES=[
+  {id:"ocean",label:"Ocean"},
+  {id:"forest",label:"Forest"},
+  {id:"berry",label:"Berry"},
+  {id:"terracotta",label:"Terracotta"},
+  {id:"lagoon",label:"Lagoon"},
+  {id:"sage",label:"Sage"},
+  {id:"cobalt",label:"Cobalt"},
+  {id:"cranberry",label:"Cranberry"},
+  {id:"amber",label:"Amber"},
+  {id:"graphite",label:"Graphite"},
+];
 const state = {
   loggedIn:false,
   currentUser:null,
@@ -26,8 +38,14 @@ const state = {
 };
 try{
   const savedTheme=window.localStorage.getItem("mqc_clinic_appearance_theme_v1");
-  if(["ocean","forest","berry","terracotta"].includes(savedTheme))state.settings.appearanceTheme=savedTheme;
+  if(CLINIC_THEMES.some(theme=>theme.id===savedTheme))state.settings.appearanceTheme=savedTheme;
 }catch{}
+function applyClinicTheme(theme=state.settings.appearanceTheme){
+  const selected=CLINIC_THEMES.some(option=>option.id===theme)?theme:"ocean";
+  state.settings.appearanceTheme=selected;
+  document.documentElement.dataset.theme=selected;
+  return selected;
+}
 
 /* ================= UTIL ================= */
 function manilaNow(){
