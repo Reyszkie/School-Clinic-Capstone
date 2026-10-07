@@ -10,6 +10,7 @@ const NAV = [
 ];
 let clockTimer = null;
 let logoutConfirmationOpen = false;
+let logoutTransitionRunning = false;
 function manilaDateTime(){
   return new Intl.DateTimeFormat('en-PH',{
     timeZone:'Asia/Manila',
@@ -91,14 +92,29 @@ function attachShellEvents(){
     btn.onclick=()=>{ state.page=btn.dataset.nav; state.sidebarOpen=false; render(); };
   });
   document.getElementById('logout-btn').onclick=()=>{
-    if(logoutConfirmationOpen)return;
+    if(logoutConfirmationOpen||logoutTransitionRunning)return;
     logoutConfirmationOpen=true;
     confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, loadingLabel:"Signing out...", onCancel:()=>{logoutConfirmationOpen=false;}, onConfirm:()=>{
+      logoutTransitionRunning=true;
       logAudit("Logout","Authentication","Success",false);
       fetch('/api/auth/logout',{method:'POST'}).catch(error=>console.error('MQC Clinic: could not clear the server session cookie.',error));
       clearAuthSession();
-      state.loggedIn=false; state.currentUser=null; state.page="dashboard"; render();
-      logoutConfirmationOpen=false;
+      state.loggedIn=false; state.currentUser=null; state.page="dashboard";
+      document.getElementById('app').classList.add('logout-exit');
+      const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.setTimeout(()=>{
+        render();
+        const app=document.getElementById('app');
+        app.classList.remove('logout-exit');
+        app.classList.add('login-enter');
+        const finishTransition=()=>{
+          app.classList.remove('login-enter');
+          logoutTransitionRunning=false;
+        };
+        app.querySelector('.login-page')?.addEventListener('animationend',finishTransition,{once:true});
+        window.setTimeout(finishTransition,reduceMotion?0:260);
+        logoutConfirmationOpen=false;
+      },reduceMotion?0:120);
     }});
   };
   document.getElementById('menu-toggle').onclick=()=>{

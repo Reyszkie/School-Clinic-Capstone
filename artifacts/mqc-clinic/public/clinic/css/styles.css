@@ -81,6 +81,13 @@ input,select,textarea{font-family:inherit;}
 
 /* ---------- App shell ---------- */
 #app{min-height:100vh;}
+#app.logout-exit .shell{animation:logoutShellOut .12s ease-in both;pointer-events:none;}
+#app.login-enter .login-page{animation:loginPageIn .19s ease-out both;}
+@keyframes logoutShellOut{to{opacity:0;transform:translateY(5px);}}
+@keyframes loginPageIn{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:translateY(0);}}
+@media(prefers-reduced-motion:reduce){
+  #app.logout-exit .shell,#app.login-enter .login-page{animation:none;}
+}
 .hidden{display:none !important;}
 
 /* ---------- Login ---------- */
