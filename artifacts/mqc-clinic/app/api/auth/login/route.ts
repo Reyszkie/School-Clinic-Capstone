@@ -1,3 +1,5 @@
+import { createClinicSessionCookie } from "../session";
+
 export const dynamic = "force-dynamic";
 
 function authEmail(username: string) {
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
     });
     if (!response.ok && response.status !== 404) throw new Error(`Supabase returned ${response.status}`);
     const users = (await response.json()) as Array<Record<string, string>>;
-    if (users[0]) return Response.json(users[0], { headers: { "Cache-Control": "no-store" } });
+    if (users[0]) return Response.json(users[0], { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(users[0].id, users[0].name) } });
 
     const profileResponse = await fetch(`${url}/rest/v1/clinic_users?username=eq.${encodeURIComponent(username)}&select=id,name,role,username,status,auth_user_id&limit=1`, {
       headers: supabaseHeaders(key),
@@ -58,7 +60,7 @@ export async function POST(request: Request) {
     if (!authResponse.ok) return Response.json({ message: "Invalid username or password." }, { status: 401 });
     const authResult = (await authResponse.json()) as { user?: { id?: string } };
     if (authResult.user?.id !== profile.auth_user_id) return Response.json({ message: "Invalid username or password." }, { status: 401 });
-    return Response.json({ id: profile.id, name: profile.name, role: profile.role, username: profile.username, status: profile.status }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ id: profile.id, name: profile.name, role: profile.role, username: profile.username, status: profile.status }, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(profile.id, profile.name) } });
   } catch (error) {
     console.error("Unable to authenticate clinic account", error);
     return Response.json({ message: "Clinic account authentication is unavailable." }, { status: 503 });

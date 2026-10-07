@@ -109,7 +109,7 @@ function attachLoginFormEvents(){
     state.currentUser=ensureVisibleClinicUser(found);
     state.loggedIn=true;
     saveAuthSession(found,rememberMe);
-    logAudit("Signed In","Authentication");
+    logAudit("Signed In","Authentication","Success",false);
     render();
     toast("Signed in",`Welcome back, ${state.currentUser.name}.`,"ok");
   });
@@ -154,7 +154,7 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
     state.loggedIn=true;
     saveAuthSession(user,rememberMe);
     closeModal();
-    logAudit("Identity Verified","Authentication");
+    logAudit("Identity Verified","Authentication","Success",false);
     render();
     toast("Identity verified",`Welcome back, ${state.currentUser.name}.`,"ok");
   };

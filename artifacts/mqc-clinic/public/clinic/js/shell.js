@@ -95,10 +95,10 @@ function attachShellEvents(){
     logoutConfirmationOpen=true;
     confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, loadingLabel:"Signing out...", onCancel:()=>{logoutConfirmationOpen=false;}, onConfirm:()=>{
       logAudit("Logout","Authentication","Success",false);
+      fetch('/api/auth/logout',{method:'POST'}).catch(error=>console.error('MQC Clinic: could not clear the server session cookie.',error));
       clearAuthSession();
       state.loggedIn=false; state.currentUser=null; state.page="dashboard"; render();
       logoutConfirmationOpen=false;
-      setTimeout(()=>saveToClinicState(),0);
     }});
   };
   document.getElementById('menu-toggle').onclick=()=>{

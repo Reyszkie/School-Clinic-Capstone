@@ -133,6 +133,18 @@ function logAudit(action, module, status="Success", persist=true){
     timestamp: manilaStamp.iso,
     createdAt: manilaStamp.iso,
   });
+  const auditEntry=AUDIT_LOGS[0];
+  fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(auditEntry)})
+    .then(async response=>{
+      if(response.ok)return;
+      const result=await response.json().catch(()=>({}));
+      throw new Error(result.message||`Supabase returned ${response.status}`);
+    })
+    .catch(error=>{
+      console.error('MQC Clinic: audit event was not saved to Supabase.',error);
+      setSyncStatus('Audit sync failed','error');
+      toast('Audit log not synced','The activity could not be saved to Supabase. Please check the connection and try again.','err');
+    });
   if(persist)saveToClinicState();
 }
 let modalStack=[];

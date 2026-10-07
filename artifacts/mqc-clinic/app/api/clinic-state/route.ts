@@ -197,49 +197,6 @@ function toManilaIso(dateValue: unknown, timeValue: unknown) {
   return new Date(utcMs).toISOString();
 }
 
-function normalizeAuditLogRow(row: Record<string, unknown>, fallbackIndex = 0) {
-  const suppliedCreatedAt = toDateValue(row.createdAt ?? row.created_at ?? row.timestamp);
-  const parsedCreatedAt = suppliedCreatedAt ? new Date(suppliedCreatedAt) : null;
-  const createdAt = parsedCreatedAt && !Number.isNaN(parsedCreatedAt.getTime())
-    ? parsedCreatedAt.toISOString()
-    : toManilaIso(row.date, row.time);
-  const identity = `${createdAt}|${row.user ?? row.user_name ?? ""}|${row.userId ?? row.user_id ?? ""}|${row.action ?? ""}|${row.module ?? ""}|${row.status ?? ""}`;
-  let stableId = 0;
-  for (const character of identity) stableId = (stableId * 31 + character.charCodeAt(0)) % 2147483647;
-  const normalized = {
-    user_id: row.userId ?? row.user_id ?? null,
-    user_name: row.userName ?? row.user_name ?? "System",
-    action: row.action ?? "System Action",
-    module: row.module ?? "System",
-    status: row.status === "Warning" || row.status === "Error" ? row.status : "Success",
-    created_at: createdAt,
-  };
-  const suppliedId = Number(row.id);
-  return { id: Number.isSafeInteger(suppliedId) && suppliedId > 0 ? suppliedId : stableId || fallbackIndex + 1, ...normalized };
-}
-
-function auditTimestamp(date: unknown, time: unknown) {
-  return toManilaIso(date, time);
-}
-
-async function resolveAuditUsers(rows: Array<Record<string, unknown>>) {
-  const userIds = [...new Set(rows.map((row) => row.user_id).filter((value): value is string => typeof value === "string" && value.length > 0))];
-  if (!userIds.length) return rows;
-  const response = await supabaseRequest(`clinic_users?id=in.(${userIds.map(encodeURIComponent).join(",")})&select=id,name`);
-  if (!response.ok) return rows;
-  const users = (await response.json()) as Array<{ id?: string; name?: string }>;
-  const names = new Map(users.map((user) => [user.id, user.name]));
-  return rows.map((row) => {
-    const userId = String(row.user_id ?? "");
-    const linkedName = names.get(userId);
-    return {
-      ...row,
-      user_id: linkedName ? row.user_id : null,
-      user_name: linkedName ?? row.user_name,
-    };
-  });
-}
-
 async function resolveClinicUsers(rows: Array<Record<string, unknown>>) {
   const usernames = [...new Set(rows.map((row) => row.username).filter((value): value is string => typeof value === "string" && value.length > 0))];
   if (!usernames.length) return rows;
@@ -256,7 +213,10 @@ async function resolveClinicUsers(rows: Array<Record<string, unknown>>) {
 
 async function readTable(tableName: string) {
   const response = await supabaseRequest(`${tableName}?select=*`);
-  if (!response.ok) throw new Error(`${tableName} read returned ${response.status}`);
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`${tableName} read returned ${response.status}: ${details}`);
+  }
   return response.json() as Promise<Array<Record<string, unknown>>>;
 }
 
@@ -450,22 +410,6 @@ async function upsertTableRows(tableName: string, conflictKey: string, rows: Arr
   }
 }
 
-async function syncAuditRows(rows: Array<Record<string, unknown>>) {
-  const normalizedRows = rows.map((row, index) => normalizeAuditLogRow(row, index));
-  const localIds = new Set(normalizedRows.map((row) => String(row.id)));
-  const existingRows = await readTable("audit_logs");
-  const staleRows = existingRows.filter((row) => !localIds.has(String(row.id)));
-  for (const staleRow of staleRows) {
-    const deleteResponse = await supabaseRequest(`audit_logs?id=eq.${encodeURIComponent(String(staleRow.id))}`, { method: "DELETE" });
-    if (!deleteResponse.ok) {
-      throw new Error(`audit_logs delete returned ${deleteResponse.status}`);
-    }
-  }
-  if (!normalizedRows.length) return;
-  const rowsToSync = await resolveAuditUsers(normalizedRows);
-  await upsertTableRows("audit_logs", "id", rowsToSync);
-}
-
 async function purgeRows(rows: unknown) {
   if (!Array.isArray(rows)) return;
   for (const item of rows) {
@@ -579,22 +523,18 @@ export async function PUT(request: Request) {
       const visitIds = new Set(Array.isArray(visitMutation.visitIds) ? visitMutation.visitIds.map(String) : []);
       const medicineCodes = new Set(Array.isArray(visitMutation.medicineCodes) ? visitMutation.medicineCodes.map(String) : []);
       const equipmentIds = new Set(Array.isArray(visitMutation.equipmentIds) ? visitMutation.equipmentIds.map(String) : []);
-      const auditIds = new Set(Array.isArray(visitMutation.auditIds) ? visitMutation.auditIds.map(String) : []);
       const visits = Array.isArray(snapshot.consultations) ? snapshot.consultations as Array<Record<string, unknown>> : [];
       const medicines = Array.isArray(snapshot.medicines) ? snapshot.medicines as Array<Record<string, unknown>> : [];
       const equipment = Array.isArray(snapshot.equipment) ? snapshot.equipment as Array<Record<string, unknown>> : [];
-      const auditLogs = Array.isArray(snapshot.auditLogs) ? snapshot.auditLogs as Array<Record<string, unknown>> : [];
       const affectedVisits = visits.filter(row => visitIds.has(String(row.id)));
       const affectedMedicines = medicines.filter(row => medicineCodes.has(String(row.code)));
       const affectedEquipment = equipment.filter(row => equipmentIds.has(String(row.id)));
-      const affectedAuditLogs = auditLogs.filter(row => auditIds.has(String(row.id)));
 
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
       if (affectedMedicines.length !== medicineCodes.size) throw new Error("A medicine inventory record for this save could not be found.");
       if (affectedEquipment.length !== equipmentIds.size) throw new Error("An equipment inventory record for this save could not be found.");
 
       const { visitMutation: _visitMutation, ...clinicSnapshot } = snapshot;
-      const auditRows = affectedAuditLogs.map((row, index) => normalizeAuditLogRow(row, index));
       const [snapshotResponse] = await Promise.all([
         supabaseRequest("clinic_state", {
           method: "POST",
@@ -604,7 +544,6 @@ export async function PUT(request: Request) {
         upsertTableRows("clinical_visits", "id", affectedVisits.map(normalizeVisitRow)),
         upsertTableRows("medicines", "code", affectedMedicines.map(normalizeMedicineRow)),
         upsertTableRows("equipment", "id", affectedEquipment.map(normalizeEquipmentRow)),
-        upsertTableRows("audit_logs", "id", auditRows),
       ]);
       if (!snapshotResponse.ok) throw new Error(`clinic_state snapshot returned ${snapshotResponse.status}`);
       return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
@@ -621,12 +560,6 @@ export async function PUT(request: Request) {
     }
     if (Array.isArray(snapshot.consultations)) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
-    }
-    if (snapshot.resetAuditLogs === true) {
-      const auditResetResponse = await supabaseRequest("audit_logs?id=not.is.null", { method: "DELETE" });
-      if (!auditResetResponse.ok) throw new Error(`audit_logs reset returned ${auditResetResponse.status}`);
-    } else if (Array.isArray(snapshot.auditLogs)) {
-      await syncAuditRows(snapshot.auditLogs as Array<Record<string, unknown>>);
     }
     if (Array.isArray(snapshot.users)) {
       const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));

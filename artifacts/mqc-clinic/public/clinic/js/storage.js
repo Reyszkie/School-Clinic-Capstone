@@ -16,7 +16,7 @@ function setSyncStatus(label, stateName="idle"){
   indicator.dataset.state=stateName;
 }
 
-function snapshotData(resetAuditLogs=false){
+function snapshotData(includeAuditLogs=true){
   ensureInventoryLedger();
   const normalizedAuditLogs = (AUDIT_LOGS || []).map(log => ({
     ...log,
@@ -31,13 +31,12 @@ function snapshotData(resetAuditLogs=false){
     equipment: EQUIPMENT,
     inventoryTransactions: INVENTORY_TRANSACTIONS,
     consultations: CONSULTATIONS,
-    auditLogs: normalizedAuditLogs,
+    ...(includeAuditLogs ? {auditLogs:normalizedAuditLogs} : {}),
     deletedStudents: DELETED_STUDENTS,
     deletedUsers: DELETED_USERS,
     purged: PURGED_RECORDS,
     users: [...state.users, ...DELETED_USERS],
     settings: state.settings,
-    resetAuditLogs,
     savedAt: new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Manila' })).toISOString(),
   };
 }
@@ -194,18 +193,16 @@ function queueClinicStateSave(payload,throwOnError=false){
   return saveOperation;
 }
 
-function saveToClinicState(resetAuditLogs=false,throwOnError=false){
-  return queueClinicStateSave(snapshotData(resetAuditLogs),throwOnError);
+function saveToClinicState(_resetAuditLogs=false,throwOnError=false){
+  return queueClinicStateSave(snapshotData(false),throwOnError);
 }
 
 function saveVisitToClinicState(visitIds,inventorySnapshot){
-  const payload=snapshotData();
-  const previousAuditIds=new Set(inventorySnapshot.auditLogs.map(log=>String(log.id)));
+  const payload=snapshotData(false);
   payload.visitMutation={
     visitIds:visitIds.filter(Boolean),
     medicineCodes:inventorySnapshot.medicineQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.code),
     equipmentIds:inventorySnapshot.equipmentQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.id),
-    auditIds:AUDIT_LOGS.filter(log=>!previousAuditIds.has(String(log.id))).map(log=>log.id),
   };
   return queueClinicStateSave(payload,true);
 }
