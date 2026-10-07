@@ -306,22 +306,26 @@ The current browser application continues to read and write `clinic_state`. The 
 
 ## Local Development
 
-1. Copy `.env.example` to `.env.local`.
-2. Set `DATABASE_URL` to a local PostgreSQL or Supabase connection string.
-3. Set `PG_POOL_MAX=1` for serverless-friendly connection pooling.
-4. Create or update the database table:
+1. Copy `.env.example` to `.env.local` in the repository root.
+2. Set `SUPABASE_URL` to the URL of the Supabase project used by this application.
+3. Set `SUPABASE_SECRET_KEY` to that same project's server-side Secret key, or set `SUPABASE_SERVICE_ROLE_KEY` if using the legacy service-role key. Do not use the publishable/anon key for these server-side routes.
+4. Set `DATABASE_URL` to the Supabase transaction pooler connection string and keep `sslmode=require`.
+5. Set `PG_POOL_MAX=1` for serverless-friendly connection pooling.
+6. Create or update the database schema:
 
 	```powershell
 	corepack pnpm db:push
 	```
 
-5. Start the Next.js application:
+7. Start the Next.js application:
 
 	```powershell
 	corepack pnpm --filter @workspace/mqc-clinic run dev
 	```
 
-6. Open `http://localhost:3000`.
+8. Open `http://localhost:3000`.
+
+The clinic API requires `SUPABASE_URL` and a matching server-side key to read or save records. If the API reports `Unregistered API key`, confirm the URL and key belong to the same Supabase project, then restart the development server.
 
 ## Vercel and Supabase Deployment
 
@@ -329,7 +333,7 @@ The current browser application continues to read and write `clinic_state`. The 
 2. Copy the Supabase transaction pooler connection string from **Project Settings > Database**.
 3. Keep `sslmode=require` in `DATABASE_URL`.
 4. Import the repository into Vercel from the repository root.
-5. Add `DATABASE_URL` and `PG_POOL_MAX=1` to Vercel Production, Preview, and Development environments.
+5. Add `DATABASE_URL`, `PG_POOL_MAX=1`, `SUPABASE_URL`, and a matching `SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`) to Vercel Production, Preview, and Development environments.
 6. Run `corepack pnpm db:push` once against the target Supabase database.
 7. Deploy the Next.js application.
 8. Verify `/api/healthz` after deployment.
