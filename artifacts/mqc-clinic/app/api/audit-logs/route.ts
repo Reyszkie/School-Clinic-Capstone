@@ -1,4 +1,4 @@
-import { createClinicSessionCookie, readClinicSession } from "../auth/session";
+import { readClinicSession } from "../auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       throw new Error(`audit_logs insert returned ${response.status}: ${details}`);
     }
 
-    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(users[0].id, users[0].name || session.userName) } });
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Unable to save audit event", error);
     return Response.json({ message: "Unable to save audit event to Supabase." }, { status: 503, headers: { "Cache-Control": "no-store" } });
