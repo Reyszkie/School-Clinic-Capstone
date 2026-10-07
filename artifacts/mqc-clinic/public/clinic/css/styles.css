@@ -638,6 +638,9 @@ tbody tr{transition:background-color .14s ease;}
 .vital-signs-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
 .vital-signs-grid label{display:block;font-size:12px;font-weight:600;color:var(--navy-deep);}
 .vital-signs-grid input{margin-top:5px;}
+.visit-inventory-grid{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start;}
+.visit-inventory-group{display:grid;gap:12px;min-width:0;}
+.visit-inventory-group>.f-field:first-child>label{min-height:36px;display:flex;align-items:flex-end;}
 .records-view-button{min-height:32px;padding:5px 10px;font-size:12px;white-space:nowrap;}
 .f-field input[readonly]{background:var(--paper);color:var(--ink-soft);cursor:default;}
 .monthly-report-section{margin-top:18px;}
@@ -665,6 +668,7 @@ tbody tr{transition:background-color .14s ease;}
   .monthly-report-actions label{width:100%;}
   .monthly-report-actions input{flex:1;min-width:0;}
   .vital-signs-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .visit-inventory-grid{grid-template-columns:1fr;}
   .monthly-report-kpis{flex-wrap:wrap;}
   .monthly-report-stat{flex:1;min-width:130px;}
   .monthly-report-table{min-width:640px;}

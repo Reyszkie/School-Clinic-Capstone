@@ -228,12 +228,20 @@ function openConsultationForm(student, existing=null){
     <div class="f-field full"><label>Nurse's Notes / Assessment</label><textarea id="cf-notes">${escapeHtml(f.notes||"")}</textarea></div>
     <div class="f-field full"><label>Treatment / Intervention</label><div style="padding-top:5px">${optionListHtml(INTERVENTIONS,f.interventions||[],"intervention") }<label class="option-check"><input type="checkbox" id="cf-intervention-other" data-free-text-toggle="intervention-other" ${f.interventions?.some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="intervention-other" placeholder="Enter other intervention" value="${escapeHtml((f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
     <div class="f-field full"><label>Additional Treatment Details</label><textarea id="cf-treatment" placeholder="Record any care instructions or treatment details">${escapeHtml(f.treatmentGiven||"")}</textarea></div>
-    <div class="f-field"><label>Medication / Treatment Given</label><select id="cf-medicine"><option value="">None</option>${meds.map(m=>`<option value="${escapeHtml(m.name)}" ${f.medicine===m.name?"selected":""}>${escapeHtml(m.name)} (${m.qty} ${m.unit})</option>`).join("")}</select></div>
-    <div class="f-field"><label>Quantity</label><input type="number" id="cf-medqty" min="1" step="1" value="${Math.max(1,Number(f.medQty)||1)}" inputmode="numeric"></div>
-    <div class="f-field"><label>Medication Supplies/Treatment Given</label><select id="cf-supply"><option value="">None</option>${supplies.map(item=>`<option value="${escapeHtml(item.name)}" ${existingSupply===item.name?"selected":""}>${escapeHtml(item.name)} (${Number(item.qty)} available)</option>`).join("")}</select></div>
-    <div class="f-field"><label>Quantity</label><input type="number" id="cf-supply-qty" min="1" step="1" value="${Math.max(1,Number(f.supplyQty)||1)}" inputmode="numeric"></div>
-    <div class="f-field"><label>Medication Tools/Treatment Given</label><select id="cf-equipment"><option value="">None</option>${tools.map(item=>`<option value="${escapeHtml(item.name)}" ${existingTools.includes(item.name)||f.medicine===item.name?"selected":""}>${escapeHtml(item.name)} (${Number(item.qty)} available)</option>`).join("")}</select></div>
-    <div class="f-field"><label>Quantity</label><input type="number" id="cf-equipment-qty" min="1" step="1" value="${Math.max(1,Number(f.equipmentQty)||1)}" inputmode="numeric"></div>
+    <div class="visit-inventory-grid">
+      <div class="visit-inventory-group">
+        <div class="f-field"><label>Medication / Treatment Given</label><select id="cf-medicine"><option value="">None</option>${meds.map(m=>`<option value="${escapeHtml(m.name)}" ${f.medicine===m.name?"selected":""}>${escapeHtml(m.name)} (${m.qty} ${m.unit})</option>`).join("")}</select></div>
+        <div class="f-field"><label>Quantity</label><input type="number" id="cf-medqty" min="1" step="1" value="${Math.max(1,Number(f.medQty)||1)}" inputmode="numeric"></div>
+      </div>
+      <div class="visit-inventory-group">
+        <div class="f-field"><label>Medication Tools/Treatment Given</label><select id="cf-equipment"><option value="">None</option>${tools.map(item=>`<option value="${escapeHtml(item.name)}" ${existingTools.includes(item.name)||f.medicine===item.name?"selected":""}>${escapeHtml(item.name)} (${Number(item.qty)} available)</option>`).join("")}</select></div>
+        <div class="f-field"><label>Quantity</label><input type="number" id="cf-equipment-qty" min="1" step="1" value="${Math.max(1,Number(f.equipmentQty)||1)}" inputmode="numeric"></div>
+      </div>
+      <div class="visit-inventory-group">
+        <div class="f-field"><label>Medication Supplies/Treatment Given</label><select id="cf-supply"><option value="">None</option>${supplies.map(item=>`<option value="${escapeHtml(item.name)}" ${existingSupply===item.name?"selected":""}>${escapeHtml(item.name)} (${Number(item.qty)} available)</option>`).join("")}</select></div>
+        <div class="f-field"><label>Quantity</label><input type="number" id="cf-supply-qty" min="1" step="1" value="${Math.max(1,Number(f.supplyQty)||1)}" inputmode="numeric"></div>
+      </div>
+    </div>
     <div class="f-field"><label>Dosage / Instructions</label><input id="cf-dosage" value="${escapeHtml(f.dosage||"")}" placeholder="e.g. 1 tablet"></div>
     <div class="f-field full"><label>Clinic Disposition — Outcome</label><select id="cf-outcome">${DISPOSITIONS.map(x=>`<option ${f.outcome===x?"selected":""}>${x}</option>`).join("")}<option ${f.outcome==="Other"?"selected":""}>Other</option></select></div>
     <div class="f-field"><label>Time Released / Referred</label><input id="cf-released" value="${escapeHtml(f.releasedAt||"")}"></div>
