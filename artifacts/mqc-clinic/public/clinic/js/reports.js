@@ -67,8 +67,9 @@ function monthlyReportData(month){
   const reasons={},medicines={},equipment={};
   visits.forEach(visit=>{
     [...new Set([visit.complaint,...(visit.symptoms||[])].filter(Boolean))].forEach(reason=>{reasons[reason]=(reasons[reason]||0)+1;});
-    if(visit.medicine)medicines[visit.medicine]=(medicines[visit.medicine]||0)+1;
-    [...new Set(visit.equipmentUsed||[])].forEach(tool=>{equipment[tool]=(equipment[tool]||0)+1;});
+    if(visit.medicine)medicines[visit.medicine]=(medicines[visit.medicine]||0)+(Number(visit.medQty)||1);
+    if(visit.supplyUsed)equipment[visit.supplyUsed]=(equipment[visit.supplyUsed]||0)+(Number(visit.supplyQty)||1);
+    [...new Set(visit.equipmentUsed||[])].forEach(tool=>{equipment[tool]=(equipment[tool]||0)+(Number(visit.equipmentQty)||1);});
   });
   return {
     visits,previousMonthVisits,

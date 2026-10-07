@@ -534,6 +534,9 @@ export async function GET() {
           ...normalizedVisit,
           respiratoryRate: savedVisit.respiratoryRate,
           equipmentUsed: savedVisit.equipmentUsed,
+          equipmentQty: savedVisit.equipmentQty,
+          supplyUsed: savedVisit.supplyUsed,
+          supplyQty: savedVisit.supplyQty,
         } : normalizedVisit;
       }),
       users: [...normalizedUsers, ...missingSnapshotUsers],

@@ -102,6 +102,9 @@ let EQUIPMENT = [
   {id:"EQP-021",name:"Nebulizer",qty:1,condition:"Good",lastMaint:"2026-10-07",status:"Available",deleted:false},
 ];
 
+const VISIT_SUPPLY_NAMES=["Cotton Swabs","Cotton Balls","Alcohol (70% Isopropyl)","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads","Medical Tape","Hand Sanitizer","Disposable Face Masks","Gloves (Nitrile, Medium)"];
+const VISIT_TOOL_NAMES=["Digital Thermometer","Blood Pressure Monitor (Digital)","Stethoscope","Pulse Oximeter","Scissors (Medical)","Tweezers","Nebulizer"];
+
 const COMPLAINTS = ["Headache","Fever","Dizziness","Stomachache","Nausea/Vomiting","Injury","Cough/Cold","Difficulty Breathing","Menstrual Pain","Weakness/Fatigue"];
 const SYMPTOMS = ["Fever","Headache","Dizziness","Nausea","Vomiting","Stomach Pain","Cough","Sore Throat","Runny Nose","Difficulty Breathing","Chest Pain","Weakness","Fainting","Diarrhea","Asthma"];
 const INTERVENTIONS = ["Rest/Observation","First Aid","Wound Cleaning","Ice/Cold Compress","Oral Fluids","Medication Given","Referred to Parent/Guardian","Referred to Doctor/Hospital"];

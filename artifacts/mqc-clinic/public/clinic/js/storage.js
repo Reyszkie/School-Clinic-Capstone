@@ -94,9 +94,15 @@ function visitInventoryRequirements(visit){
       if(equipment)add("equipment",equipment,1);
     }
   }
-  (visit.equipmentUsed||[]).forEach(name=>{
+  const supplyNames=Array.isArray(visit.supplyUsed)?visit.supplyUsed:(visit.supplyUsed?[visit.supplyUsed]:[]);
+  supplyNames.forEach(name=>{
     const item=EQUIPMENT.find(candidate=>candidate.name===name);
-    if(item)add("equipment",item,1);
+    if(item)add("equipment",item,Math.max(1,Number(visit.supplyQty)||1));
+  });
+  const toolNames=Array.isArray(visit.equipmentUsed)?visit.equipmentUsed:(visit.equipmentUsed?[visit.equipmentUsed]:[]);
+  toolNames.forEach(name=>{
+    const item=EQUIPMENT.find(candidate=>candidate.name===name);
+    if(item)add("equipment",item,Math.max(1,Number(visit.equipmentQty)||1));
   });
   return [...requirements.values()];
 }
