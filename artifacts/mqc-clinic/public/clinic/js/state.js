@@ -134,7 +134,7 @@ function logAudit(action, module, status="Success", persist=true){
     createdAt: manilaStamp.iso,
   });
   const auditEntry=AUDIT_LOGS[0];
-  fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(auditEntry)})
+  const auditWrite=fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(auditEntry)})
     .then(async response=>{
       if(response.ok)return;
       const result=await response.json().catch(()=>({}));
@@ -146,6 +146,7 @@ function logAudit(action, module, status="Success", persist=true){
       toast('Audit log not synced','The activity could not be saved to Supabase. Please check the connection and try again.','err');
     });
   if(persist)saveToClinicState();
+  return auditWrite;
 }
 let modalStack=[];
 function openModal(html, size="", options={}){
