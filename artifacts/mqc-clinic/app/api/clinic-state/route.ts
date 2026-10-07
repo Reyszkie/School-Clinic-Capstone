@@ -108,6 +108,11 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
 }
 
 function normalizeVisitRow(row: Record<string, unknown>) {
+  const medicineName = row.medicine ?? row.medicineName ?? row.medicine_name ?? null;
+  const medicineQuantity = toNumber(row.medQty ?? row.medicineQuantity ?? row.medicine_quantity);
+  if (medicineName && (!Number.isInteger(medicineQuantity) || Number(medicineQuantity) <= 0)) {
+    throw new Error("Medication quantity must be a positive whole number when a medication is selected.");
+  }
   return {
     id: row.id ?? null,
     patient_id: row.studentId ?? row.patientId ?? row.patient_id ?? null,
@@ -138,8 +143,8 @@ function normalizeVisitRow(row: Record<string, unknown>) {
     interventions: Array.isArray(row.interventions) ? row.interventions : [],
     treatment_given: row.treatmentGiven ?? row.treatment_given ?? null,
     medicine_code: row.medicineCode ?? row.medicine_code ?? null,
-    medicine_name: row.medicine ?? row.medicineName ?? row.medicine_name ?? null,
-    medicine_quantity: toNumber(row.medQty ?? row.medicineQuantity ?? row.medicine_quantity),
+    medicine_name: medicineName,
+    medicine_quantity: medicineName ? medicineQuantity : null,
     dosage: row.dosage ?? null,
     outcome: row.outcome ?? "Treated and Released",
     released_at: row.releasedAt ?? row.released_at ?? null,
