@@ -69,8 +69,6 @@ function renderStudentDetail(s, inModal=false){
     <div class="info-cell"><div class="lbl">Parent / Guardian</div><div class="val">${escapeHtml(s.guardianName||s.emergency||"—")}</div></div>
     <div class="info-cell"><div class="lbl">Guardian Contact</div><div class="val mono">${escapeHtml(s.guardianContact||"—")}</div></div>
     <div class="info-cell" style="grid-column:span 2"><div class="lbl">Course / Section / Strand</div><div class="val">${escapeHtml(s.course||"—")}</div></div>
-    <div class="info-cell ${s.allergies&&s.allergies!=="None known"?"warn":""}"><div class="lbl">Allergies</div><div class="val">${escapeHtml(s.allergies||"None known")}</div></div>
-    <div class="info-cell ${s.conditions&&s.conditions!=="None"?"warn":""}"><div class="lbl">Medical Conditions</div><div class="val">${escapeHtml(s.conditions||"None")}</div></div>
   </div>${renderStudentClinicalRecords(s)}</div>`;
 }
 
