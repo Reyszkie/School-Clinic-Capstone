@@ -9,6 +9,7 @@ const NAV = [
   ]},
 ];
 let clockTimer = null;
+let logoutConfirmationOpen = false;
 function manilaDateTime(){
   return new Intl.DateTimeFormat('en-PH',{
     timeZone:'Asia/Manila',
@@ -90,11 +91,14 @@ function attachShellEvents(){
     btn.onclick=()=>{ state.page=btn.dataset.nav; state.sidebarOpen=false; render(); };
   });
   document.getElementById('logout-btn').onclick=()=>{
-    confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, loadingLabel:"Signing out...", onConfirm:async()=>{
-      logAudit("Logout","Authentication");
-      await saveToClinicState();
+    if(logoutConfirmationOpen)return;
+    logoutConfirmationOpen=true;
+    confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, loadingLabel:"Signing out...", onCancel:()=>{logoutConfirmationOpen=false;}, onConfirm:()=>{
+      logAudit("Logout","Authentication","Success",false);
       clearAuthSession();
       state.loggedIn=false; state.currentUser=null; state.page="dashboard"; render();
+      logoutConfirmationOpen=false;
+      setTimeout(()=>saveToClinicState(),0);
     }});
   };
   document.getElementById('menu-toggle').onclick=()=>{
