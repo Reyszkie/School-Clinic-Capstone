@@ -17,6 +17,7 @@ function setSyncStatus(label, stateName="idle"){
 }
 
 function snapshotData(resetAuditLogs=false){
+  ensureInventoryLedger();
   const normalizedAuditLogs = (AUDIT_LOGS || []).map(log => ({
     ...log,
     timestamp: normalizeAuditTimestamp(log),
@@ -28,6 +29,7 @@ function snapshotData(resetAuditLogs=false){
     students: [...STUDENTS, ...DELETED_STUDENTS],
     medicines: MEDICINES,
     equipment: EQUIPMENT,
+    inventoryTransactions: INVENTORY_TRANSACTIONS,
     consultations: CONSULTATIONS,
     auditLogs: normalizedAuditLogs,
     deletedStudents: DELETED_STUDENTS,
@@ -38,6 +40,27 @@ function snapshotData(resetAuditLogs=false){
     resetAuditLogs,
     savedAt: new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Manila' })).toISOString(),
   };
+}
+
+function inventoryItemKey(itemType,itemId){return `${itemType}:${itemId}`;}
+function recordInventoryTransaction(itemType,item,kind,quantity,date=todayDateString(),referenceId=""){
+  const amount=Number(quantity);
+  if(!Number.isFinite(amount)||amount===0)return;
+  INVENTORY_TRANSACTIONS.unshift({id:uid("INV"),itemType,itemId:itemType==="medicine"?item.code:item.id,itemName:item.name,kind,quantity:amount,date,referenceId,createdAt:new Date().toISOString()});
+}
+function recordInventoryQuantityChange(itemType,item,previousQuantity,nextQuantity){
+  const delta=Number(nextQuantity)-Number(previousQuantity);
+  if(delta>0)recordInventoryTransaction(itemType,item,"added",delta);
+  else if(delta<0)recordInventoryTransaction(itemType,item,"used",Math.abs(delta));
+}
+function ensureInventoryLedger(){
+  const known=new Set(INVENTORY_TRANSACTIONS.map(entry=>inventoryItemKey(entry.itemType,entry.itemId)));
+  [...MEDICINES.map(item=>({itemType:"medicine",item})),...EQUIPMENT.map(item=>({itemType:"equipment",item}))].forEach(({itemType,item})=>{
+    const itemId=itemType==="medicine"?item.code:item.id,key=inventoryItemKey(itemType,itemId);
+    if(known.has(key))return;
+    INVENTORY_TRANSACTIONS.unshift({id:uid("INV"),itemType,itemId,itemName:item.name,kind:"baseline",quantity:Number(item.qty)||0,date:todayDateString(),referenceId:"",createdAt:new Date().toISOString()});
+    known.add(key);
+  });
 }
 
 function normalizeAuditTimestamp(log){
@@ -77,6 +100,7 @@ function applyStoredData(data){
   if(Array.isArray(data.students)) STUDENTS.splice(0, STUDENTS.length, ...data.students.filter(s=>!s.deleted));
   if(Array.isArray(data.medicines)) MEDICINES = data.medicines;
   if(Array.isArray(data.equipment)) EQUIPMENT = data.equipment;
+  INVENTORY_TRANSACTIONS=Array.isArray(data.inventoryTransactions)?data.inventoryTransactions:[];
   const medicalToolNames=new Set([
     "Cotton Swabs","Cotton Balls","Alcohol (70% Isopropyl)","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads",
     "Medical Tape","Hand Sanitizer","Disposable Face Masks","Gloves (Nitrile, Medium)"
@@ -96,6 +120,7 @@ function applyStoredData(data){
   if(Array.isArray(data.deletedUsers)) DELETED_USERS = data.deletedUsers;
   if(Array.isArray(data.users)) state.users = data.users;
   if(data.settings && typeof data.settings==="object") state.settings = {...state.settings,...data.settings};
+  ensureInventoryLedger();
   return migratedInventory;
 }
 
@@ -108,6 +133,7 @@ async function hydrateFromSharedStorage(){
       if(localChangeVersion!==hydrationVersion) return false;
       sharedStorageNeedsBootstrap=Boolean(data.bootstrapRequired);
       applyStoredData(data);
+      if(!Array.isArray(data.inventoryTransactions))sharedStorageNeedsBootstrap=true;
       return true;
     }
     sharedStorageMissing=response.status===404;

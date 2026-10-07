@@ -48,8 +48,122 @@ function printReports(){
   w.document.close();
   w.onload=()=>{w.focus();w.print();};
 }
+function previousMonthKey(month){
+  const [year,monthNumber]=month.split("-").map(Number);
+  return monthNumber===1?`${year-1}-12`:`${year}-${String(monthNumber-1).padStart(2,"0")}`;
+}
+function reportMonthLabel(month){
+  return new Intl.DateTimeFormat("en",{month:"long",year:"numeric",timeZone:"Asia/Manila"}).format(new Date(`${month}-01T00:00:00+08:00`));
+}
+function inventoryMovementDelta(transaction){
+  const quantity=Number(transaction.quantity)||0;
+  if(transaction.kind==="added")return quantity;
+  if(transaction.kind==="used")return -quantity;
+  if(transaction.kind==="adjustment")return quantity;
+  return 0;
+}
+function reportMonthEnd(month){
+  const [year,monthNumber]=month.split("-").map(Number);
+  const day=new Date(Date.UTC(year,monthNumber,0)).getUTCDate();
+  return `${month}-${String(day).padStart(2,"0")}`;
+}
+function monthlyInventoryRows(itemType,month){
+  const start=`${month}-01`,monthEnd=reportMonthEnd(month);
+  const cutoff=monthEnd>todayDateString()?todayDateString():monthEnd;
+  const items=itemType==="medicine"?MEDICINES:EQUIPMENT;
+  return items.map(item=>{
+    const itemId=itemType==="medicine"?item.code:item.id;
+    const transactions=INVENTORY_TRANSACTIONS.filter(entry=>entry.itemType===itemType&&entry.itemId===itemId).sort((a,b)=>a.date.localeCompare(b.date));
+    const baseline=transactions.find(entry=>entry.kind==="baseline");
+    const additions=transactions.filter(entry=>entry.date>=start&&entry.date<=cutoff&&entry.kind==="added").reduce((sum,entry)=>sum+(Number(entry.quantity)||0),0);
+    const used=transactions.filter(entry=>entry.date>=start&&entry.date<=cutoff&&entry.kind==="used").reduce((sum,entry)=>sum+(Number(entry.quantity)||0),0);
+    const adjustment=transactions.filter(entry=>entry.date>=start&&entry.date<=cutoff&&entry.kind==="adjustment").reduce((sum,entry)=>sum+(Number(entry.quantity)||0),0);
+    if(baseline){
+      if(baseline.date>cutoff)return {item,beginning:null,ending:null,used,additions,adjustment,partial:true};
+      const afterBaseline=transactions.filter(entry=>entry.kind!=="baseline"&&entry.date>=baseline.date);
+      const beginning=baseline.date<start?Number(baseline.quantity||0)+afterBaseline.filter(entry=>entry.date<start).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0):null;
+      const ending=Number(baseline.quantity||0)+afterBaseline.filter(entry=>entry.date<=cutoff).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0);
+      return {item,beginning,ending,used,additions,adjustment,partial:beginning===null};
+    }
+    const firstMovement=transactions.find(entry=>entry.kind!=="baseline");
+    if(!firstMovement||firstMovement.date>cutoff)return {item,beginning:null,ending:null,used,additions,adjustment,partial:true};
+    const movements=transactions.filter(entry=>entry.kind!=="baseline");
+    const beginning=movements.filter(entry=>entry.date<start).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0);
+    const ending=movements.filter(entry=>entry.date<=cutoff).reduce((sum,entry)=>sum+inventoryMovementDelta(entry),0);
+    return {item,beginning,ending,used,additions,adjustment,partial:false};
+  });
+}
+function monthlyReportData(month){
+  const visits=reportVisits().filter(visit=>!visit.deleted&&visit.status!=="Superseded"&&visit.date?.slice(0,7)===month);
+  const previousMonthVisits=reportVisits().filter(visit=>!visit.deleted&&visit.status!=="Superseded"&&visit.date?.slice(0,7)===previousMonthKey(month)).length;
+  const reasons={},medicines={},equipment={};
+  visits.forEach(visit=>{
+    [...new Set([visit.complaint,...(visit.symptoms||[])].filter(Boolean))].forEach(reason=>{reasons[reason]=(reasons[reason]||0)+1;});
+    if(visit.medicine)medicines[visit.medicine]=(medicines[visit.medicine]||0)+1;
+    [...new Set(visit.equipmentUsed||[])].forEach(tool=>{equipment[tool]=(equipment[tool]||0)+1;});
+  });
+  return {
+    visits,previousMonthVisits,
+    visitors:frequentVisitors(visits,1),
+    reasons:Object.entries(reasons).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
+    medicines:Object.entries(medicines).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
+    equipment:Object.entries(equipment).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
+    medicineInventory:monthlyInventoryRows("medicine",month),
+    equipmentInventory:monthlyInventoryRows("equipment",month),
+  };
+}
+function monthlyTable(headers,rows,emptyText="No records for this month."){
+  return `<div class="table-wrap"><table class="monthly-report-table"><thead><tr>${headers.map(header=>`<th>${header}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.join(""):`<tr><td colspan="${headers.length}">${emptyText}</td></tr>`}</tbody></table></div>`;
+}
+function inventoryTableRows(rows){
+  return rows.map(row=>`<tr><td>${escapeHtml(row.item.name)}${row.item.deleted?" (Deleted)":""}</td><td>${row.beginning===null?"Not tracked":row.beginning}</td><td>${row.used}</td><td>${row.additions}</td><td>${row.adjustment>0?`+${row.adjustment}`:row.adjustment}</td><td>${row.ending===null?"Not tracked":row.ending}</td></tr>`);
+}
+function monthlyReportHtml(month){
+  const data=monthlyReportData(month),monthLabel=reportMonthLabel(month);
+  const visitors=data.visitors.map(visitor=>`<tr><td>${escapeHtml(visitor.studentName||"—")}</td><td>${escapeHtml(visitor.year||"—")}</td><td>${escapeHtml(visitor.course||"—")}</td><td>${visitor.count}</td></tr>`);
+  const reasons=data.reasons.map(([reason,count])=>`<tr><td>${escapeHtml(reason)}</td><td>${count}</td></tr>`);
+  const medicineUse=data.medicines.map(([name,count])=>`<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`);
+  const equipmentUse=data.equipment.map(([name,count])=>`<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`);
+  const firstBaseline=INVENTORY_TRANSACTIONS.filter(entry=>entry.kind==="baseline").map(entry=>entry.date).sort()[0];
+  const monthEnd=reportMonthEnd(month),cutoff=monthEnd>todayDateString()?todayDateString():monthEnd;
+  const monthStart=`${month}-01`;
+  const ledgerMessage=firstBaseline
+    ? `Stock movement tracking began ${fmtDate(firstBaseline)}. ${firstBaseline>=monthStart?"Opening balances for this month are not fully available; values are marked Not tracked where history is incomplete.":`Inventory quantities are shown through ${fmtDate(cutoff)}.`}`
+    : "No inventory movement history is available yet.";
+  return `<div class="monthly-report-content">
+    <div class="monthly-report-kpis"><div class="monthly-report-stat"><span>Total Clinic Visits</span><strong>${data.visits.length}</strong></div><div class="monthly-report-stat"><span>Previous Month</span><strong>${data.previousMonthVisits}</strong></div></div>
+    <section class="monthly-report-block"><h5>Most Frequent Visitors</h5>${monthlyTable(["Student / Patient","Year Level","Section / Course","Visits"],visitors)}</section>
+    <section class="monthly-report-block"><h5>Common Reasons for Clinic Visits</h5>${monthlyTable(["Reason / Symptom","Occurrences"],reasons)}</section>
+    <section class="monthly-report-block"><h5>Medicine Inventory Before and After</h5><p class="inventory-report-note">${ledgerMessage} Adjustments are included separately in the ending balance.</p>${monthlyTable(["Medicine","Beginning Qty","Qty Used","Added / Restocked","Adjustment","Ending Qty"],inventoryTableRows(data.medicineInventory),"No medicine inventory records.")}</section>
+    <section class="monthly-report-block"><h5>Equipment &amp; Medical Tools Inventory Before and After</h5><p class="inventory-report-note">${ledgerMessage} Visit tool counts below represent recorded uses; on-hand stock changes are recorded in inventory.</p>${monthlyTable(["Equipment / Tool","Beginning Qty","Qty Used","Added","Adjustment","Ending Qty"],inventoryTableRows(data.equipmentInventory),"No equipment inventory records.")}</section>
+    <section class="monthly-report-block"><h5>Most Frequently Used Medicines / Treatments</h5>${monthlyTable(["Medicine / Treatment","Uses"],medicineUse)}</section>
+    <section class="monthly-report-block"><h5>Most Frequently Used Equipment &amp; Medical Tools</h5>${monthlyTable(["Equipment / Tool","Uses"],equipmentUse)}</section>
+    <p class="monthly-report-footnote">${monthLabel} · ${data.visits.length} active visit record(s)</p>
+  </div>`;
+}
+function renderMonthlyReportSection(){
+  const month=state.reportMonth||todayDateString().slice(0,7);
+  return `<section class="monthly-report-section" id="monthly-report-section"><div class="card"><div class="monthly-report-header"><div><h4>Monthly Report</h4><p>Visit activity and inventory roll-forward by month.</p></div><div class="monthly-report-actions"><label for="monthly-report-month">Month and year</label><input type="month" id="monthly-report-month" value="${escapeHtml(month)}"><button class="btn btn-dark" id="monthly-print-report">${ICONS.print} Print Report</button></div></div><div id="monthly-report-content">${monthlyReportHtml(month)}</div></div></section>`;
+}
+function printMonthlyReport(){
+  const month=state.reportMonth||todayDateString().slice(0,7),report=monthlyReportHtml(month),w=window.open("","_blank");
+  if(!w){toast("Print blocked","Allow pop-ups to print the monthly report.","warn");return;}
+  const title=`${state.settings.clinicName} — Monthly Clinic Report`;
+  w.document.open();
+  w.document.write(`<html><head><title>${escapeHtml(title)}</title><style>@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font:10pt Arial,sans-serif;color:#202A33;margin:0}h1{font-size:20pt;margin:0 0 4px;color:#17375E}h2{font-size:14pt;margin:0 0 14px}h5{font-size:12pt;margin:18px 0 7px;border-bottom:1px solid #B8C6D3;padding-bottom:5px;color:#17375E}.report-meta{font-size:9pt;color:#526273;margin:0 0 12px}.monthly-report-kpis{display:flex;gap:24px;margin:8px 0 14px}.monthly-report-stat{border:1px solid #CCD6DF;padding:8px 14px;min-width:155px}.monthly-report-stat span,.monthly-report-stat strong{display:block}.monthly-report-stat span{font-size:8pt;text-transform:uppercase;color:#526273}.monthly-report-stat strong{font-size:18pt;margin-top:4px}.monthly-report-block{break-inside:avoid;margin-top:14px}.table-wrap{width:100%}.monthly-report-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:8.5pt}.monthly-report-table th,.monthly-report-table td{text-align:left;vertical-align:top;border:1px solid #CBD4DC;padding:5px 6px;overflow-wrap:anywhere}.monthly-report-table th{background:#EEF2F5;font-size:7.5pt;text-transform:uppercase;color:#425263}.inventory-report-note,.monthly-report-footnote{font-size:8.5pt;color:#526273;margin:5px 0}.monthly-report-footnote{margin-top:14px;border-top:1px solid #CCD6DF;padding-top:7px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><h1>${escapeHtml(state.settings.clinicName)}</h1><h2>${escapeHtml(reportMonthLabel(month))} Monthly Report</h2><p class="report-meta">Generated ${escapeHtml(new Date().toLocaleString("en-PH",{timeZone:"Asia/Manila"}))}</p>${report}</body></html>`);
+  w.document.close();
+  w.onload=()=>{w.focus();w.print();};
+}
 function bindReports(){
   document.getElementById("print-reports")?.addEventListener("click",printReports);
   document.querySelectorAll("[data-report-detail]").forEach(b=>b.onclick=()=>reportDetail(b.dataset.reportDetail));
   document.querySelectorAll("[data-view-visitor-btn]").forEach(b=>b.onclick=()=>{const v=frequentVisitors(reportVisits(),1).find(x=>x.studentId===b.dataset.viewVisitorBtn);if(v)visitorRecordsModal(v);});
+  const content=document.getElementById("content");
+  if(content&&!document.getElementById("monthly-report-section"))content.insertAdjacentHTML("beforeend",renderMonthlyReportSection());
+  document.getElementById("monthly-report-month")?.addEventListener("change",event=>{
+    if(!event.target.value)return;
+    state.reportMonth=event.target.value;
+    document.getElementById("monthly-report-content").innerHTML=monthlyReportHtml(state.reportMonth);
+  });
+  document.getElementById("monthly-print-report")?.addEventListener("click",printMonthlyReport);
 }

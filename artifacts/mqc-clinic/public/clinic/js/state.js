@@ -21,8 +21,13 @@ const state = {
     logo:"", patientIdPrefix:"", lowStockThreshold:15, expirationAlertDays:14,
     passwordMinLength:8, sessionTimeout:30, dateFormat:"MMM D, YYYY",
     timeFormat:"12-hour", timezone:"Asia/Manila", language:"English",
+    appearanceTheme:"ocean",
   },
 };
+try{
+  const savedTheme=window.localStorage.getItem("mqc_clinic_appearance_theme_v1");
+  if(["ocean","forest","berry","terracotta"].includes(savedTheme))state.settings.appearanceTheme=savedTheme;
+}catch{}
 
 /* ================= UTIL ================= */
 function manilaNow(){

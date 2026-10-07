@@ -15,11 +15,18 @@ const COLLEGE_COURSES = [
 const COURSE_GROUPS = [
   {label:"College", options:COLLEGE_COURSES},
   {label:"Senior High School — Strand", options:["HUMSS","GAS","ABM","STEM","ICT","HE"]},
-  {label:"Junior High School — Section", options:["Room 001","Room 401","Room 402","Room 403","Room 404","Room 405","Room 406"]},
-  {label:"Elementary — Section", options:["Room 001","Room 401","Room 402","Room 403","Room 404","Room 405","Room 406"]},
-  {label:"Kindergarten — Section", options:["Room 001","Room 401","Room 402","Room 403","Room 404","Room 405","Room 406"]},
+  {label:"Junior High School — Section", options:["James"]},
+  {label:"Elementary — Section", options:["Job"]},
+  {label:"Kindergarten — Section", options:["John"]},
 ];
 const COURSES = COURSE_GROUPS.flatMap(g=>g.options);
+const YEAR_LEVEL_GROUPS = [
+  {label:"Kindergarten", options:["Kinder 1","Kinder 2"]},
+  {label:"Elementary", options:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6"]},
+  {label:"Junior High School", options:["Grade 7","Grade 8","Grade 9","Grade 10"]},
+  {label:"Senior High School", options:["Grade 11","Grade 12"]},
+  {label:"College", options:["1st Year","2nd Year","3rd Year","4th Year"]},
+];
 
 /* Builds the grouped <optgroup> markup for a Course/Department <select>. */
 function courseOptionsHtml(selected){
@@ -27,19 +34,30 @@ function courseOptionsHtml(selected){
     g.options.map(c=>`<option ${selected===c?'selected':''}>${c}</option>`).join("")
   }</optgroup>`).join("");
 }
-/* Returns the valid Year/Grade Level choices for a given course/department. */
-function yearLevelsFor(course){
-  if(COLLEGE_COURSES.includes(course)) return ["1st Year","2nd Year","3rd Year","4th Year"];
-  if(["HUMSS","GAS","ABM","STEM","ICT","HE"].includes(course)) return ["Grade 11","Grade 12"];
-  if(course==="Room 001" || /^Room 4\d\d$/.test(course)) return ["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10"];
-  return ["Kinder 1","Kinder 2"];
+function yearLevelOptionsHtml(selected){
+  return YEAR_LEVEL_GROUPS.map(group=>`<optgroup label="${group.label}">${group.options.map(year=>`<option ${selected===year?"selected":""}>${year}</option>`).join("")}</optgroup>`).join("");
+}
+function schoolLevelForYear(year){
+  return YEAR_LEVEL_GROUPS.find(group=>group.options.includes(year))?.label||"College";
+}
+function courseOptionsForYearHtml(year, selected=""){
+  const level=schoolLevelForYear(year);
+  const options=level==="Kindergarten"?["John"]:
+    level==="Elementary"?["Job"]:
+    level==="Junior High School"?["James"]:
+    level==="Senior High School"?["HUMSS","GAS","ABM","STEM","ICT","HE"]:COLLEGE_COURSES;
+  const current=options.includes(selected)?selected:options[0];
+  return options.map(course=>`<option ${course===current?"selected":""}>${course}</option>`).join("");
 }
 function educationGroupFor(course, year=""){
+  if(year) return schoolLevelForYear(year);
   if(COLLEGE_COURSES.includes(course)) return "College";
   if(["HUMSS","GAS","ABM","STEM","ICT","HE"].includes(course)) return "Senior High School";
-  if(year==="Kinder 1" || year==="Kinder 2") return "Kindergarten";
+  if(course==="John") return "Kindergarten";
+  if(course==="James") return "Junior High School";
+  if(course==="Job") return "Elementary";
   if(/^Grade [789]$|^Grade 10$/.test(year)) return "Junior High School";
-  return "Elementary School";
+  return "Elementary";
 }
 const NURSES = [];
 
@@ -84,7 +102,7 @@ let EQUIPMENT = [
 ];
 
 const COMPLAINTS = ["Headache","Fever","Dizziness","Stomachache","Nausea/Vomiting","Injury","Cough/Cold","Difficulty Breathing","Menstrual Pain","Weakness/Fatigue"];
-const SYMPTOMS = ["Fever","Headache","Dizziness","Nausea","Vomiting","Stomach Pain","Cough","Sore Throat","Runny Nose","Difficulty Breathing","Chest Pain","Weakness","Fainting","Diarrhea"];
+const SYMPTOMS = ["Fever","Headache","Dizziness","Nausea","Vomiting","Stomach Pain","Cough","Sore Throat","Runny Nose","Difficulty Breathing","Chest Pain","Weakness","Fainting","Diarrhea","Asthma"];
 const INTERVENTIONS = ["Rest/Observation","First Aid","Wound Cleaning","Ice/Cold Compress","Oral Fluids","Medication Given","Referred to Parent/Guardian","Referred to Doctor/Hospital"];
 const DISPOSITIONS = ["Treated and Released","Returned to Class","Rested in Clinic","Admitted","Sent Home","Parent/Guardian Notified","Referred to Doctor","Referred to Hospital/Healthcare Facility","Emergency Referral"];
 
@@ -95,6 +113,7 @@ function seedConsultations(){
 let CONSULTATIONS = seedConsultations();
 
 let AUDIT_LOGS = [];
+let INVENTORY_TRANSACTIONS = [];
 
 let DELETED_CONSULTATIONS = [];
 let DELETED_MEDICINES = [];

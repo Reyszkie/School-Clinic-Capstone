@@ -90,6 +90,8 @@ function openMedicineForm(existing=null){
   document.getElementById('mf-save').onclick=()=>{
     const name=document.getElementById('mf-name').value.trim();
     if(!name){ toast('Missing information','Medicine name is required.','err'); return; }
+    const previousQuantity=isEdit?Number(existing.qty)||0:0;
+    ensureInventoryLedger();
     const rec={
       code: document.getElementById('mf-code').value, name,
       category: document.getElementById('mf-category').value || "General",
@@ -100,8 +102,8 @@ function openMedicineForm(existing=null){
       supplier: document.getElementById('mf-supplier').value || "N/A",
       deleted:false,
     };
-    if(isEdit){ const idx=MEDICINES.findIndex(m=>m.code===existing.code); MEDICINES[idx]=rec; logAudit(`Inventory Updated — ${rec.name}`,"Inventory"); toast('Medicine updated', `${rec.name} has been updated.`,'ok'); }
-    else { MEDICINES.unshift(rec); logAudit(`Inventory Item Added — ${rec.name}`,"Inventory"); toast('Medicine added', `${rec.name} added to inventory.`,'ok'); }
+    if(isEdit){ const idx=MEDICINES.findIndex(m=>m.code===existing.code); MEDICINES[idx]=rec; recordInventoryQuantityChange("medicine",rec,previousQuantity,rec.qty); logAudit(`Inventory Updated — ${rec.name}`,"Inventory"); toast('Medicine updated', `${rec.name} has been updated.`,'ok'); }
+    else { MEDICINES.unshift(rec); if(rec.qty)recordInventoryTransaction("medicine",rec,"added",rec.qty);else recordInventoryTransaction("medicine",rec,"baseline",0); logAudit(`Inventory Item Added — ${rec.name}`,"Inventory"); toast('Medicine added', `${rec.name} added to inventory.`,'ok'); }
     closeModal(); renderInventoryTabBody();
   };
 }
@@ -201,11 +203,13 @@ function openEquipmentForm(existing=null){
   document.getElementById('ef-save').onclick=()=>{
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information','Equipment name is required.','err'); return; }
+    const previousQuantity=isEdit?Number(existing.qty)||0:0;
+    ensureInventoryLedger();
     const rec={ id:document.getElementById('ef-id').value, name, qty:parseInt(document.getElementById('ef-qty').value)||0,
       condition:document.getElementById('ef-condition').value, lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
-    if(isEdit){ const idx=EQUIPMENT.findIndex(e=>e.id===existing.id); EQUIPMENT[idx]=rec; logAudit(`Inventory Updated — ${rec.name}`,"Inventory"); toast('Equipment updated', `${rec.name} has been updated.`,'ok'); }
-    else { EQUIPMENT.unshift(rec); logAudit(`Inventory Item Added — ${rec.name}`,"Inventory"); toast('Equipment added', `${rec.name} added to inventory.`,'ok'); }
+    if(isEdit){ const idx=EQUIPMENT.findIndex(e=>e.id===existing.id); EQUIPMENT[idx]=rec; recordInventoryQuantityChange("equipment",rec,previousQuantity,rec.qty); logAudit(`Inventory Updated — ${rec.name}`,"Inventory"); toast('Equipment updated', `${rec.name} has been updated.`,'ok'); }
+    else { EQUIPMENT.unshift(rec); if(rec.qty)recordInventoryTransaction("equipment",rec,"added",rec.qty);else recordInventoryTransaction("equipment",rec,"baseline",0); logAudit(`Inventory Item Added — ${rec.name}`,"Inventory"); toast('Equipment added', `${rec.name} added to inventory.`,'ok'); }
     closeModal(); renderInventoryTabBody();
   };
 }

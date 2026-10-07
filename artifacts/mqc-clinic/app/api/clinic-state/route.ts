@@ -509,18 +509,38 @@ export async function GET() {
       return username && !storedUsernames.has(username);
     });
     const usersNeedBootstrap = missingSnapshotUsers.length > 0;
+    const snapshotVisitById = new Map<string, Record<string, unknown>>();
+    if (Array.isArray(snapshot.consultations)) {
+      snapshot.consultations.forEach((visit) => {
+        if (visit && typeof visit === "object") {
+          const savedVisit = visit as Record<string, unknown>;
+          if (savedVisit.id !== undefined) snapshotVisitById.set(String(savedVisit.id), savedVisit);
+        }
+      });
+    }
+    const snapshotSettings = snapshot.settings && typeof snapshot.settings === "object"
+      ? snapshot.settings as Record<string, unknown>
+      : {};
     const normalizedUsers = users.filter((user) => !user.deleted_at).map(userFromRow);
     const normalized = hasNormalizedData ? {
       ...snapshot,
       students: patients.map(patientFromRow),
       medicines: medicines.map(medicineFromRow),
       equipment: equipment.map(equipmentFromRow),
-      consultations: visits.map((visit) => visitFromRow(visit, patients)),
+      consultations: visits.map((visit) => {
+        const normalizedVisit = visitFromRow(visit, patients);
+        const savedVisit = snapshotVisitById.get(String(visit.id));
+        return savedVisit ? {
+          ...normalizedVisit,
+          respiratoryRate: savedVisit.respiratoryRate,
+          equipmentUsed: savedVisit.equipmentUsed,
+        } : normalizedVisit;
+      }),
       users: [...normalizedUsers, ...missingSnapshotUsers],
       deletedStudents: patients.filter((patient) => patient.deleted_at).map(patientFromRow),
       deletedUsers: users.filter((user) => user.deleted_at).map(userFromRow),
       auditLogs: auditLogs.map((audit) => auditFromRow(audit, users)),
-      ...(settingsRows[0] ? { settings: settingsFromRow(settingsRows[0]) } : {}),
+      ...(settingsRows[0] ? { settings: { ...snapshotSettings, ...settingsFromRow(settingsRows[0]) } } : {}),
       bootstrapRequired: usersNeedBootstrap,
     } : { ...snapshot, bootstrapRequired: true };
     return Response.json(normalized, { headers: { "Cache-Control": "no-store" } });
