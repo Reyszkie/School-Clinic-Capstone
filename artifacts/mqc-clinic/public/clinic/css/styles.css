@@ -682,6 +682,10 @@ tbody tr{transition:background-color .14s ease;}
 .monthly-report-table{min-width:0;table-layout:fixed;}
 .monthly-report-table th{white-space:normal;}
 .monthly-report-table td{white-space:normal;overflow-wrap:anywhere;}
+.report-summary-table-wrap{overflow-x:hidden;}
+.report-summary-table{width:100%;min-width:0;table-layout:fixed;}
+.report-summary-table .report-summary-count-column{width:22%;}
+.report-summary-table th,.report-summary-table td{overflow-wrap:anywhere;}
 .report-count,.report-count-table td:last-child{text-align:center !important;}
 .inventory-report-note,.monthly-report-footnote{font-size:11.5px;line-height:1.5;color:var(--ink-soft);margin:0 0 8px;}
 .monthly-report-footnote{margin-top:15px;border-top:1px solid var(--line);padding-top:10px;}
