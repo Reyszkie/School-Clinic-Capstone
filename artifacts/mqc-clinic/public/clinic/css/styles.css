@@ -686,6 +686,7 @@ tbody tr{transition:background-color .14s ease;}
 .monthly-report-table{min-width:0;table-layout:fixed;}
 .monthly-report-table th{white-space:normal;}
 .monthly-report-table td{white-space:normal;overflow-wrap:anywhere;}
+.report-detail-summary-table .report-detail-count-column{width:25%;}
 .report-summary-table-wrap{overflow-x:hidden;}
 .report-summary-table{width:100%;min-width:0;table-layout:fixed;}
 .report-summary-table .report-summary-count-column{width:22%;}
