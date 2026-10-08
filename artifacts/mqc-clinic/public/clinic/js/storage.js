@@ -238,6 +238,10 @@ function applyStoredData(data){
   if(Array.isArray(data.deletedUsers)) DELETED_USERS = data.deletedUsers;
   if(Array.isArray(data.users)) state.users = data.users;
   if(data.settings && typeof data.settings==="object") state.settings = {...state.settings,...data.settings};
+  try{
+    const savedTheme=window.localStorage.getItem("mqc_clinic_appearance_theme_v1");
+    if(CLINIC_THEMES.some(theme=>theme.id===savedTheme))state.settings.appearanceTheme=savedTheme;
+  }catch{}
   ensureInventoryLedger();
   return migratedInventory;
 }
