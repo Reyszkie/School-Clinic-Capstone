@@ -201,14 +201,65 @@ function bindOptionFreeText(group, initialValue=""){
   checkbox.addEventListener("change",update);field.value=initialValue||"";update();
 }
 
+function visitInventoryCard({id,label,items,selected,quantityId,quantity,unitForItem,availableForItem}){
+  const selectedItem=items.find(item=>item.name===selected);
+  const stockText=selectedItem?`Available stock: ${availableForItem(selectedItem)} ${unitForItem(selectedItem)}`:"Select an item to view available stock";
+  return `<section class="visit-inventory-card">
+    <div class="visit-inventory-heading"><label for="${id}">${label}</label>
+      <select id="${id}" aria-label="${label}"><option value="">None</option>${items.map(item=>`<option value="${escapeHtml(item.name)}" ${selected===item.name?"selected":""} ${availableForItem(item)<1&&selected!==item.name?"disabled":""}>${escapeHtml(item.name)}</option>`).join("")}</select>
+      <span class="visit-inventory-stock" id="${id}-stock" aria-live="polite">${stockText}</span>
+    </div>
+    <div class="visit-inventory-quantity"><span>Quantity</span><div class="visit-quantity-control">
+      <button type="button" data-quantity-step="-1" data-quantity-target="${quantityId}" aria-label="Decrease quantity">−</button>
+      <input id="${quantityId}" type="number" min="1" step="1" value="${Math.max(1,Number(quantity)||1)}" inputmode="numeric" aria-label="${label} quantity">
+      <button type="button" data-quantity-step="1" data-quantity-target="${quantityId}" aria-label="Increase quantity">+</button>
+    </div></div>
+  </section>`;
+}
+
+function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForItem}){
+  const select=document.getElementById(id),quantity=document.getElementById(quantityId),stock=document.getElementById(`${id}-stock`);
+  if(!select||!quantity||!stock)return;
+  const update=()=>{
+    const item=items.find(candidate=>candidate.name===select.value);
+    const available=item?availableForItem(item):0;
+    stock.textContent=item?`Available stock: ${available} ${unitForItem(item)}`:"Select an item to view available stock";
+    quantity.max=item?String(available):"";
+    const current=Math.max(1,Number(quantity.value)||1);
+    document.querySelectorAll(`[data-quantity-target="${quantityId}"]`).forEach(button=>{
+      button.disabled=!item||(button.dataset.quantityStep==="-1"?current<=1:available<1||current>=available);
+    });
+  };
+  select.addEventListener("change",()=>{quantity.value="1";update();});
+  document.querySelectorAll(`[data-quantity-target="${quantityId}"]`).forEach(button=>button.addEventListener("click",()=>{
+    if(!select.value)return;
+    const available=Number(quantity.max)||0;
+    const current=Math.max(1,Number(quantity.value)||1);
+    quantity.value=String(Math.min(available,Math.max(1,current+Number(button.dataset.quantityStep))));
+    update();
+  }));
+  quantity.addEventListener("change",()=>{
+    const available=Number(quantity.max)||0;
+    quantity.value=String(Math.max(1,Math.min(available||Number(quantity.value)||1,Math.floor(Number(quantity.value)||1))));
+    update();
+  });
+  quantity.addEventListener("input",update);
+  update();
+}
+
 function openConsultationForm(student, existing=null){
   if(!student)return;
   const isEdit=!!existing, f=existing||{date:todayDateString(),time:currentTimeString(),nurse:state.currentUser.name,complaint:"",description:"",symptomStart:"",painLevel:"0 – No pain",painLocation:"",symptoms:[],knownConditions:"No",allergiesHistory:"No",currentMedication:"No",previousSimilar:"No",lastMeal:"",weight:"",height:"",temp:"",bp:"",pulse:"",respiratoryRate:"",spo2:"",assessment:"Stable",assessmentOther:"",notes:"",interventions:[],supplyUsed:"",supplyQty:1,equipmentUsed:[],equipmentQty:1,treatmentGiven:"",dosage:"",outcome:"Treated and Released",releasedAt:"",remarks:"",guardianContacted:"not applicable",guardianMethod:"phone call",personContacted:"",staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",medicine:"",medQty:1};
   const existingSupply=f.supplyUsed||(f.equipmentUsed||[]).find(name=>VISIT_SUPPLY_NAMES.includes(name))||"";
   const existingTools=(f.equipmentUsed||[]).filter(name=>VISIT_TOOL_NAMES.includes(name));
+  const returnedInventory=isEdit?activeVisitInventoryTransactions(existing.id):[];
+  const returnedQuantity=(itemType,itemId)=>returnedInventory.filter(entry=>entry.itemType===itemType&&entry.itemId===itemId).reduce((total,entry)=>total+Number(entry.quantity||0),0);
+  const medicineAvailable=item=>(Number(item.qty)||0)+returnedQuantity("medicine",item.code);
+  const equipmentAvailable=item=>(Number(item.qty)||0)+returnedQuantity("equipment",item.id);
   const meds=MEDICINES.filter(m=>!m.deleted);
-  const supplies=EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&(Number(item.qty)>0||item.name===existingSupply));
-  const tools=EQUIPMENT.filter(item=>VISIT_TOOL_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&(Number(item.qty)>0||existingTools.includes(item.name)||f.medicine===item.name));
+  const supplies=EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||item.name===existingSupply));
+  const tools=EQUIPMENT.filter(item=>VISIT_TOOL_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||existingTools.includes(item.name)||f.medicine===item.name));
+  const selectedTool=existingTools[0]||tools.find(item=>item.name===f.medicine)?.name||"";
   const html=`<div class="modal-head"><h3>${isEdit?"Edit":"New"} Patient Visit — ${escapeHtml(student.name)}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body"><form id="consult-form" class="form-grid">
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
@@ -240,18 +291,9 @@ function openConsultationForm(student, existing=null){
     <div class="f-field full"><label>Treatment / Intervention</label><div style="padding-top:5px">${optionListHtml(INTERVENTIONS,f.interventions||[],"intervention") }<label class="option-check"><input type="checkbox" id="cf-intervention-other" data-free-text-toggle="intervention-other" ${f.interventions?.some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="intervention-other" placeholder="Enter other intervention" value="${escapeHtml((f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
     <div class="f-field full"><label>Additional Treatment Details</label><textarea id="cf-treatment" placeholder="Record any care instructions or treatment details">${escapeHtml(f.treatmentGiven||"")}</textarea></div>
     <div class="visit-inventory-grid">
-      <div class="visit-inventory-group">
-        <div class="f-field"><label>Medication / Treatment Given</label><select id="cf-medicine"><option value="">None</option>${meds.map(m=>`<option value="${escapeHtml(m.name)}" ${f.medicine===m.name?"selected":""}>${escapeHtml(m.name)} (${m.qty} ${m.unit})</option>`).join("")}</select></div>
-        <div class="f-field"><label>Quantity</label><input type="number" id="cf-medqty" min="1" step="1" value="${Math.max(1,Number(f.medQty)||1)}" inputmode="numeric"></div>
-      </div>
-      <div class="visit-inventory-group">
-        <div class="f-field"><label>Medication Tools/Treatment Given</label><select id="cf-equipment"><option value="">None</option>${tools.map(item=>`<option value="${escapeHtml(item.name)}" ${existingTools.includes(item.name)||f.medicine===item.name?"selected":""}>${escapeHtml(item.name)} (${Number(item.qty)} available)</option>`).join("")}</select></div>
-        <div class="f-field"><label>Quantity</label><input type="number" id="cf-equipment-qty" min="1" step="1" value="${Math.max(1,Number(f.equipmentQty)||1)}" inputmode="numeric"></div>
-      </div>
-      <div class="visit-inventory-group">
-        <div class="f-field"><label>Medication Supplies/Treatment Given</label><select id="cf-supply"><option value="">None</option>${supplies.map(item=>`<option value="${escapeHtml(item.name)}" ${existingSupply===item.name?"selected":""}>${escapeHtml(item.name)} (${Number(item.qty)} available)</option>`).join("")}</select></div>
-        <div class="f-field"><label>Quantity</label><input type="number" id="cf-supply-qty" min="1" step="1" value="${Math.max(1,Number(f.supplyQty)||1)}" inputmode="numeric"></div>
-      </div>
+      ${visitInventoryCard({id:"cf-medicine",label:"Medication / Treatment Given",items:meds,selected:f.medicine,quantityId:"cf-medqty",quantity:f.medQty,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable})}
+      ${visitInventoryCard({id:"cf-equipment",label:"Medication Tools/Treatment Given",items:tools,selected:selectedTool,quantityId:"cf-equipment-qty",quantity:f.equipmentQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
+      ${visitInventoryCard({id:"cf-supply",label:"Medication Supplies/Treatment Given",items:supplies,selected:existingSupply,quantityId:"cf-supply-qty",quantity:f.supplyQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
     </div>
     <div class="f-field"><label>Dosage / Instructions</label><input id="cf-dosage" value="${escapeHtml(f.dosage||"")}" placeholder="e.g. 1 tablet"></div>
     <div class="f-field full"><label>Clinic Disposition — Outcome</label><select id="cf-outcome">${DISPOSITIONS.map(x=>`<option ${f.outcome===x?"selected":""}>${x}</option>`).join("")}<option ${f.outcome==="Other"?"selected":""}>Other</option></select></div>
@@ -269,6 +311,9 @@ function openConsultationForm(student, existing=null){
   bindOptionFreeText("symptom-other",(f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
   bindOptionFreeText("assessment-other",f.assessmentOther||"");
   bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
+  bindVisitInventoryCard({id:"cf-medicine",quantityId:"cf-medqty",items:meds,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable});
+  bindVisitInventoryCard({id:"cf-equipment",quantityId:"cf-equipment-qty",items:tools,unitForItem:()=>"items",availableForItem:equipmentAvailable});
+  bindVisitInventoryCard({id:"cf-supply",quantityId:"cf-supply-qty",items:supplies,unitForItem:()=>"items",availableForItem:equipmentAvailable});
   let visitSaveInProgress=false;
   document.getElementById("cf-clear").onclick=()=>document.getElementById("consult-form").reset();
   document.getElementById("cf-save").onclick=async()=>{
