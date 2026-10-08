@@ -1,3 +1,5 @@
+import { readActiveClinicSession } from "../session";
+
 export const dynamic = "force-dynamic";
 
 function config() {
@@ -26,6 +28,16 @@ async function restRequest(path: string, init: RequestInit = {}) {
 }
 
 export async function POST(request: Request) {
+  let session;
+  try {
+    session = await readActiveClinicSession(request);
+  } catch (error) {
+    console.error("Unable to verify account administrator", error);
+    return Response.json({ message: "Account creation is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+  if (!session) return Response.json({ message: "Sign in to manage clinic accounts." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  if (session.role !== "Head Nurse & Administrator") return Response.json({ message: "Only the Head Nurse & Administrator can create clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+
   let body: unknown;
   try {
     body = await request.json();

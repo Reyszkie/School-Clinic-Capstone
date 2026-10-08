@@ -1,5 +1,5 @@
 /* ================= REPORTS ================= */
-function reportVisits(){return CONSULTATIONS.filter(c=>!c.deleted);}
+function reportVisits(){return CONSULTATIONS.filter(c=>!c.deleted&&c.status!=="Deleted"&&c.status!=="Superseded");}
 function frequentVisitors(consults,minCount=1){
   const map={};consults.forEach(c=>{if(!map[c.studentId])map[c.studentId]={studentId:c.studentId,studentName:c.studentName,course:c.course,year:c.year,count:0,records:[]};map[c.studentId].count++;map[c.studentId].records.push(c);});
   return Object.values(map).filter(x=>x.count>=minCount).sort((a,b)=>b.count-a.count);

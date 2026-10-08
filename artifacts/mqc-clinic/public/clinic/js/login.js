@@ -88,7 +88,7 @@ function attachLoginFormEvents(){
     if(serverHydrationPromise) await serverHydrationPromise;
     let response;
     try{
-      response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
+      response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass,rememberMe:document.getElementById('remember-me').checked})});
     }catch(err){
       spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
       errEl.textContent='Unable to connect to Supabase. Please try again.';
@@ -106,12 +106,30 @@ function attachLoginFormEvents(){
     if(found && found.status==='Disabled'){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='This account has been disabled. Contact the administrator.'; errEl.style.display='block'; return; }
     if(!found){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='Invalid username or password.'; errEl.style.display='block'; return; }
     const rememberMe=document.getElementById('remember-me').checked;
-    state.currentUser=ensureVisibleClinicUser(found);
-    state.loggedIn=true;
-    saveAuthSession(found,rememberMe);
-    logAudit("Signed In","Authentication","Success",false);
-    render();
-    toast("Signed in",`Welcome back, ${state.currentUser.name}.`,"ok");
+    let hydrated=false;
+    try{
+      hydrated=await hydrateFromSharedStorage();
+      if(!hydrated&&!sharedStorageMissing)throw new Error('Shared clinic records could not be loaded. Check the connection and try again.');
+    }catch(error){
+      await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
+      spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
+      errEl.textContent=error.message||'Shared clinic records could not be loaded.';
+      errEl.style.display='block';
+      return;
+    }
+    const visibleUser=ensureVisibleClinicUser(found);
+    if((!hydrated&&sharedStorageMissing)||sharedStorageNeedsBootstrap){
+      try{await saveToClinicState(false,true);}
+      catch(error){
+        await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
+        spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
+        errEl.textContent=error.message||'Clinic data could not be initialized.';
+        errEl.style.display='block';
+        return;
+      }
+    }
+    openIdentityVerification(visibleUser,rememberMe,pass);
+    spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
   });
 }
 
@@ -128,6 +146,8 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
       </form>
     </div>`,"sm");
   const closeVerification=()=>{
+    clearAuthSession();
+    fetch('/api/auth/logout',{method:'POST'}).catch(error=>console.error('MQC Clinic: could not clear canceled verification session.',error));
     closeModal();
     render();
   };
@@ -154,6 +174,7 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
     state.loggedIn=true;
     saveAuthSession(user,rememberMe);
     closeModal();
+    logAudit("Signed In","Authentication","Success",false);
     logAudit("Identity Verified","Authentication","Success",false);
     render();
     toast("Identity verified",`Welcome back, ${state.currentUser.name}.`,"ok");

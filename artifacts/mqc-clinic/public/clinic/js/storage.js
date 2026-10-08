@@ -267,19 +267,26 @@ async function hydrateFromSharedStorage(){
 }
 
 function saveAuthSession(user, rememberMe=false){
-  const authData=JSON.stringify({username:user.username});
+  const authData=JSON.stringify({username:user.username,rememberMe:Boolean(rememberMe)});
   try{
-    window.sessionStorage.setItem(AUTH_SESSION_KEY,authData);
+    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    window.localStorage.removeItem(AUTH_SESSION_KEY);
+    (rememberMe?window.localStorage:window.sessionStorage).setItem(AUTH_SESSION_KEY,authData);
   }catch(err){ console.warn("MQC Clinic: couldn't save the login session.",err); }
 }
 
-function restoreAuthSession(){
+async function restoreAuthSession(){
   try{
-    const raw=window.sessionStorage.getItem(AUTH_SESSION_KEY);
+    const rememberedRaw=window.localStorage.getItem(AUTH_SESSION_KEY);
+    const raw=rememberedRaw||window.sessionStorage.getItem(AUTH_SESSION_KEY);
     if(!raw) return false;
     const saved=JSON.parse(raw);
-    const user=state.users.find(candidate=>candidate.username===saved.username && candidate.status!=='Disabled');
-    if(!user) return false;
+    if(rememberedRaw&&saved.rememberMe!==true){window.localStorage.removeItem(AUTH_SESSION_KEY);return false;}
+    const response=await fetch("/api/auth/session",{cache:"no-store"});
+    if(!response.ok){window.localStorage.removeItem(AUTH_SESSION_KEY);window.sessionStorage.removeItem(AUTH_SESSION_KEY);return false;}
+    const user=await response.json();
+    if(!user?.id||user.username!==saved.username||user.status!=="Active"){window.localStorage.removeItem(AUTH_SESSION_KEY);window.sessionStorage.removeItem(AUTH_SESSION_KEY);return false;}
+    ensureVisibleClinicUser(user);
     state.currentUser=user;
     state.loggedIn=true;
     return true;
@@ -292,5 +299,6 @@ function restoreAuthSession(){
 function clearAuthSession(){
   try{
     window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    window.localStorage.removeItem(AUTH_SESSION_KEY);
   }catch(err){ /* ignore */ }
 }

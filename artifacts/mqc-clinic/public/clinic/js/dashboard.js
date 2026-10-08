@@ -1,5 +1,5 @@
 /* ================= DASHBOARD ================= */
-function activeVisits(){return CONSULTATIONS.filter(c=>!c.deleted&&c.status!=="Deleted"&&STUDENTS.some(s=>s.id===c.studentId));}
+function activeVisits(){return CONSULTATIONS.filter(c=>!c.deleted&&c.status!=="Deleted"&&c.status!=="Superseded"&&STUDENTS.some(s=>s.id===c.studentId));}
 function dashboardMetrics(){
   const visits=activeVisits(), today=todayDateString(), month=today.slice(0,7);
   const monthVisits=visits.filter(c=>c.date?.slice(0,7)===month);

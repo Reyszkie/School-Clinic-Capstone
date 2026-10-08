@@ -93,7 +93,7 @@ function bindUsersTab(){
       const u=state.users.find(x=>x.id===b.dataset.delUser);
       confirmDialog({title:"Delete this user?", msg:`<b>${escapeHtml(u.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete User", onConfirm:()=>{
         state.users=state.users.filter(x=>x.id!==u.id);
-        DELETED_USERS.unshift(u);
+        DELETED_USERS.unshift({...u,deleted:true,deletedAt:new Date().toISOString()});
         logAudit(`Record Deleted — User ${u.name}`,"User Management","Warning");
         toast('User deleted', `${u.name} moved to Deleted Records.`,'warn');
         renderAdminTabBody();
@@ -166,7 +166,7 @@ function bindDeletedTab(){
   document.querySelectorAll('[data-restore-dp]').forEach(b=> b.onclick=()=>{ const s=DELETED_STUDENTS.find(x=>x.id===b.dataset.restoreDp); if(!s)return; DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id); const restored={...s,deleted:false}; delete restored.deletedAt; delete restored.deletedBy; STUDENTS.unshift(restored); logAudit(`Record Restored — Patient ${s.name}`,"Patient Visits"); toast('Restored', `${s.name} restored.`,'ok'); rerender(); });
   document.querySelectorAll('[data-restore-dm]').forEach(b=> b.onclick=()=>{ const r=MEDICINES.find(m=>m.code===b.dataset.restoreDm); r.deleted=false; logAudit(`Record Restored — ${r.name}`,"Inventory"); toast('Restored', `${r.name} restored.`,'ok'); rerender(); });
   document.querySelectorAll('[data-restore-de]').forEach(b=> b.onclick=()=>{ const r=EQUIPMENT.find(e=>e.id===b.dataset.restoreDe); r.deleted=false; logAudit(`Record Restored — ${r.name}`,"Inventory"); toast('Restored', `${r.name} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id); state.users.unshift(u); logAudit(`User Restored — ${u.name}`,"User Management"); toast('Restored', `${u.name} restored.`,'ok'); rerender(); });
+  document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); if(!u)return; DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id); const restored={...u,deleted:false}; delete restored.deletedAt; delete restored.deletedBy; state.users.unshift(restored); logAudit(`User Restored — ${u.name}`,"User Management"); toast('Restored', `${u.name} restored.`,'ok'); rerender(); });
 
   const permDelete=(label, table, key, value, action)=>{
     confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); PURGED_RECORDS.push({table,key,value}); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToClinicState(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});

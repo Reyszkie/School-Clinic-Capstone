@@ -1,189 +1,102 @@
-# MQC Clinic: Simple Install and Test Guide
+# MQC Clinic: Local Setup and Testing
 
 ## Requirements
 
 - Windows
 - Node.js 24
-- PostgreSQL 18
+- Corepack and pnpm
 - A browser
+- A Supabase project
 
-The project uses Corepack and pnpm
-
-## Send the project to a classmate
-
-Send the project source folder or a ZIP file, including `package.json`, `pnpm-lock.yaml`, `.env.example`, `artifacts`, `lib`, `scripts`, `docs`, and `backups/mqc_clinic.backup` if your classmate should receive your current records.
-
-Do not send `node_modules`, `.cache`, `.local`, `dist`, or your personal `.env` file. They are local/generated files and can contain machine-specific settings.
-
-Your classmate must install Node.js 24, PostgreSQL 18, and a browser, then follow this guide from the beginning. The backup contains the clinic records from your local database, so only share it if those records are safe to share.
+The clinic API uses Supabase REST endpoints at runtime. A local PostgreSQL service is not required to run the website. `DATABASE_URL` is only used by the separate Drizzle tooling.
 
 ## 1. Install the project
 
 Open PowerShell in the project folder:
 
 ```powershell
-cd C:\Users\hirrua\Documents\mqc-clinic-updated
 corepack enable
 corepack pnpm install
 ```
 
-## 2. Prepare PostgreSQL
+Do not share your personal `.env` or `.env.local` files. They contain server credentials. Share `backups/mqc_clinic.backup` only if its patient records are safe to disclose.
 
-Make sure the PostgreSQL service is running:
+## 2. Prepare Supabase
 
-```powershell
-Get-Service -Name "postgresql-x64-18"
-```
-
-If `psql` is not recognized, run:
-
-```powershell
-$env:Path += ";C:\Program Files\PostgreSQL\18\bin"
-```
-
-Connect as the PostgreSQL administrator. Enter the administrator password when prompted:
-
-```powershell
-psql -U postgres -h 127.0.0.1 -p 5432
-```
-
-Run this SQL in the PostgreSQL prompt:
+1. Create or select a Supabase project.
+2. Open its SQL Editor and run the repository file `supabase/schema.sql`.
+3. The schema creates a local test user: `testnurse` / `test12345`. This account has the Staff Nurse role; change or remove it before production use.
+4. Create the first administrator in the SQL Editor. Replace the username and password placeholders with your own values before running:
 
 ```sql
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'clinic') THEN
-    CREATE ROLE clinic LOGIN PASSWORD 'clinic';
-  ELSE
-    ALTER ROLE clinic WITH LOGIN PASSWORD 'clinic';
-  END IF;
-END
-$$;
-CREATE DATABASE mqc_clinic OWNER clinic;
-\q
+insert into public.clinic_users (id, name, last_name, first_name, role, username, password_hash, status)
+values (
+  'NRS-ADMIN-001',
+  'Clinic Administrator',
+  'Administrator',
+  'Clinic',
+  'Head Nurse & Administrator',
+  'YOUR_ADMIN_USERNAME',
+  extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')),
+  'Active'
+)
+on conflict (username) do nothing;
 ```
 
-If `mqc_clinic` already exists, ignore that message.
+This first administrator can then create and manage clinic accounts from Administration. Account creation and permanent deletion are restricted to this role.
 
-### Optional: restore the included records
+## 3. Configure the application
 
-Skip this section if your classmate should start with an empty database. After creating the `clinic` role and `mqc_clinic` database, run this from the project folder:
+Copy the example environment file into the Next.js app folder:
 
 ```powershell
-$env:PGPASSWORD = "clinic"
-pg_restore -h 127.0.0.1 -p 5432 -U clinic -d mqc_clinic --no-owner --no-privileges backups/mqc_clinic.backup
-Remove-Item Env:PGPASSWORD
+Copy-Item .env.example artifacts/mqc-clinic/.env.local
 ```
 
-The backup was created with PostgreSQL 18 and contains the `clinic_state` table and its saved data. Do not run the restore more than once on the same database unless you intend to replace or merge the existing data.
+Edit `artifacts/mqc-clinic/.env.local` and set:
 
-### Connect with pgAdmin 4
+- `SUPABASE_URL` to the project URL.
+- `SUPABASE_SECRET_KEY` to that project's server-side Secret key. `SUPABASE_SERVICE_ROLE_KEY` is accepted for legacy projects.
+- `AUDIT_SESSION_SECRET` to a separate long random value (recommended). If omitted, the server-side Supabase key signs clinic sessions.
 
-In pgAdmin 4, right-click **Servers** and choose **Register > Server**. Use these values:
+Never place the Supabase secret key in browser code, a `NEXT_PUBLIC_` variable, or a shared source archive. `DATABASE_URL` and `PG_POOL_MAX` are only needed when using Drizzle tooling; they are not required by the running clinic API.
 
-- **Name:** `MQC Clinic Local`
-- **Host name/address:** `127.0.0.1`
-- **Port:** `5432`
-- **Maintenance database:** `mqc_clinic`
-- **Username:** `clinic`
-- **Password:** `clinic`
+## 4. Start the website and API
 
-After saving, expand **Servers > MQC Clinic Local > Databases > mqc_clinic > Schemas > public > Tables**. The `clinic_state` table confirms the app database has been initialized. You can also open **Query Tool** and run:
-
-```sql
-SELECT current_database(), current_user;
-SELECT to_regclass('public.clinic_state');
-```
-
-The expected results are `mqc_clinic`, `clinic`, and `clinic_state`.
-
-Create the project environment and database table:
+The website and API run in the same Next.js server. From the repository root:
 
 ```powershell
-Copy-Item .env.example .env -ErrorAction SilentlyContinue
-$env:DATABASE_URL = "postgresql://clinic:clinic@127.0.0.1:5432/mqc_clinic"
-corepack pnpm db:push
-```
-
-## 3. Start the API
-
-Open a new PowerShell window:
-
-```powershell
-cd C:\Users\hirrua\Documents\mqc-clinic-updated
-$env:DATABASE_URL = "postgresql://clinic:clinic@127.0.0.1:5432/mqc_clinic"
-$env:PORT = "3000"
 corepack pnpm --filter @workspace/mqc-clinic run dev
 ```
 
-Check the API in your browser:
+Open <http://localhost:3000/>. Check the public health endpoint at <http://localhost:3000/api/healthz>; it should return `{"status":"ok"}`. A signed-out request to `/api/clinic-state` should return HTTP 401.
 
-<http://localhost:3000/api/healthz>
+## 5. Quick test
 
-Expected result:
+1. Sign in with the administrator account provisioned above.
+2. Add a test patient and a clinic visit; confirm the chosen medicine or supplies are deducted.
+3. Refresh and confirm the patient, visit, and inventory changes remain.
+4. Open Reports and confirm the visit appears in the reason, grade, and disposition summaries.
+5. Confirm the report summary labels open matching visit records.
+6. Sign in as `testnurse` / `test12345` and confirm the account cannot create users or permanently delete records.
+7. Export a backup, then test restoring it only in a development/test Supabase project.
+8. Check “Remember me,” restart the browser, and verify the account is restored only while the server session remains active.
 
-```json
-{ "status": "ok" }
-```
+## 6. Project checks
 
-Leave this window running.
-
-## 4. Start the website
-
-Open another PowerShell window:
-
-```powershell
-cd C:\Users\hirrua\Documents\mqc-clinic-updated
-$env:PORT = "25856"
-$env:BASE_PATH = "/"
-corepack pnpm --filter @workspace/mqc-clinic run dev
-```
-
-Open the website:
-
-<http://localhost:25856/>
-
-## 5. Test account
-
-- Username: `NurseBolando`
-- Password: `nurse12345`
-
-This account is for local testing only.
-
-## 6. Quick test
-
-1. Sign in.
-2. Open Dashboard, Patients, Inventory, Reports, Administration, and Settings.
-3. Add a test patient.
-4. Refresh the browser and confirm the patient remains.
-5. Open a private browser window, sign in, and confirm the patient is visible there.
-6. Edit a medicine or equipment item and confirm the change remains after refresh.
-7. Restart the API and confirm the data remains.
-
-## 7. Useful checks
-
-Check PostgreSQL:
+From the repository root:
 
 ```powershell
-Get-Service -Name "postgresql-x64-18"
-Test-NetConnection -ComputerName 127.0.0.1 -Port 5432
-```
-
-Run project checks:
-
-```powershell
-corepack pnpm exec tsc --build
-corepack pnpm --filter @workspace/mqc-clinic run typecheck
-corepack pnpm --filter @workspace/mqc-clinic run typecheck
+corepack pnpm run typecheck
 corepack pnpm --filter @workspace/mqc-clinic run build
 ```
 
-## Stop the application
-
-Press `Ctrl+C` in the API and website terminals.
-
-PostgreSQL can remain running for the next test. To stop it, run PowerShell as Administrator:
+The browser scripts can be syntax-checked with:
 
 ```powershell
-Stop-Service postgresql-x64-18
+Get-ChildItem artifacts/mqc-clinic/public/clinic/js -Filter *.js | ForEach-Object { node --check $_.FullName }
 ```
+
+## Drizzle tooling
+
+The Drizzle package is separate from the clinic API runtime. If you use it for database tooling, set `DATABASE_URL` to the project's PostgreSQL connection string and follow the package scripts. The clinic app's required runtime tables and policies are defined in `supabase/schema.sql`.

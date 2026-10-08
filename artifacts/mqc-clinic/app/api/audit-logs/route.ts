@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const userResponse = await supabaseRequest(`clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&select=id,name&limit=1`);
+    const userResponse = await supabaseRequest(`clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&deleted_at=is.null&select=id,name&limit=1`);
     if (!userResponse.ok) throw new Error(`clinic_users lookup returned ${userResponse.status}`);
     const users = (await userResponse.json()) as Array<{ id?: string; name?: string }>;
     if (!users[0]?.id) return Response.json({ message: "This clinic account is no longer active." }, { status: 401, headers: { "Cache-Control": "no-store" } });

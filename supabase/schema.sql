@@ -403,6 +403,7 @@ as $$
   from public.clinic_users
   where username = p_username
     and status = 'Active'
+    and deleted_at is null
     and password_hash is not null
     and extensions.crypt(p_password, password_hash) = password_hash;
 $$;

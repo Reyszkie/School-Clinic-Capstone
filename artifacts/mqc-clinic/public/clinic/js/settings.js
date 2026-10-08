@@ -26,6 +26,37 @@ function bindSettings(){
     toast("Appearance updated","Your color theme has been saved.","ok");
   });
   document.getElementById("backup-btn")?.addEventListener("click",()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);toast("Backup created","A JSON backup of clinic records was downloaded.","ok");});
-  document.getElementById("restore-file")?.addEventListener("change",e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=()=>{try{const d=JSON.parse(reader.result);if(!Array.isArray(d.students)||!Array.isArray(d.consultations))throw new Error("Invalid backup");STUDENTS.splice(0,STUDENTS.length,...d.students);CONSULTATIONS=d.consultations;if(Array.isArray(d.medicines))MEDICINES=d.medicines;if(Array.isArray(d.equipment))EQUIPMENT=d.equipment;if(Array.isArray(d.users))state.users=d.users;if(d.settings)state.settings={...state.settings,...d.settings};saveToClinicState();logAudit("Backup Restored","Settings");toast("Backup restored","Clinic records were restored successfully.","ok");render();}catch(err){toast("Restore failed","Choose a valid MQC Clinic JSON backup.","err");}};reader.readAsText(file);});
+  document.getElementById("restore-file")?.addEventListener("change",event=>{
+    const file=event.target.files[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=async()=>{
+      try{
+        const backup=JSON.parse(reader.result);
+        if(!Array.isArray(backup.students)||!Array.isArray(backup.consultations))throw new Error("Invalid backup");
+        const deletedStudents=Array.isArray(backup.deletedStudents)?backup.deletedStudents:backup.students.filter(student=>student.deleted);
+        const deletedUsers=(Array.isArray(backup.deletedUsers)?backup.deletedUsers:(backup.users||[]).filter(user=>user.deleted)).map(user=>({...user,deleted:true,deletedAt:user.deletedAt||new Date().toISOString()}));
+        const deletedUserIds=new Set(deletedUsers.map(user=>user.id));
+        STUDENTS.splice(0,STUDENTS.length,...backup.students.filter(student=>!student.deleted));
+        DELETED_STUDENTS=deletedStudents;
+        CONSULTATIONS=backup.consultations;
+        if(Array.isArray(backup.medicines))MEDICINES=backup.medicines;
+        if(Array.isArray(backup.equipment))EQUIPMENT=backup.equipment;
+        if(Array.isArray(backup.inventoryTransactions))INVENTORY_TRANSACTIONS=backup.inventoryTransactions;
+        if(Array.isArray(backup.auditLogs))AUDIT_LOGS=backup.auditLogs;
+        if(Array.isArray(backup.users))state.users=backup.users.filter(user=>!user.deleted&&!deletedUserIds.has(user.id));
+        DELETED_USERS=deletedUsers;
+        if(Array.isArray(backup.purged))PURGED_RECORDS=backup.purged;
+        if(backup.settings)state.settings={...state.settings,...backup.settings};
+        await queueClinicStateSave(snapshotData(true),true);
+        logAudit("Backup Restored","Settings");
+        toast("Backup restored","Clinic records were restored successfully.","ok");
+        render();
+      }catch(error){
+        toast("Restore failed",error.message||"Choose a valid MQC Clinic JSON backup.","err");
+      }
+    };
+    reader.readAsText(file);
+  });
 
 }

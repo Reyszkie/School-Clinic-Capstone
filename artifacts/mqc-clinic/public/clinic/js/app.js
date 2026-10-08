@@ -40,15 +40,12 @@ function afterPageRender(){
 }
 
 /* ================= INIT ================= */
-restoreAuthSession();
 render();
-serverHydrationPromise=hydrateFromSharedStorage().then((hydrated)=>{
-  if(hydrated){
-    const wasLoggedIn=state.loggedIn;
-    if(!wasLoggedIn) restoreAuthSession();
-    if(state.loggedIn || wasLoggedIn) render();
-    if(sharedStorageNeedsBootstrap) saveToClinicState();
-  }else if(sharedStorageMissing || sharedStorageNeedsBootstrap){
-    saveToClinicState();
-  }
+serverHydrationPromise=restoreAuthSession().then(async restored=>{
+  if(!restored)return false;
+  const hydrated=await hydrateFromSharedStorage();
+  if(hydrated&&(sharedStorageNeedsBootstrap||sharedStorageMissing))await saveToClinicState(false,true);
+  else if(!hydrated&&(sharedStorageMissing||sharedStorageNeedsBootstrap))await saveToClinicState(false,true);
+  render();
+  return hydrated;
 });

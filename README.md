@@ -4,7 +4,7 @@
 
 MQC School Clinic Management System is a browser-based workspace for Mary the Queen College clinic. It supports staff sign-in, student and patient records, clinical visit documentation, medicine and equipment inventory, reports, user administration, audit history, deleted-record recovery, and local/shared data storage.
 
-The application is built with Next.js and deployed as one Vercel application. The clinic interface is the existing HTML, CSS, and JavaScript workspace in `artifacts/mqc-clinic/public/clinic`. Next.js provides the application shell and API route handlers. Supabase provides the PostgreSQL database through Drizzle ORM.
+The application is built with Next.js and deployed as one Vercel application. The clinic interface is the existing HTML, CSS, and JavaScript workspace in `artifacts/mqc-clinic/public/clinic`. Next.js provides the application shell and API route handlers. Those server-side routes read and write Supabase through its REST API using a server-only secret key. Drizzle schemas and commands are available for database tooling, but they are not the runtime data-access path for the clinic API.
 
 ## Complete Feature List
 
@@ -18,8 +18,9 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Disabled-account error message.
 - Password show/hide control.
 - Remember me option.
-- Session-based login storage.
-- Persistent local login storage when Remember me is selected.
+- Signed HttpOnly server session cookie.
+- Browser-session login by default.
+- Thirty-day server session when Remember me is selected, restored only after checking the active account with the server.
 - Second identity-verification step after sign-in.
 - Password confirmation during identity verification.
 - Identity-verification show/hide control.
@@ -251,21 +252,22 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 ### Data, Persistence, and API
 
-- PostgreSQL persistence through Supabase.
-- Drizzle ORM database access.
-- Shared `clinic_state` JSON document.
+- Supabase PostgreSQL persistence through authenticated Next.js REST API routes.
+- Normalized tables for patients, visits, inventory, users, settings, and audit logs, with `clinic_state` retained as a compatibility snapshot.
+- Server-side session and role checks for clinic data, account creation, and permanent deletion.
 - `GET /api/healthz` health endpoint.
 - `GET /api/clinic-state` shared-state endpoint.
 - `PUT /api/clinic-state` shared-state update endpoint.
+- HTTP 401 responses for clinic-state access without an active signed-in session.
+- HTTP 403 responses when non-administrators attempt account changes or permanent deletion.
 - HTTP 404 response when shared state does not exist.
 - HTTP 400 response for invalid clinic-state JSON.
 - HTTP 500 response for database failures.
 - No-store cache headers for shared clinic state.
 - Legacy JSON state migration into the database when available.
-- Browser localStorage cache.
-- Browser sessionStorage authentication cache.
-- Offline fallback to local browser data.
-- Local cache hydration from shared database state.
+- Browser localStorage only stores the remembered username preference, not an authentication token.
+- Browser sessionStorage stores the non-remembered login marker.
+- Shared-state hydration occurs only after a server-validated login.
 - Queued shared-state writes.
 - Shared-state availability warnings.
 - Automatic inventory migration for older saved data.
@@ -284,13 +286,9 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor, or use the Drizzle schema with:
+Run `supabase/schema.sql` in the Supabase SQL Editor. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
-```powershell
-corepack pnpm db:push
-```
-
-The current browser application continues to read and write `clinic_state`. The normalized tables are the database foundation for replacing the snapshot API with record-level CRUD. Row-level security is enabled on all tables; add Supabase Auth policies before allowing direct browser access to these tables.
+The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled; the API uses its server-side secret key, so that key must never be exposed to browser code.
 
 ## Technology
 
@@ -306,17 +304,19 @@ The current browser application continues to read and write `clinic_state`. The 
 
 ## Local Development
 
-1. Copy `.env.example` to `.env.local` in the repository root.
-2. Set `SUPABASE_URL` to the URL of the Supabase project used by this application.
-3. Set `SUPABASE_SECRET_KEY` to that same project's server-side Secret key, or set `SUPABASE_SERVICE_ROLE_KEY` if using the legacy service-role key. Do not use the publishable/anon key for these server-side routes.
-4. Set `DATABASE_URL` to the Supabase transaction pooler connection string and keep `sslmode=require`.
-5. Set `PG_POOL_MAX=1` for serverless-friendly connection pooling.
-6. Create or update the database schema:
+1. Create a Supabase project and run `supabase/schema.sql` in its SQL Editor.
+2. Copy `.env.example` to `artifacts/mqc-clinic/.env.local`.
+3. Set `SUPABASE_URL` to the URL of that Supabase project.
+4. Set `SUPABASE_SECRET_KEY` to that project's server-side Secret key, or use `SUPABASE_SERVICE_ROLE_KEY` for a legacy project. Never expose this key to the browser.
+5. Optionally set `AUDIT_SESSION_SECRET` to a separate long random secret for signing clinic sessions. If omitted, the server-side Supabase key is used.
+6. Create the first administrator in the Supabase SQL Editor, replacing the sample username and password before running:
 
-	```powershell
-	corepack pnpm db:push
+	```sql
+insert into public.clinic_users (id, name, last_name, first_name, role, username, password_hash, status)
+values ('NRS-ADMIN-001', 'Clinic Administrator', 'Administrator', 'Clinic', 'Head Nurse & Administrator', 'YOUR_ADMIN_USERNAME', extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')), 'Active');
 	```
 
+   The schema also creates a local test account (`testnurse` / `test12345`) with the Staff Nurse role. Change or remove it before production use.
 7. Start the Next.js application:
 
 	```powershell
@@ -325,7 +325,7 @@ The current browser application continues to read and write `clinic_state`. The 
 
 8. Open `http://localhost:3000`.
 
-The clinic API requires `SUPABASE_URL` and a matching server-side key to read or save records. If the API reports `Unregistered API key`, confirm the URL and key belong to the same Supabase project, then restart the development server.
+The clinic API requires `SUPABASE_URL` and a matching server-side key to read or save records. `DATABASE_URL` is used by the separate Drizzle tooling, not by the clinic API runtime. If the API reports `Unregistered API key`, confirm the URL and key belong to the same Supabase project, then restart the development server.
 
 ## Vercel and Supabase Deployment
 

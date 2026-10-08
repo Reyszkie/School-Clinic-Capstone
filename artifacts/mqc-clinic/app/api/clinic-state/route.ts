@@ -1,3 +1,5 @@
+import { readActiveClinicSession } from "../auth/session";
+
 const clinicStateId = 1;
 
 export const dynamic = "force-dynamic";
@@ -53,6 +55,58 @@ function normalizeUserRow(row: Record<string, unknown>) {
   if (row.authUserId !== undefined || row.auth_user_id !== undefined) normalized.auth_user_id = row.authUserId ?? row.auth_user_id;
   if (row.passwordHash !== undefined || row.password_hash !== undefined) normalized.password_hash = row.passwordHash ?? row.password_hash;
   return normalized;
+}
+
+function userStateKey(row: Record<string, unknown>) {
+  return JSON.stringify({
+    username: String(row.username ?? "").toLowerCase(),
+    name: String(row.name ?? ""),
+    role: String(row.role ?? "Staff Nurse"),
+    status: String(row.status ?? "Active"),
+    deleted: Boolean(row.deleted ?? row.deleted_at ?? row.deletedAt),
+  });
+}
+
+async function hasClinicUserChanges(rows: unknown) {
+  if (!Array.isArray(rows)) return false;
+  const [currentUsers, snapshotResponse] = await Promise.all([
+    readTable("clinic_users"),
+    supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`),
+  ]);
+  if (!snapshotResponse.ok) throw new Error(`clinic_state user-history lookup returned ${snapshotResponse.status}`);
+  const snapshots = await snapshotResponse.json() as Array<{ state?: Record<string, unknown> }>;
+  const snapshotUsers = Array.isArray(snapshots[0]?.state?.users)
+    ? snapshots[0].state.users as Array<Record<string, unknown>>
+    : [];
+  const existingById = new Map(currentUsers.map(user => [String(user.id), user]));
+  const existingByUsername = new Map(currentUsers.map(user => [String(user.username ?? "").toLowerCase(), user]));
+  const snapshotById = new Map(snapshotUsers.map(user => [String(user.id ?? ""), user]));
+  const snapshotByUsername = new Map(snapshotUsers.map(user => [String(user.username ?? "").toLowerCase(), user]));
+  const submittedUsers = rows as Array<Record<string, unknown>>;
+  const submittedIds = new Set<string>(), submittedUsernames = new Set<string>();
+  for (const submitted of submittedUsers) {
+    const id = String(submitted.id ?? ""), username = String(submitted.username ?? "").toLowerCase();
+    const databaseUser = existingById.get(id) ?? existingByUsername.get(username);
+    const snapshotUser = snapshotById.get(id) ?? snapshotByUsername.get(username);
+    const existing = databaseUser ?? snapshotUser;
+    if (!existing || userStateKey(submitted) !== userStateKey(databaseUser ? { ...databaseUser, deleted: Boolean(databaseUser.deleted_at) } : existing)) return true;
+    if (databaseUser?.id) submittedIds.add(String(databaseUser.id));
+    if (snapshotUser?.id) submittedIds.add(String(snapshotUser.id));
+    if (username) submittedUsernames.add(username);
+  }
+  return currentUsers.some(user => !submittedIds.has(String(user.id)))
+    || snapshotUsers.some(user => !submittedIds.has(String(user.id ?? "")) && !submittedUsernames.has(String(user.username ?? "").toLowerCase()));
+}
+
+async function hasNewPurgeRecords(rows: unknown) {
+  if (!Array.isArray(rows) || !rows.length) return false;
+  const response = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
+  if (!response.ok) throw new Error(`clinic_state purge-history lookup returned ${response.status}`);
+  const snapshots = await response.json() as Array<{ state?: Record<string, unknown> }>;
+  const priorRows = Array.isArray(snapshots[0]?.state?.purged) ? snapshots[0].state.purged as Array<Record<string, unknown>> : [];
+  const keyFor = (row: Record<string, unknown>) => `${row.table}:${row.key}:${String(row.value)}`;
+  const priorKeys = new Set(priorRows.map(keyFor));
+  return (rows as Array<Record<string, unknown>>).some(row => !priorKeys.has(keyFor(row)));
 }
 
 function normalizePatientRow(row: Record<string, unknown>) {
@@ -353,6 +407,27 @@ function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, 
   return { id: row.id, date, time, user: linkedUser?.name ?? row.user_name, userId: row.user_id, action: row.action, module: row.module, status: row.status };
 }
 
+function normalizeRestoredAuditRow(row: Record<string, unknown>) {
+  const id = toNumber(row.id);
+  const createdAt = row.timestamp ?? row.createdAt ?? row.created_at;
+  const parsedCreatedAt = typeof createdAt === "string" ? new Date(createdAt) : new Date(NaN);
+  const action = typeof row.action === "string" ? row.action : "";
+  const module = typeof row.module === "string" ? row.module : "";
+  const status = row.status === "Warning" || row.status === "Error" ? row.status : "Success";
+  if (id === null || !Number.isSafeInteger(id) || id <= 0 || !action || !module || Number.isNaN(parsedCreatedAt.getTime())) {
+    throw new Error("Backup contains an invalid audit log entry.");
+  }
+  return {
+    id,
+    user_id: null,
+    user_name: typeof row.user === "string" ? row.user : typeof row.user_name === "string" ? row.user_name : "System",
+    action,
+    module,
+    status,
+    created_at: parsedCreatedAt.toISOString(),
+  };
+}
+
 function settingsFromRow(row: Record<string, unknown>) {
   return {
     clinicName: row.clinic_name,
@@ -412,10 +487,19 @@ async function upsertTableRows(tableName: string, conflictKey: string, rows: Arr
 
 async function purgeRows(rows: unknown) {
   if (!Array.isArray(rows)) return;
+  const allowedTables: Record<string, string> = {
+    patients: "id",
+    clinical_visits: "id",
+    medicines: "code",
+    equipment: "id",
+    clinic_users: "id",
+  };
   for (const item of rows) {
     if (!item || typeof item !== "object") continue;
     const purge = item as { table?: unknown; key?: unknown; value?: unknown };
-    if (typeof purge.table !== "string" || typeof purge.key !== "string" || (typeof purge.value !== "string" && typeof purge.value !== "number")) continue;
+    if (typeof purge.table !== "string" || typeof purge.key !== "string" || allowedTables[purge.table] !== purge.key || (typeof purge.value !== "string" && typeof purge.value !== "number")) {
+      throw new Error("Backup contains an unsupported permanent-delete record.");
+    }
     if (purge.table === "patients" && purge.key === "id") {
       const visitsResponse = await supabaseRequest(`clinical_visits?patient_id=eq.${encodeURIComponent(String(purge.value))}`, { method: "DELETE" });
       if (!visitsResponse.ok) throw new Error(`clinical_visits delete returned ${visitsResponse.status}`);
@@ -425,8 +509,10 @@ async function purgeRows(rows: unknown) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const session = await readActiveClinicSession(request);
+    if (!session) return Response.json({ message: "Sign in to access clinic records." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     let rows: Array<{ state: Record<string, unknown> }> = [];
     try {
       const response = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
@@ -514,7 +600,15 @@ export async function PUT(request: Request) {
   }
 
   try {
+    const session = await readActiveClinicSession(request);
+    if (!session) return Response.json({ message: "Sign in to update clinic records." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const snapshot = state as Record<string, unknown>;
+    if (await hasClinicUserChanges(snapshot.users) && session.role !== "Head Nurse & Administrator") {
+      return Response.json({ message: "Only the Head Nurse & Administrator can change clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    }
+    if (await hasNewPurgeRecords(snapshot.purged) && session.role !== "Head Nurse & Administrator") {
+      return Response.json({ message: "Only the Head Nurse & Administrator can permanently delete clinic records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    }
     const visitMutation = snapshot.visitMutation && typeof snapshot.visitMutation === "object"
       ? snapshot.visitMutation as Record<string, unknown>
       : null;
@@ -561,9 +655,12 @@ export async function PUT(request: Request) {
     if (Array.isArray(snapshot.consultations)) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
     }
-    if (Array.isArray(snapshot.users)) {
+    if (Array.isArray(snapshot.users) && session.role === "Head Nurse & Administrator") {
       const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));
       await upsertTableRows("clinic_users", "id", await resolveClinicUsers(userRows));
+    }
+    if (Array.isArray(snapshot.auditLogs)) {
+      await upsertTableRows("audit_logs", "id", snapshot.auditLogs.map((row) => normalizeRestoredAuditRow(row as Record<string, unknown>)));
     }
     if (snapshot.settings && typeof snapshot.settings === "object") {
       const settings = snapshot.settings as Record<string, unknown>;
