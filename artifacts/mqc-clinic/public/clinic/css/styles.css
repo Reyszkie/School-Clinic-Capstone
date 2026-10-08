@@ -680,6 +680,7 @@ tbody tr{transition:background-color .14s ease;}
 .monthly-report-table{min-width:0;table-layout:fixed;}
 .monthly-report-table th{white-space:normal;}
 .monthly-report-table td{white-space:normal;overflow-wrap:anywhere;}
+.report-count,.report-count-table td:last-child{text-align:center !important;}
 .inventory-report-note,.monthly-report-footnote{font-size:11.5px;line-height:1.5;color:var(--ink-soft);margin:0 0 8px;}
 .monthly-report-footnote{margin-top:15px;border-top:1px solid var(--line);padding-top:10px;}
 @media(max-width:760px){
