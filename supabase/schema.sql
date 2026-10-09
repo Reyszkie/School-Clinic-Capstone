@@ -92,6 +92,7 @@ create table if not exists public.clinical_visits (
   temperature text,
   blood_pressure text,
   heart_rate text,
+  respiratory_rate text,
   oxygen_saturation text,
   assessment text,
   assessment_other text,
@@ -101,6 +102,10 @@ create table if not exists public.clinical_visits (
   medicine_code text references public.medicines(code) on delete set null,
   medicine_name text,
   medicine_quantity integer check (medicine_quantity is null or medicine_quantity > 0),
+  equipment_used jsonb not null default '[]'::jsonb,
+  equipment_quantity integer check (equipment_quantity is null or equipment_quantity > 0),
+  supply_used text,
+  supply_quantity integer check (supply_quantity is null or supply_quantity > 0),
   dosage text,
   outcome text not null,
   released_at text,
@@ -119,6 +124,21 @@ create table if not exists public.clinical_visits (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.clinical_visits
+  add column if not exists respiratory_rate text,
+  add column if not exists equipment_used jsonb not null default '[]'::jsonb,
+  add column if not exists equipment_quantity integer,
+  add column if not exists supply_used text,
+  add column if not exists supply_quantity integer;
+
+alter table public.clinical_visits
+  drop constraint if exists clinical_visits_equipment_quantity_check,
+  add constraint clinical_visits_equipment_quantity_check
+    check (equipment_quantity is null or equipment_quantity > 0),
+  drop constraint if exists clinical_visits_supply_quantity_check,
+  add constraint clinical_visits_supply_quantity_check
+    check (supply_quantity is null or supply_quantity > 0);
 
 -- Upgrade existing databases so deleting a patient also deletes that patient's visits.
 alter table public.clinical_visits
@@ -177,6 +197,35 @@ create table if not exists public.clinic_sync_meta (
 insert into public.clinic_sync_meta (id, normalized_ready)
 values (1, false)
 on conflict (id) do nothing;
+
+-- Preserve visit details from the legacy snapshot when upgrading normalized storage.
+update public.clinical_visits as visits
+set respiratory_rate = coalesce(visits.respiratory_rate, nullif(entries.visit->>'respiratoryRate', '')),
+    equipment_used = case
+      when visits.equipment_used = '[]'::jsonb
+        and jsonb_typeof(entries.visit->'equipmentUsed') = 'array'
+        and entries.visit->'equipmentUsed' <> '[]'::jsonb then entries.visit->'equipmentUsed'
+      else visits.equipment_used
+    end,
+    equipment_quantity = coalesce(visits.equipment_quantity, case
+      when entries.visit->>'equipmentQty' ~ '^[0-9]+$' then case
+        when (entries.visit->>'equipmentQty')::numeric between 1 and 2147483647 then (entries.visit->>'equipmentQty')::integer
+        else null
+      end
+      else null
+    end),
+    supply_used = coalesce(visits.supply_used, nullif(entries.visit->>'supplyUsed', '')),
+    supply_quantity = coalesce(visits.supply_quantity, case
+      when entries.visit->>'supplyQty' ~ '^[0-9]+$' then case
+        when (entries.visit->>'supplyQty')::numeric between 1 and 2147483647 then (entries.visit->>'supplyQty')::integer
+        else null
+      end
+      else null
+    end)
+from public.clinic_state as snapshots
+cross join lateral jsonb_array_elements(coalesce(snapshots.state->'consultations', '[]'::jsonb)) as entries(visit)
+where snapshots.id = 1
+  and entries.visit->>'id' = visits.id;
 
 -- Keep modification times reliable for both the application and Supabase Table Editor.
 create or replace function public.set_updated_at()

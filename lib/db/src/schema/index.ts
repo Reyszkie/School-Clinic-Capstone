@@ -111,6 +111,7 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	temperature: text("temperature"),
 	bloodPressure: text("blood_pressure"),
 	heartRate: text("heart_rate"),
+	respiratoryRate: text("respiratory_rate"),
 	oxygenSaturation: text("oxygen_saturation"),
 	assessment: text("assessment"),
 	assessmentOther: text("assessment_other"),
@@ -120,6 +121,10 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	medicineCode: text("medicine_code").references(() => medicinesTable.code),
 	medicineName: text("medicine_name"),
 	medicineQuantity: integer("medicine_quantity"),
+	equipmentUsed: jsonb("equipment_used").$type<string[]>().notNull().default([]),
+	equipmentQuantity: integer("equipment_quantity"),
+	supplyUsed: text("supply_used"),
+	supplyQuantity: integer("supply_quantity"),
 	dosage: text("dosage"),
 	outcome: text("outcome").notNull(),
 	releasedAt: text("released_at"),
@@ -140,6 +145,8 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 }, (table) => [
 	check("clinical_visits_status_check", sql`${table.status} in ('Active', 'Superseded', 'Deleted')`),
 	check("clinical_visits_medicine_quantity_check", sql`${table.medicineQuantity} is null or ${table.medicineQuantity} > 0`),
+	check("clinical_visits_equipment_quantity_check", sql`${table.equipmentQuantity} is null or ${table.equipmentQuantity} > 0`),
+	check("clinical_visits_supply_quantity_check", sql`${table.supplyQuantity} is null or ${table.supplyQuantity} > 0`),
 ]);
 
 export const auditLogsTable = pgTable("audit_logs", {
