@@ -44,8 +44,9 @@ render();
 serverHydrationPromise=restoreAuthSession().then(async restored=>{
   if(!restored)return false;
   const hydrated=await hydrateFromSharedStorage();
-  if(hydrated&&(sharedStorageNeedsBootstrap||sharedStorageMissing))await saveToClinicState(false,true);
-  else if(!hydrated&&(sharedStorageMissing||sharedStorageNeedsBootstrap))await saveToClinicState(false,true);
+  if(hydrated&&(sharedStorageNeedsBootstrap||sharedStorageMissing)){await saveToClinicState(false,true);clinicDataLoaded=true;clinicDataStatus="ready";}
+  else if(!hydrated&&(sharedStorageMissing||sharedStorageNeedsBootstrap)){await saveToClinicState(false,true);clinicDataLoaded=true;clinicDataStatus="ready";}
   render();
+  startClinicRefresh();
   return hydrated;
 });

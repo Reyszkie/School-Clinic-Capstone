@@ -68,39 +68,8 @@ function seedStudents(){
 }
 const STUDENTS = seedStudents();
 
-let MEDICINES = [
-  {code:"MED-001",name:"Paracetamol 500mg",category:"Analgesic/Antipyretic",qty:230,unit:"tablet",batch:"PB-2402",exp:"2027-03-15",supplier:"MediPharma Corp",deleted:false},
-  {code:"MED-002",name:"Ibuprofen 200mg",category:"NSAID",qty:14,unit:"tablet",batch:"IB-2311",exp:"2026-08-02",supplier:"MediPharma Corp",deleted:false},
-  {code:"MED-003",name:"Cetirizine 10mg",category:"Antihistamine",qty:80,unit:"tablet",batch:"CT-2405",exp:"2027-11-20",supplier:"HealthFirst Supply",deleted:false},
-  {code:"MED-004",name:"Antacid Tablets",category:"Antacid",qty:0,unit:"tablet",batch:"AN-2301",exp:"2026-01-10",supplier:"HealthFirst Supply",deleted:false},
-  {code:"MED-005",name:"Oral Rehydration Salts (ORS)",category:"Electrolyte",qty:45,unit:"sachet",batch:"ORS-2404",exp:"2027-06-30",supplier:"MediPharma Corp",deleted:false},
-  {code:"MED-006",name:"Antibiotic Ointment",category:"Topical",qty:18,unit:"tube",batch:"AO-2312",exp:"2026-07-28",supplier:"CarePlus Distributors",deleted:false},
-  {code:"MED-007",name:"Antiseptic Solution (Povidone-Iodine)",category:"Antiseptic",qty:22,unit:"bottle",batch:"AS-2403",exp:"2027-02-14",supplier:"CarePlus Distributors",deleted:false},
-];
-
-let EQUIPMENT = [
-  {id:"EQP-001",name:"Digital Thermometer",qty:6,condition:"Good",lastMaint:"2026-05-10",status:"Available",deleted:false},
-  {id:"EQP-002",name:"Blood Pressure Monitor (Digital)",qty:3,condition:"Good",lastMaint:"2026-06-01",status:"Available",deleted:false},
-  {id:"EQP-003",name:"Stethoscope",qty:5,condition:"Good",lastMaint:"2026-04-18",status:"Available",deleted:false},
-  {id:"EQP-004",name:"Pulse Oximeter",qty:4,condition:"Fair",lastMaint:"2026-03-22",status:"Available",deleted:false},
-  {id:"EQP-005",name:"Weighing Scale",qty:2,condition:"Fair",lastMaint:"2026-02-14",status:"Under Maintenance",deleted:false},
-  {id:"EQP-006",name:"Height Measuring Device",qty:2,condition:"Good",lastMaint:"2026-01-30",status:"Available",deleted:false},
-  {id:"EQP-007",name:"Scissors (Medical)",qty:8,condition:"Good",lastMaint:"2026-05-02",status:"Available",deleted:false},
-  {id:"EQP-008",name:"Tweezers",qty:8,condition:"Good",lastMaint:"2026-05-02",status:"Available",deleted:false},
-  {id:"EQP-009",name:"Gloves Dispenser Box",qty:10,condition:"Poor",lastMaint:"2025-11-10",status:"Replacement Needed",deleted:false},
-  {id:"EQP-010",name:"First Aid Kit (Complete Set)",qty:3,condition:"Poor",lastMaint:"2025-12-05",status:"Damaged",deleted:false},
-  {id:"EQP-011",name:"Cotton Swabs",qty:500,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-012",name:"Cotton Balls",qty:300,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-013",name:"Alcohol (70% Isopropyl)",qty:6,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-014",name:"Elastic Bandage",qty:26,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-015",name:"Adhesive Bandages (Band-Aids)",qty:400,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-016",name:"Gauze Pads",qty:150,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-017",name:"Medical Tape",qty:8,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-018",name:"Hand Sanitizer",qty:32,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-019",name:"Disposable Face Masks",qty:600,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-020",name:"Gloves (Nitrile, Medium)",qty:250,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:false},
-  {id:"EQP-021",name:"Nebulizer",qty:1,condition:"Good",lastMaint:"2026-10-07",status:"Available",deleted:false},
-];
+let MEDICINES = [];
+let EQUIPMENT = [];
 
 const VISIT_SUPPLY_NAMES=["Cotton Swabs","Cotton Balls","Alcohol (70% Isopropyl)","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads","Medical Tape","Hand Sanitizer","Disposable Face Masks","Gloves (Nitrile, Medium)"];
 const VISIT_TOOL_NAMES=["Digital Thermometer","Blood Pressure Monitor (Digital)","Stethoscope","Pulse Oximeter","Scissors (Medical)","Tweezers","Nebulizer"];

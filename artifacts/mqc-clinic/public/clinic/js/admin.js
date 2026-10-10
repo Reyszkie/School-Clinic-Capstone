@@ -108,14 +108,14 @@ function renderAuditTab(){
   const items=AUDIT_LOGS.slice((state.auditPage-1)*perPage, state.auditPage*perPage);
   const rows=items.map(l=>`
     <tr>
-      <td>${fmtDate(l.date)}</td><td class="mono">${l.time}</td><td>${escapeHtml(l.user)}</td>
+      <td>${fmtDate(l.date)}</td><td class="mono">${l.time}</td><td>${escapeHtml(l.user)}</td><td>${escapeHtml(l.role||"Unknown")}</td>
       <td>${escapeHtml(l.action)}</td><td>${l.module}</td>
       <td><span class="chip ${l.status==='Success'?'chip-available':l.status==='Warning'?'chip-low':'chip-out'}">${l.status}</span></td>
     </tr>`).join("");
   return `
   <div class="card">
-    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Time</th><th>User</th><th>Action</th><th>Module</th><th>Status</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="6">${emptyState("No audit activity recorded yet.")}</td></tr>`}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Module</th><th>Status</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="7">${emptyState("No audit activity recorded yet.")}</td></tr>`}</tbody></table></div>
     <div class="pagination"><span>Page ${state.auditPage} of ${totalPages} · ${AUDIT_LOGS.length} entries</span>
       <div class="page-btns"><button data-apage="prev">${ICONS.chevleft}</button><button data-apage="next">${ICONS.chevright}</button></div>
     </div>

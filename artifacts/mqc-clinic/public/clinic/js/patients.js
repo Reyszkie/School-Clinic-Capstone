@@ -265,7 +265,7 @@ function openConsultationForm(student, existing=null){
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
     <div class="f-field"><label>Visit Time <span class="req">*</span></label><input id="cf-time" value="${escapeHtml(f.time)}" required></div>
     <div class="f-field"><label>Nurse on Duty</label><input value="${escapeHtml(f.nurse||state.currentUser.name)}" readonly style="background:#F7FAFD"></div>
-    <div class="f-field full"><label>Reason for Clinic Visit <span class="req">*</span></label><select id="cf-complaint"><option value="">Select reason</option>${COMPLAINTS.map(c=>`<option ${f.complaint===c?"selected":""}>${c}</option>`).join("")}<option ${f.complaint==="Other"?"selected":""}>Other</option></select></div>
+    <div class="f-field full"><label>Reason for Clinic Visit <span class="req">*</span></label><select id="cf-complaint" required><option value="">Select reason</option>${COMPLAINTS.map(c=>`<option ${f.complaint===c?"selected":""}>${c}</option>`).join("")}<option ${f.complaint==="Other"?"selected":""}>Other</option></select><div id="cf-reason-other-wrap" class="${f.complaint==="Other"?"":"hidden"}" style="margin-top:10px"><label for="cf-reason-other">Specify Other Reason <span class="req">*</span></label><input id="cf-reason-other" value="${escapeHtml(f.reasonOther||"")}" maxlength="300" ${f.complaint==="Other"?"required":""}></div></div>
     <div class="f-field full"><label>Detailed Description</label><textarea id="cf-description">${escapeHtml(f.description||"")}</textarea></div>
     <div class="f-field"><label>When did symptoms start?</label><input id="cf-start" value="${escapeHtml(f.symptomStart||"")}" placeholder="e.g. this morning"></div>
     <div class="f-field"><label>Pain Level</label><select id="cf-pain">${["0 – No pain","1–3 – Mild","4–6 – Moderate","7–9 – Severe","10 – Worst possible pain"].map(x=>`<option ${f.painLevel===x?"selected":""}>${x}</option>`).join("")}</select></div>
@@ -290,11 +290,11 @@ function openConsultationForm(student, existing=null){
     <div class="f-field full"><label>Nurse's Notes / Assessment</label><textarea id="cf-notes">${escapeHtml(f.notes||"")}</textarea></div>
     <div class="f-field full"><label>Treatment / Intervention</label><div style="padding-top:5px">${optionListHtml(INTERVENTIONS,f.interventions||[],"intervention") }<label class="option-check"><input type="checkbox" id="cf-intervention-other" data-free-text-toggle="intervention-other" ${f.interventions?.some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="intervention-other" placeholder="Enter other intervention" value="${escapeHtml((f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
     <div class="f-field full"><label>Additional Treatment Details</label><textarea id="cf-treatment" placeholder="Record any care instructions or treatment details">${escapeHtml(f.treatmentGiven||"")}</textarea></div>
-    <div class="visit-inventory-grid">
-      ${visitInventoryCard({id:"cf-medicine",label:"Medication / Treatment Given",items:meds,selected:f.medicine,quantityId:"cf-medqty",quantity:f.medQty,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable})}
-      ${visitInventoryCard({id:"cf-equipment",label:"Medication Tools/Treatment Given",items:tools,selected:selectedTool,quantityId:"cf-equipment-qty",quantity:f.equipmentQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
-      ${visitInventoryCard({id:"cf-supply",label:"Medication Supplies/Treatment Given",items:supplies,selected:existingSupply,quantityId:"cf-supply-qty",quantity:f.supplyQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
-    </div>
+    <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
+      ${visitInventoryCard({id:"cf-medicine",label:"Medicines",items:meds,selected:f.medicine,quantityId:"cf-medqty",quantity:f.medQty,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable})}
+      ${visitInventoryCard({id:"cf-equipment",label:"Medical Tools",items:tools,selected:selectedTool,quantityId:"cf-equipment-qty",quantity:f.equipmentQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
+      ${visitInventoryCard({id:"cf-supply",label:"Medical Supplies",items:supplies,selected:existingSupply,quantityId:"cf-supply-qty",quantity:f.supplyQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
+    </div></div>
     <div class="f-field"><label>Dosage / Instructions</label><input id="cf-dosage" value="${escapeHtml(f.dosage||"")}" placeholder="e.g. 1 tablet"></div>
     <div class="f-field full"><label>Clinic Disposition — Outcome</label><select id="cf-outcome">${DISPOSITIONS.map(x=>`<option ${f.outcome===x?"selected":""}>${x}</option>`).join("")}<option ${f.outcome==="Other"?"selected":""}>Other</option></select></div>
     <div class="f-field"><label>Time Released / Referred</label><input id="cf-released" value="${escapeHtml(f.releasedAt||"")}"></div>
@@ -308,6 +308,15 @@ function openConsultationForm(student, existing=null){
     <div class="f-field"><label>Position</label><input id="cf-position" value="${escapeHtml(state.currentUser.role||"Staff Nurse")}" readonly aria-readonly="true"></div>
   </form></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" id="cf-clear">Clear Form</button><button class="btn btn-dark" id="cf-save">${ICONS.check} Save Visit</button></div>`;
   openModal(html);
+  const complaintSelect=document.getElementById("cf-complaint");
+  const reasonOtherWrap=document.getElementById("cf-reason-other-wrap");
+  const reasonOtherInput=document.getElementById("cf-reason-other");
+  complaintSelect.addEventListener("change",()=>{
+    const isOther=complaintSelect.value==="Other";
+    reasonOtherWrap.classList.toggle("hidden",!isOther);
+    reasonOtherInput.required=isOther;
+    if(!isOther)reasonOtherInput.value="";
+  });
   bindOptionFreeText("symptom-other",(f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
   bindOptionFreeText("assessment-other",f.assessmentOther||"");
   bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
@@ -318,7 +327,7 @@ function openConsultationForm(student, existing=null){
   document.getElementById("cf-clear").onclick=()=>document.getElementById("consult-form").reset();
   document.getElementById("cf-save").onclick=async()=>{
     if(visitSaveInProgress)return;
-    const complaint=document.getElementById("cf-complaint").value;if(!complaint){toast("Missing information","Please select a reason for the clinic visit.","err");return;}
+    const complaint=complaintSelect.value,reasonOther=reasonOtherInput.value.trim();if(!complaint){toast("Missing information","Please select a reason for the clinic visit.","err");return;}if(complaint==="Other"&&!reasonOther){reasonOtherInput.focus();toast("Missing information","Specify the custom reason for the clinic visit.","err");return;}
     const medName=document.getElementById("cf-medicine").value, medQty=Number(document.getElementById("cf-medqty").value), med=MEDICINES.find(m=>m.name===medName);
     const supplyName=document.getElementById("cf-supply").value,supplyQty=Number(document.getElementById("cf-supply-qty").value);
     const equipmentQty=Number(document.getElementById("cf-equipment-qty").value);
@@ -331,7 +340,7 @@ function openConsultationForm(student, existing=null){
     const assessment=selectedChecks('[data-check-group="assessment"]')[0]||"";
     const assessmentOther=document.querySelector('[data-free-text="assessment-other"]')?.value.trim()||"";
     const interventions=selectedChecks('[data-check-group="intervention"]'); const interventionOther=document.querySelector('[data-free-text="intervention-other"]')?.value.trim(); if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,description:document.getElementById("cf-description").value,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:document.getElementById("cf-location").value,symptoms,knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:document.getElementById("cf-allergies").value,currentMedication:document.getElementById("cf-current-med").value,previousSimilar:document.getElementById("cf-previous").value,lastMeal:document.getElementById("cf-meal").value,weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment,assessmentOther,notes:document.getElementById("cf-notes").value,interventions,treatmentGiven:document.getElementById("cf-treatment")?.value||"",dosage:document.getElementById("cf-dosage").value,medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyQty,equipmentQty,outcome:document.getElementById("cf-outcome").value,releasedAt:document.getElementById("cf-released").value,remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
+    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther:complaint==="Other"?reasonOther:"",description:document.getElementById("cf-description").value,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:document.getElementById("cf-location").value,symptoms,knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:document.getElementById("cf-allergies").value,currentMedication:document.getElementById("cf-current-med").value,previousSimilar:document.getElementById("cf-previous").value,lastMeal:document.getElementById("cf-meal").value,weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment,assessmentOther,notes:document.getElementById("cf-notes").value,interventions,treatmentGiven:document.getElementById("cf-treatment")?.value||"",dosage:document.getElementById("cf-dosage").value,medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyQty,equipmentQty,outcome:document.getElementById("cf-outcome").value,releasedAt:document.getElementById("cf-released").value,remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
     rec.respiratoryRate=document.getElementById("cf-respiratory-rate").value;
     const selectedEquipment=document.getElementById("cf-equipment").value;
     rec.supplyUsed=supplyName||(isEdit&&!supplies.some(item=>item.name===existingSupply)?existingSupply:"");
@@ -386,7 +395,7 @@ function consultationRows(c){
     ["Student",`${c.studentName||"—"} (${c.studentId||"—"})`],
     ["Course / Year",`${c.course||"—"} — ${c.year||"—"}`],
     ["Nurse on Duty",c.nurse||"—"],
-    ["Reason for Clinic Visit",c.complaint||"—"],
+    ["Reason for Clinic Visit",c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint||"—"],
     ["Detailed Description",c.description||"—"],
     ["Symptoms",(c.symptoms||[]).join(", ")||"—"],
     ["Pain",`${c.painLevel||"—"}${c.painLocation?" · "+c.painLocation:""}`],
@@ -396,10 +405,10 @@ function consultationRows(c){
     ["Nurse's Assessment",c.assessment||c.diagnosis||"—"],
     ["Nurse's Notes",c.notes||"—"],
     ["Treatment / Intervention",(c.interventions||[]).join(", ")||c.treatment||"—"],
-    ["Medication Supplies/Treatment Given",c.supplyUsed?`${c.supplyUsed} × ${c.supplyQty||1}`:"—"],
-    ["Medication Tools/Treatment Given",(c.equipmentUsed||[]).map(name=>`${name} × ${c.equipmentQty||1}`).join(", ")||"—"],
+    ["Medical Supplies",c.supplyUsed?`${c.supplyUsed} × ${c.supplyQty||1}`:"—"],
+    ["Medical Tools",(c.equipmentUsed||[]).map(name=>`${name} × ${c.equipmentQty||1}`).join(", ")||"—"],
     ["Additional Treatment Details",c.treatmentGiven||"—"],
-    ["Medication / Treatment Given",c.medicine?`${c.medicine} × ${c.medQty||1} · ${c.dosage||""}`:"—"],
+    ["Medicines",c.medicine?`${c.medicine} × ${c.medQty||1} · ${c.dosage||""}`:"—"],
     ["Outcome",c.outcome||"—"],
     ["Time Released / Referred",c.releasedAt||"—"],
     ["Guardian Notification",`${c.guardianContacted||"—"}${c.personContacted?" · "+c.personContacted:""}`],
@@ -410,6 +419,7 @@ function consultationRows(c){
 
 function viewConsultation(c){
   if(!c)return;
+  logAudit(`Patient Visit Viewed — ${c.id}`,"Patient Visits","Success",false);
   const rows=consultationRows(c);
   const isSuperseded=c.status==="Superseded";
   openModal(`<div class="modal-head"><h3>${isSuperseded?"Original":"Clinical"} Visit Record</h3><button class="modal-close" onclick="closeModal()" aria-label="Close clinical visit record">${ICONS.x}</button></div>
@@ -425,7 +435,8 @@ function viewConsultation(c){
 
 function printConsultation(c){
   const rows=consultationRows(c);
-  openModal(`<div class="modal-head"><h3>Patient Visit Slip</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div><div class="modal-body" id="print-area"><div style="text-align:center;margin-bottom:16px"><h3 style="font-size:16px">${escapeHtml(state.settings.clinicName)}</h3><div style="font-size:12px;color:var(--ink-soft)">School Clinic — Patient Visit Slip</div></div><table style="width:100%;font-size:12.5px">${rows.map(r=>`<tr><td style="color:var(--ink-soft);width:36%;vertical-align:top">${escapeHtml(r[0])}</td><td>${escapeHtml(r[1]||"—")}</td></tr>`).join("")}</table></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-dark" onclick="window.print()">${ICONS.print} Print</button></div>`);
+  const rowHtml=rows.map(row=>`<tr><th>${escapeHtml(row[0])}</th><td>${escapeHtml(row[1]||"—")}</td></tr>`).join("");
+  printInPlace("Patient Visit Slip",`<p class="print-subtitle">School Clinic · Patient Visit Slip</p><table class="clinic-print-table"><tbody>${rowHtml}</tbody></table>`);
 }
 
 function renderConsultHistory(){

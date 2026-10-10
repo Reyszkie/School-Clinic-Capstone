@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "MQC Clinic Management",
+  title: "MQC CLINIC MANAGEMENT",
   description: "School clinic management workspace",
   icons: {
     icon: "/favicon.svg",

@@ -127,6 +127,8 @@ function attachLoginFormEvents(){
         errEl.style.display='block';
         return;
       }
+      clinicDataLoaded=true;
+      clinicDataStatus="ready";
     }
     openIdentityVerification(visibleUser,rememberMe,pass);
     spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
@@ -172,6 +174,7 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
     }
     state.currentUser=ensureVisibleClinicUser(user);
     state.loggedIn=true;
+    startClinicRefresh();
     saveAuthSession(user,rememberMe);
     closeModal();
     logAudit("Signed In","Authentication","Success",false);

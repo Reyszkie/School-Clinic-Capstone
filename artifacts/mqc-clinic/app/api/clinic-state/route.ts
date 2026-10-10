@@ -161,9 +161,14 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
   };
 }
 
-function normalizeVisitRow(row: Record<string, unknown>) {
+function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = false) {
   const medicineName = row.medicine ?? row.medicineName ?? row.medicine_name ?? null;
   const medicineQuantity = toNumber(row.medQty ?? row.medicineQuantity ?? row.medicine_quantity);
+  const complaint = typeof row.complaint === "string" ? row.complaint.trim() : "";
+  const reasonOther = typeof row.reasonOther === "string" ? row.reasonOther.trim() : "";
+  if (requireOtherReason && complaint.toLowerCase() === "other" && !reasonOther) {
+    throw new Error("Specify the custom reason when the clinic visit reason is Other.");
+  }
   if (medicineName && (!Number.isInteger(medicineQuantity) || Number(medicineQuantity) <= 0)) {
     throw new Error("Medication quantity must be a positive whole number when a medication is selected.");
   }
@@ -174,7 +179,8 @@ function normalizeVisitRow(row: Record<string, unknown>) {
     nurse_name: row.nurse ?? row.nurseName ?? row.nurse_name ?? "Unknown",
     visit_date: toDateValue(row.date ?? row.visitDate ?? row.visit_date) ?? new Date().toISOString().slice(0, 10),
     visit_time: row.time ?? row.visitTime ?? row.visit_time ?? "00:00",
-    complaint: row.complaint ?? "",
+    complaint: complaint || "",
+    reason_other: complaint.toLowerCase() === "other" ? reasonOther : null,
     description: row.description ?? null,
     symptom_start: row.symptomStart ?? row.symptom_start ?? null,
     pain_level: row.painLevel ?? row.pain_level ?? null,
@@ -271,12 +277,22 @@ async function resolveClinicUsers(rows: Array<Record<string, unknown>>) {
 }
 
 async function readTable(tableName: string) {
-  const response = await supabaseRequest(`${tableName}?select=*`);
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`${tableName} read returned ${response.status}: ${details}`);
+  const sortColumn = tableName === "medicines" ? "code" : tableName === "audit_logs" ? "id" : "id";
+  const sortDirection = tableName === "audit_logs" ? "desc" : "asc";
+  const pageSize = 1000;
+  const rows: Array<Record<string, unknown>> = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await supabaseRequest(`${tableName}?select=*&order=${sortColumn}.${sortDirection}`, {
+      headers: { Range: `${offset}-${offset + pageSize - 1}`, "Range-Unit": "items" },
+    });
+    if (!response.ok) {
+      const details = await response.text();
+      throw new Error(`${tableName} read returned ${response.status}: ${details}`);
+    }
+    const page = await response.json() as Array<Record<string, unknown>>;
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
   }
-  return response.json() as Promise<Array<Record<string, unknown>>>;
 }
 
 function patientFromRow(row: Record<string, unknown>) {
@@ -343,6 +359,7 @@ function visitFromRow(row: Record<string, unknown>, patients: Array<Record<strin
     course: patient?.course,
     year: patient?.year_level,
     complaint: row.complaint,
+    reasonOther: row.reason_other ?? "",
     description: row.description,
     symptomStart: row.symptom_start,
     painLevel: row.pain_level,
@@ -414,7 +431,7 @@ function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, 
   const date = validCreatedAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(parsedCreatedAt) : "";
   const time = validCreatedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: true }).format(parsedCreatedAt) : "";
   const linkedUser = users.find((user) => user.id === row.user_id);
-  return { id: row.id, date, time, user: linkedUser?.name ?? row.user_name, userId: row.user_id, action: row.action, module: row.module, status: row.status };
+  return { id: row.id, date, time, user: row.user_name, userId: row.user_id, role: row.role ?? linkedUser?.role ?? "Unknown", action: row.action, module: row.module, status: row.status, timestamp: createdAt };
 }
 
 function normalizeRestoredAuditRow(row: Record<string, unknown>) {
@@ -587,7 +604,7 @@ export async function GET(request: Request) {
       users: [...normalizedUsers, ...missingSnapshotUsers],
       deletedStudents: patients.filter((patient) => patient.deleted_at).map(patientFromRow),
       deletedUsers: users.filter((user) => user.deleted_at).map(userFromRow),
-      auditLogs: auditLogs.map((audit) => auditFromRow(audit, users)),
+      auditLogs: auditLogs.filter((audit) => session.role !== "Staff Nurse" || audit.user_id === session.userId).map((audit) => auditFromRow(audit, users)),
       ...(settingsRows[0] ? { settings: { ...snapshotSettings, ...settingsFromRow(settingsRows[0]) } } : {}),
       bootstrapRequired: usersNeedBootstrap,
     } : { ...snapshot, bootstrapRequired: true };
@@ -613,6 +630,8 @@ export async function PUT(request: Request) {
     const session = await readActiveClinicSession(request);
     if (!session) return Response.json({ message: "Sign in to update clinic records." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const snapshot = state as Record<string, unknown>;
+    const persistedSnapshot = { ...snapshot };
+    delete persistedSnapshot.auditLogs;
     if (await hasClinicUserChanges(snapshot.users) && session.role !== "Head Nurse & Administrator") {
       return Response.json({ message: "Only the Head Nurse & Administrator can change clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
     }
@@ -638,14 +657,14 @@ export async function PUT(request: Request) {
       if (affectedMedicines.length !== medicineCodes.size) throw new Error("A medicine inventory record for this save could not be found.");
       if (affectedEquipment.length !== equipmentIds.size) throw new Error("An equipment inventory record for this save could not be found.");
 
-      const { visitMutation: _visitMutation, ...clinicSnapshot } = snapshot;
+      const { visitMutation: _visitMutation, ...clinicSnapshot } = persistedSnapshot;
       const [snapshotResponse] = await Promise.all([
         supabaseRequest("clinic_state", {
           method: "POST",
           headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
           body: JSON.stringify({ id: clinicStateId, state: clinicSnapshot }),
         }),
-        upsertTableRows("clinical_visits", "id", affectedVisits.map(normalizeVisitRow)),
+        upsertTableRows("clinical_visits", "id", affectedVisits.map(row => normalizeVisitRow(row, row.status !== "Superseded"))),
         upsertTableRows("medicines", "code", affectedMedicines.map(normalizeMedicineRow)),
         upsertTableRows("equipment", "id", affectedEquipment.map(normalizeEquipmentRow)),
       ]);
@@ -668,9 +687,6 @@ export async function PUT(request: Request) {
     if (Array.isArray(snapshot.users) && session.role === "Head Nurse & Administrator") {
       const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));
       await upsertTableRows("clinic_users", "id", await resolveClinicUsers(userRows));
-    }
-    if (Array.isArray(snapshot.auditLogs)) {
-      await upsertTableRows("audit_logs", "id", snapshot.auditLogs.map((row) => normalizeRestoredAuditRow(row as Record<string, unknown>)));
     }
     if (snapshot.settings && typeof snapshot.settings === "object") {
       const settings = snapshot.settings as Record<string, unknown>;
@@ -701,7 +717,7 @@ export async function PUT(request: Request) {
       const snapshotResponse = await supabaseRequest("clinic_state", {
         method: "POST",
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify({ id: clinicStateId, state: snapshot }),
+        body: JSON.stringify({ id: clinicStateId, state: persistedSnapshot }),
       });
       if (!snapshotResponse.ok) {
         console.warn(`Optional clinic_state snapshot returned ${snapshotResponse.status}`);

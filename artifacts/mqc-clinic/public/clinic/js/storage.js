@@ -8,6 +8,10 @@ let serverSaveChain=Promise.resolve();
 let localChangeVersion=0;
 let sharedStorageMissing=false;
 let sharedStorageNeedsBootstrap=false;
+let clinicDataLoaded=false;
+let clinicDataStatus="loading";
+let clinicDataFingerprint="";
+let clinicDataChanged=false;
 
 function setSyncStatus(label, stateName="idle"){
   const indicator=document.getElementById("sync-status");
@@ -208,6 +212,8 @@ function saveVisitToClinicState(visitIds,inventorySnapshot){
 }
 
 function applyStoredData(data){
+  clinicDataLoaded=true;
+  clinicDataStatus="ready";
   if(Array.isArray(data.students)) STUDENTS.splice(0, STUDENTS.length, ...data.students.filter(s=>!s.deleted));
   if(Array.isArray(data.medicines)) MEDICINES = data.medicines;
   if(Array.isArray(data.equipment)) EQUIPMENT = data.equipment;
@@ -223,13 +229,6 @@ function applyStoredData(data){
     const existingEquipmentNames=new Set(EQUIPMENT.map(e=>e.name));
     const equipmentCount=EQUIPMENT.length;
     movedTools.forEach((m,index)=>{if(!existingEquipmentNames.has(m.name)){EQUIPMENT.push({id:`EQP-${String(equipmentCount+index+1).padStart(3,"0")}`,name:m.name,qty:m.qty,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:m.deleted});migratedInventory=true;}});
-  }
-  if(!EQUIPMENT.some(item=>item.name.trim().toLowerCase()==="nebulizer")){
-    const usedIds=new Set(EQUIPMENT.map(item=>item.id));
-    let nextId=1;
-    while(usedIds.has(`EQP-${String(nextId).padStart(3,"0")}`))nextId++;
-    EQUIPMENT.push({id:`EQP-${String(nextId).padStart(3,"0")}`,name:"Nebulizer",qty:1,condition:"Good",lastMaint:todayDateString(),status:"Available",deleted:false});
-    migratedInventory=true;
   }
   if(Array.isArray(data.consultations)) CONSULTATIONS = data.consultations;
   if(Array.isArray(data.auditLogs)) AUDIT_LOGS = data.auditLogs;
@@ -253,17 +252,35 @@ async function hydrateFromSharedStorage(){
     if(response.ok){
       const data=await response.json();
       if(localChangeVersion!==hydrationVersion) return false;
+      const fingerprint=JSON.stringify([data.students,data.medicines,data.equipment,data.inventoryTransactions,data.consultations,data.auditLogs,data.deletedStudents,data.deletedUsers,data.users,data.settings]);
+      clinicDataChanged=!clinicDataLoaded||fingerprint!==clinicDataFingerprint;
+      clinicDataFingerprint=fingerprint;
       sharedStorageNeedsBootstrap=Boolean(data.bootstrapRequired);
       applyStoredData(data);
+      setSyncStatus("Live", "saved");
       if(!Array.isArray(data.inventoryTransactions))sharedStorageNeedsBootstrap=true;
       return true;
     }
     sharedStorageMissing=response.status===404;
+    clinicDataStatus=clinicDataLoaded?"stale":response.status===404?"empty":"error";
+    setSyncStatus(clinicDataLoaded?"Stale":"Unavailable","error");
     console.warn("MQC Clinic: shared clinic state could not be loaded.", response.status);
   }catch(err){
+    clinicDataStatus=clinicDataLoaded?"stale":"error";
+    setSyncStatus(clinicDataLoaded?"Stale":"Unavailable","error");
     console.warn("MQC Clinic: shared storage is unavailable.",err);
   }
   return false;
+}
+
+function startClinicRefresh(){
+  if(window.__clinicRefreshTimer)return;
+  window.__clinicRefreshTimer=window.setInterval(async()=>{
+    if(!state.loggedIn||modalStack.length||document.visibilityState==="hidden")return;
+    const previousStatus=clinicDataStatus;
+    const refreshed=await hydrateFromSharedStorage();
+    if(refreshed&&(clinicDataChanged||previousStatus!==clinicDataStatus))render();
+  },15000);
 }
 
 function saveAuthSession(user, rememberMe=false){

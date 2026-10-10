@@ -1,23 +1,29 @@
 /* ================= DASHBOARD ================= */
 function activeVisits(){return CONSULTATIONS.filter(c=>!c.deleted&&c.status!=="Deleted"&&c.status!=="Superseded"&&STUDENTS.some(s=>s.id===c.studentId));}
+const FREQUENT_VISIT_THRESHOLD=2;
 function dashboardMetrics(){
   const visits=activeVisits(), today=todayDateString(), month=today.slice(0,7);
   const monthVisits=visits.filter(c=>c.date?.slice(0,7)===month);
   const counts={};visits.forEach(c=>counts[c.studentId]=(counts[c.studentId]||0)+1);
   const returning=Object.values(counts).filter(n=>n>1).length;
-  const frequent=Math.max(0,...Object.values(counts));
-  const referrals=Object.values(counts).filter(n=>n>=10).length;
+  const frequent=Object.values(counts).filter(n=>n>=FREQUENT_VISIT_THRESHOLD).length;
+  const referrals=visits.filter(visit=>/referred|referral/i.test(visit.outcome||"")).length;
   return {students:new Set(visits.map(c=>c.studentId)).size,today:visits.filter(c=>c.date===today).length,month:monthVisits.length,returning,frequent,referrals};
 }
 function renderDashboard(){
+  if(!clinicDataLoaded){
+    const message=clinicDataStatus==="error"?"Clinic records could not be loaded from the database.":"Clinic records are loading from the database.";
+    return `<div class="card dashboard-data-state"><h3>${message}</h3><button class="btn btn-dark" id="dash-retry-load">Retry</button></div>`;
+  }
+  const stockThreshold=Number(state.settings.lowStockThreshold??15),expirationWindow=Number(state.settings.expirationAlertDays??14);
   const lowStock=[
-    ...MEDICINES.filter(m=>!m.deleted&&m.qty<=(state.settings.lowStockThreshold||15)).map(m=>({...m,itemType:"Medicine",itemId:m.code})),
-    ...EQUIPMENT.filter(e=>!e.deleted&&e.qty<=(state.settings.lowStockThreshold||15)).map(e=>({...e,itemType:"Equipment & Medical Tool",itemId:e.id,unit:""})),
+    ...MEDICINES.filter(m=>!m.deleted&&m.qty<=stockThreshold).map(m=>({...m,itemType:"Medicine",itemId:m.code})),
+    ...EQUIPMENT.filter(e=>!e.deleted&&e.qty<=stockThreshold).map(e=>({...e,itemType:"Equipment & Medical Tool",itemId:e.id,unit:""})),
   ];
-  const expiring=MEDICINES.filter(m=>!m.deleted&&daysUntil(m.exp)<=(state.settings.expirationAlertDays||14));
+  const expiring=MEDICINES.filter(m=>!m.deleted&&m.exp&&daysUntil(m.exp)<=expirationWindow);
   const firstName=(state.currentUser?.name||"").split(" ")[0]||"there",m=dashboardMetrics();
-  const cards=[["Total Students Served",m.students,"var(--blue)",ICONS.users],["Clinic Visits Today",m.today,"var(--teal)",ICONS.stethoscope],["Total Visits This Month",m.month,"var(--violet)",ICONS.report],["Returning Students",m.returning,"var(--amber)",ICONS.users],["Frequent Visitors",m.frequent?m.frequent+" visits":"0","var(--coral)",ICONS.alert],["Referrals",m.referrals,"var(--red)",ICONS.alert]];
-  return `<div class="greeting-banner"><h2>${greetingWord()}, ${escapeHtml(firstName)}!</h2><p>Here's what's going on in the clinic today.</p></div>
+  const cards=[["Total Students Served",m.students,"var(--blue)",ICONS.users],["Clinic Visits Today",m.today,"var(--teal)",ICONS.stethoscope],["Total Visits This Month",m.month,"var(--violet)",ICONS.report],["Returning Students",m.returning,"var(--amber)",ICONS.users],["Frequent Visitors",m.frequent,"var(--coral)",ICONS.alert],["Referrals",m.referrals,"var(--red)",ICONS.alert],["Low Stock Alert",lowStock.length,"var(--amber)",ICONS.alert],["Expiring Medicine Alert",expiring.length,"var(--coral)",ICONS.alert]];
+  return `${clinicDataStatus==="stale"?'<div class="sync-warning">The latest database refresh failed. Figures may be out of date.</div>':""}<div class="greeting-banner"><h2>${greetingWord()}, ${escapeHtml(firstName)}!</h2><p>Here's what's going on in the clinic today.</p></div>
   <div class="grid grid-3">${cards.map(c=>`<div class="card stat-card"><div class="top-row"><div class="stat-label">${c[0]}</div><div class="stat-ic" style="background:${c[2]}18;color:${c[2]}">${c[3]}</div></div><div class="stat-value">${c[1]}</div></div>`).join("")}</div>
   <div class="dashboard-alerts" id="alerts-section"><div class="card"><div class="panel-title"><h4><span style="color:var(--amber);display:inline-flex">${ICONS.alert}</span> Low Stock Alert</h4></div>${lowStockAlertHtml(lowStock)}</div>
   <div class="card expiring-alert-card"><div class="panel-title"><h4><span style="color:var(--coral);display:inline-flex">${ICONS.alert}</span> Expiring Medicine Alert</h4></div>${expiringAlertHtml(expiring)}</div></div>
@@ -30,7 +36,7 @@ function lowStockAlertHtml(list){
 }
 function expiringAlertHtml(list){
   if(!list.length)return emptyState("No medicines are expiring within the configured alert window.");
-  return `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Batch</th><th>Expiration</th><th>Days Left</th></tr></thead><tbody>${list.map(m=>`<tr data-open-med6="${m.code}"><td class="mono">${m.code}</td><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.batch)}</td><td>${fmtDate(m.exp)}</td><td>${daysUntil(m.exp)} day(s)</td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Batch</th><th>Expiration</th><th>Status</th></tr></thead><tbody>${list.map(m=>{const remaining=daysUntil(m.exp),label=remaining<0?`Expired ${Math.abs(remaining)} day(s) ago`:remaining===0?"Expires today":`Expires in ${remaining} day(s)`;return `<tr data-open-med6="${m.code}"><td class="mono">${m.code}</td><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.batch)}</td><td>${fmtDate(m.exp)}</td><td>${label}</td></tr>`;}).join("")}</tbody></table></div>`;
 }
 function dashSearchRows(list){
   if(!list.length)return `<tr><td colspan="5">${emptyState("No students found. Try a different search term.")}</td></tr>`;
@@ -42,6 +48,7 @@ function openStudentRecordsModal(student){
   visitorRecordsModal({studentId:student.id,studentName:student.name,course:student.course,year:student.year,count:records.length,records});
 }
 function bindDashboard(){
+  document.getElementById("dash-retry-load")?.addEventListener("click",async()=>{const loaded=await hydrateFromSharedStorage();if(loaded)render();});
   const input=document.getElementById("dash-search"),tbody=document.getElementById("dash-search-tbody");
   const bindRows=()=>document.querySelectorAll("[data-view-records]").forEach(b=>b.onclick=()=>openStudentRecordsModal(STUDENTS.find(s=>s.id===b.dataset.viewRecords)));
   input?.addEventListener("input",()=>{const q=input.value.trim().toLowerCase();tbody.innerHTML=q?dashSearchRows(STUDENTS.filter(s=>[s.id,s.name,s.course,s.year].join(" ").toLowerCase().includes(q))):`<tr><td colspan="5">${emptyState("Start typing a student ID or name to search.")}</td></tr>`;bindRows();});
