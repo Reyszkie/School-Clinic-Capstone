@@ -66,8 +66,6 @@
   --login-start:#252C32;--login-mid:#46515A;--login-end:#71808A;--login-topbar:rgba(35,42,48,.84);--login-overlay-start:rgba(37,44,50,.92);--login-overlay-mid:rgba(37,44,50,.58);--login-overlay-end:rgba(37,44,50,.08);--login-highlight:#C9E6E4;--login-muted:#D6DEE2;
 }
 *{box-sizing:border-box;}
-body{text-transform:uppercase;}
-input,select,textarea,button{ text-transform:uppercase; }
 html,body{margin:0;padding:0;}
 body{
   font-family:'Plus Jakarta Sans',sans-serif;
@@ -727,7 +725,7 @@ tbody tr{transition:background-color .14s ease;}
 #clinic-print-root{display:none;}
 @media print{
   @page{size:A4 portrait;margin:14mm;}
-  body{margin:0!important;background:#fff!important;color:#111!important;font:10pt/1.4 Arial,sans-serif!important;text-transform:uppercase!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{margin:0!important;background:#fff!important;color:#111!important;font:10pt/1.4 Arial,sans-serif!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   body>*:not(#clinic-print-root){display:none!important;}
   #clinic-print-root{display:block!important;width:100%;color:#111;background:#fff;font:10pt/1.4 Arial,sans-serif;}
   .clinic-print-header{text-align:center;border-bottom:1px solid #777;padding-bottom:8px;margin-bottom:12px;}
