@@ -66,14 +66,6 @@ function captureInventoryState(){
     auditLogs:AUDIT_LOGS.slice(),
   };
 }
-async function logInventoryChangesSince(snapshot){
-  const knownIds=new Set(snapshot.transactions.map(entry=>entry.id));
-  for(const entry of INVENTORY_TRANSACTIONS.filter(transaction=>!knownIds.has(transaction.id))){
-    const action=entry.kind==="reversed"?"Inventory Restored":"Inventory Used";
-    const source=entry.kind==="reversed"?`from visit ${entry.referenceId}`:`for visit ${entry.referenceId}`;
-    await logAudit(`${action} — ${entry.itemName} × ${entry.quantity} ${source}`,"Inventory","Success",false);
-  }
-}
 function restoreInventoryState(snapshot){
   snapshot.medicineQuantities.forEach(([item,quantity])=>{item.qty=quantity;});
   snapshot.equipmentQuantities.forEach(([item,quantity])=>{item.qty=quantity;});
@@ -146,6 +138,7 @@ function applyVisitInventoryUsage(visit){
     if(active.some(entry=>entry.itemType===requirement.itemType&&entry.itemId===requirement.itemId))return;
     requirement.item.qty=Number(requirement.item.qty)-requirement.quantity;
     recordInventoryTransaction(requirement.itemType,requirement.item,"used",requirement.quantity,visit.date,visit.id);
+    logAudit(`Inventory Used — ${requirement.item.name} × ${requirement.quantity} for visit ${visit.id}`,"Inventory","Success",false);
   });
 }
 function reverseVisitInventoryUsage(visit){
@@ -157,6 +150,7 @@ function reverseVisitInventoryUsage(visit){
     item.qty=(Number(item.qty)||0)+quantity;
     const reversal=recordInventoryTransaction(entry.itemType,item,"reversed",quantity,todayDateString(),visit.id);
     if(reversal)reversal.reversesTransactionId=entry.id;
+    logAudit(`Inventory Restored — ${item.name} × ${quantity} from visit ${visit.id}`,"Inventory","Success",false);
   });
   return active.length;
 }
@@ -280,25 +274,6 @@ async function hydrateFromSharedStorage(){
   return false;
 }
 
-async function refreshAuditLogs(){
-  try{
-    const newestId=AUDIT_LOGS.reduce((highest,log)=>Math.max(highest,Number(log.id)||0),0);
-    const response=await fetch(`/api/audit-logs${newestId?`?after=${newestId}`:""}`,{cache:"no-store"});
-    if(!response.ok)throw new Error(`Audit feed returned ${response.status}`);
-    const logs=await response.json();
-    if(!Array.isArray(logs))throw new Error("Audit feed returned an invalid response.");
-    if(!logs.length)return false;
-    const knownIds=new Set(AUDIT_LOGS.map(log=>String(log.id)));
-    AUDIT_LOGS=[...logs.filter(log=>!knownIds.has(String(log.id))),...AUDIT_LOGS].sort((a,b)=>Number(b.id)-Number(a.id));
-    if(state.page==="admin"&&state.adminTab==="audit")renderAdminTabBody();
-    return true;
-  }catch(error){
-    console.warn("MQC Clinic: audit activity could not be refreshed.",error);
-    setSyncStatus("Audit stale","error");
-    return false;
-  }
-}
-
 function startClinicRefresh(){
   if(window.__clinicRefreshTimer)return;
   window.__clinicRefreshTimer=window.setInterval(async()=>{
@@ -307,9 +282,6 @@ function startClinicRefresh(){
     const refreshed=await hydrateFromSharedStorage();
     if(refreshed&&(clinicDataChanged||previousStatus!==clinicDataStatus))render();
   },15000);
-  if(!window.__auditRefreshTimer)window.__auditRefreshTimer=window.setInterval(()=>{
-    if(state.loggedIn&&state.page==="admin"&&state.adminTab==="audit"&&!modalStack.length&&document.visibilityState!=="hidden")refreshAuditLogs();
-  },5000);
 }
 
 function saveAuthSession(user, rememberMe=false){

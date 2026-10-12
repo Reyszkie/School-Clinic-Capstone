@@ -177,7 +177,8 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
     startClinicRefresh();
     saveAuthSession(user,rememberMe);
     closeModal();
-    logAudit("User Signed In","Authentication","Success",false);
+    logAudit("Signed In","Authentication","Success",false);
+    logAudit("Identity Verified","Authentication","Success",false);
     render();
     toast("Identity verified",`Welcome back, ${state.currentUser.name}.`,"ok");
   };

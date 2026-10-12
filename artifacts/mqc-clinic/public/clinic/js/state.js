@@ -129,31 +129,26 @@ function toast(title, msg, type="ok"){
   wrap.appendChild(el);
   setTimeout(()=>{ el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3400);
 }
-async function logAudit(action, module, status="Success", persist=true){
-  let recordedAction=action, recordedStatus=status;
-  if(persist){
-    try{await saveToClinicState(false,true);}
-    catch(error){
-      recordedAction=`${action} (save failed)`;
-      recordedStatus="Error";
-      console.error('MQC Clinic: the action was not saved before audit logging.',error);
-    }
-  }
-  try{
-    const response=await fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:recordedAction,module,status:recordedStatus}),keepalive:true});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(result.message||`Supabase returned ${response.status}`);
-    const createdAt=new Date(result.created_at);
-    const entry={id:result.id,date:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(createdAt),time:new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).format(createdAt),user:result.user_name,userId:result.user_id,role:result.role||"Unknown",action:result.action,module:result.module,status:result.status,timestamp:createdAt.toISOString()};
-    AUDIT_LOGS=[entry,...AUDIT_LOGS.filter(log=>String(log.id)!==String(entry.id))];
-    if(state.page==="admin"&&state.adminTab==="audit")renderAdminTabBody();
-    return entry;
-  }catch(error){
-    console.error('MQC Clinic: audit event was not saved to Supabase.',error);
-    setSyncStatus('Audit sync failed','error');
-    toast('Audit log not synced','The activity could not be saved to Supabase. Please check the connection and try again.','err');
-    return null;
-  }
+function logAudit(action, module, status="Success", persist=true){
+  const user=state.currentUser;
+  const auditWrite=fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,module,status}),keepalive:true})
+    .then(async response=>{
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.message||`Supabase returned ${response.status}`);
+      const createdAt=new Date(result.created_at);
+      const stamp=manilaDateParts(createdAt);
+      const entry={id:result.id,date:stamp.date,time:new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hour12:true}).format(createdAt),user:result.user_name||user?.name||"System",userId:result.user_id||user?.id||null,role:result.role||user?.role||"Unknown",action:result.action||action,module:result.module||module,status:result.status||status,timestamp:createdAt.toISOString()};
+      AUDIT_LOGS.unshift(entry);
+      if(state.page==="admin"&&state.adminTab==="audit")renderAdminTabBody();
+      return entry;
+    })
+    .catch(error=>{
+      console.error('MQC Clinic: audit event was not saved to Supabase.',error);
+      setSyncStatus('Audit sync failed','error');
+      toast('Audit log not synced','The activity could not be saved to Supabase. Please check the connection and try again.','err');
+    });
+  if(persist)saveToClinicState();
+  return auditWrite;
 }
 let modalStack=[];
 function openModal(html, size="", options={}){
