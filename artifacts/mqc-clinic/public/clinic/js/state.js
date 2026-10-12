@@ -131,7 +131,7 @@ function toast(title, msg, type="ok"){
 }
 function logAudit(action, module, status="Success", persist=true){
   const user=state.currentUser;
-  const auditWrite=fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,module,status}),keepalive:true})
+  const auditWrite=fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,module,status})})
     .then(async response=>{
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.message||`Supabase returned ${response.status}`);

@@ -23,10 +23,9 @@ function bindSettings(){
     applyClinicTheme(event.target.value);
     try{window.localStorage.setItem("mqc_clinic_appearance_theme_v1",state.settings.appearanceTheme);}catch{}
     saveToClinicState();
-    logAudit(`Appearance Theme Changed — ${state.settings.appearanceTheme}`,"Settings");
     toast("Appearance updated","Your color theme has been saved.","ok");
   });
-  document.getElementById("backup-btn")?.addEventListener("click",()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);logAudit("Clinic Backup Created","Settings");toast("Backup created","A JSON backup of clinic records was downloaded.","ok");});
+  document.getElementById("backup-btn")?.addEventListener("click",()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);toast("Backup created","A JSON backup of clinic records was downloaded.","ok");});
   document.getElementById("restore-file")?.addEventListener("change",event=>{
     const file=event.target.files[0];
     if(!file)return;

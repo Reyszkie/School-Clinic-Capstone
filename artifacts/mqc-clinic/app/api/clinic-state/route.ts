@@ -49,7 +49,7 @@ function normalizeUserRow(row: Record<string, unknown>) {
     role: row.role ?? "Staff Nurse",
     username: row.username ?? null,
     status: row.status ?? "Active",
-    deleted_at: row.deleted ? new Date().toISOString() : null,
+    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
     updated_at: new Date().toISOString(),
   };
   if (row.authUserId !== undefined || row.auth_user_id !== undefined) normalized.auth_user_id = row.authUserId ?? row.auth_user_id;
@@ -126,8 +126,8 @@ function normalizePatientRow(row: Record<string, unknown>) {
     guardian_contact: row.guardianContact ?? row.guardian_contact ?? null,
     allergies: row.allergies ?? "None known",
     medical_conditions: row.conditions ?? row.medicalConditions ?? row.medical_conditions ?? "None",
-    deleted_at: row.deleted ? new Date().toISOString() : null,
-    deleted_by: row.deleted ? row.deletedBy ?? row.deleted_by ?? null : null,
+    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
+    deleted_by: row.deletedBy ?? row.deleted_by ?? null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -142,7 +142,7 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
     batch_number: row.batch ?? row.batchNumber ?? row.batch_number ?? null,
     expiration_date: toDateValue(row.exp ?? row.expirationDate ?? row.expiration_date),
     supplier: row.supplier ?? null,
-    deleted_at: row.deleted ? new Date().toISOString() : null,
+    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
     updated_at: new Date().toISOString(),
   };
 }
@@ -156,7 +156,7 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
     condition,
     last_maintenance_date: toDateValue(row.lastMaint ?? row.lastMaintenanceDate ?? row.last_maintenance_date),
     status: row.status ?? "Available",
-    deleted_at: row.deleted ? new Date().toISOString() : null,
+    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
     updated_at: new Date().toISOString(),
   };
 }
@@ -219,12 +219,12 @@ function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = fa
     person_contacted: row.personContacted ?? row.person_contacted ?? null,
     staff_record: row.staffRecord ?? row.staff_record ?? null,
     position: row.position ?? null,
-    status: row.deleted ? "Deleted" : row.status === "Deleted" ? "Active" : (row.status ?? "Active"),
+    status: row.deleted ? "Deleted" : (row.status ?? "Active"),
     version_of: row.versionOf ?? row.version_of ?? null,
     revision: toNumber(row.revision) ?? 1,
     supersedes_id: row.supersedesId ?? row.supersedes_id ?? null,
     superseded_by: row.supersededBy ?? row.superseded_by ?? null,
-    deleted_at: row.deleted ? new Date().toISOString() : null,
+    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
     updated_at: new Date().toISOString(),
   };
 }

@@ -10,17 +10,6 @@ function supabaseHeaders(key: string) {
   return { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
 }
 
-async function readSessionTimeoutMinutes(url: string, key: string) {
-  const response = await fetch(`${url}/rest/v1/clinic_settings?id=eq.1&select=session_timeout_minutes&limit=1`, {
-    headers: supabaseHeaders(key),
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error(`Supabase session settings returned ${response.status}`);
-  const settings = await response.json() as Array<{ session_timeout_minutes?: number }>;
-  const timeout = Number(settings[0]?.session_timeout_minutes);
-  return Number.isFinite(timeout) && timeout > 0 ? timeout : 30;
-}
-
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -41,7 +30,6 @@ export async function POST(request: Request) {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
     if (!url || !key) throw new Error("Supabase server configuration is missing.");
-    const sessionTimeoutMinutes = await readSessionTimeoutMinutes(url, key);
     const profileResponse = await fetch(`${url}/rest/v1/clinic_users?username=eq.${encodeURIComponent(username)}&select=id,name,role,username,status,auth_user_id,deleted_at&limit=1`, {
       headers: supabaseHeaders(key),
       cache: "no-store",
@@ -63,7 +51,7 @@ export async function POST(request: Request) {
     const users = (await response.json()) as Array<Record<string, string>>;
     if (users[0]) {
       if (users[0].id !== profile.id) return Response.json({ message: "Invalid username or password." }, { status: 401 });
-      return Response.json(users[0], { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(users[0].id, users[0].name, rememberMe === true, sessionTimeoutMinutes) } });
+      return Response.json(users[0], { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(users[0].id, users[0].name, rememberMe === true) } });
     }
     if (!profile.auth_user_id) {
       return Response.json({ message: "Invalid username or password." }, { status: 401 });
@@ -79,7 +67,7 @@ export async function POST(request: Request) {
     const authResult = (await authResponse.json()) as { user?: { id?: string } };
     if (authResult.user?.id !== profile.auth_user_id) return Response.json({ message: "Invalid username or password." }, { status: 401 });
     const profileName = profile.name || profile.username || "Clinic staff";
-    return Response.json({ id: profile.id, name: profileName, role: profile.role, username: profile.username, status: profile.status }, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(profile.id, profileName, rememberMe === true, sessionTimeoutMinutes) } });
+    return Response.json({ id: profile.id, name: profileName, role: profile.role, username: profile.username, status: profile.status }, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(profile.id, profileName, rememberMe === true) } });
   } catch (error) {
     console.error("Unable to authenticate clinic account", error);
     return Response.json({ message: "Clinic account authentication is unavailable." }, { status: 503 });

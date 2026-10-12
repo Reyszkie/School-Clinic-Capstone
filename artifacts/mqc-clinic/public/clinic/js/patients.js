@@ -69,8 +69,6 @@ function renderStudentDetail(s, inModal=false){
     <div class="info-cell"><div class="lbl">Parent / Guardian</div><div class="val">${escapeHtml(s.guardianName||s.emergency||"—")}</div></div>
     <div class="info-cell"><div class="lbl">Guardian Contact</div><div class="val mono">${escapeHtml(s.guardianContact||"—")}</div></div>
     <div class="info-cell" style="grid-column:span 2"><div class="lbl">Course / Section / Strand</div><div class="val">${escapeHtml(s.course||"—")}</div></div>
-  </div><div class="patient-allergy-alert ${s.allergies&&s.allergies.toLowerCase()!=="none known"?"has-allergies":"no-known-allergies"}" role="note" aria-label="Patient allergy information">
-    <strong>${s.allergies&&s.allergies.toLowerCase()!=="none known"?"KNOWN ALLERGIES":"ALLERGIES"}</strong><span>${escapeHtml(s.allergies||"None known")}</span>
   </div>${renderStudentClinicalRecords(s)}</div>`;
 }
 
@@ -115,7 +113,6 @@ function openStudentForm(existing=null){
     <div class="f-field"><label>Sex</label><select id="sf-gender">${["Male","Female"].map(g=>`<option ${f.gender===g?"selected":""}>${g}</option>`).join("")}</select></div>
     <div class="f-field"><label>Parent / Guardian Name</label><input id="sf-guardian" value="${escapeHtml(f.guardianName||f.emergency||"")}"></div>
     <div class="f-field"><label>Parent / Guardian Contact</label><input id="sf-guardian-contact" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"></div>
-    <div class="f-field full"><label>Known Allergies</label><input id="sf-allergies" value="${escapeHtml(f.allergies||"None known")}" placeholder="Enter allergies or None known"></div>
   </form></div><div class="modal-foot"><span class="form-save-status" id="sf-status" aria-live="polite"></span><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Patient"}</button></div>`;
   openModal(html);
   document.getElementById("sf-year").onchange=e=>{
@@ -126,7 +123,7 @@ function openStudentForm(existing=null){
     if(!id||!last||!first){toast("Missing information","Student ID, last name, and given name are required.","err");return;}
     if(!isEdit&&STUDENTS.some(s=>s.id.toLowerCase()===id.toLowerCase())){toast("Duplicate Student ID",`A student with ID ${id} already exists.`,"err");return;}
     const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
-    const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:document.getElementById("sf-guardian-contact").value,emergency:document.getElementById("sf-guardian").value,allergies:document.getElementById("sf-allergies").value.trim()||"None known",conditions:f.conditions||"None"};
+    const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:document.getElementById("sf-guardian-contact").value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"None known",conditions:f.conditions||"None"};
     const wasEdit=isEdit;
     if(wasEdit){
       const index=STUDENTS.findIndex(s=>s.id===editingStudent.id), previous=index>=0?STUDENTS[index]:editingStudent;

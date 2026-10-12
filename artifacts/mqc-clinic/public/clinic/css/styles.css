@@ -494,10 +494,6 @@ tbody tr:hover{background:#F7FAFD;}
 .info-cell .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);font-weight:600;}
 .info-cell .val{font-size:13.5px;font-weight:600;color:var(--navy-deep);margin-top:2px;}
 .info-cell.warn .val{color:var(--red);}
-.patient-allergy-alert{display:flex;align-items:flex-start;gap:12px;margin-top:12px;padding:12px 14px;border:1px solid #E3A49F;border-left:5px solid var(--red);border-radius:7px;background:#FFF2F0;color:#7B2620;}
-.patient-allergy-alert strong{flex:0 0 auto;font-size:11px;line-height:1.5;}
-.patient-allergy-alert span{font-size:13px;font-weight:600;line-height:1.5;overflow-wrap:anywhere;}
-.patient-allergy-alert.no-known-allergies{border-color:#B9D8CE;border-left-color:var(--green);background:#F0F8F4;color:var(--navy-deep);}
 .student-records{margin-top:18px;padding-top:18px;border-top:1px solid var(--line);}
 .student-records-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:10px;}
 .student-records-head h4{font-size:16px;}
