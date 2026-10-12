@@ -201,10 +201,11 @@ function saveToClinicState(_resetAuditLogs=false,throwOnError=false){
   return queueClinicStateSave(snapshotData(false),throwOnError);
 }
 
-function saveVisitToClinicState(visitIds,inventorySnapshot){
+function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[]){
   const payload=snapshotData(false);
   payload.visitMutation={
     visitIds:visitIds.filter(Boolean),
+    patientIds:patientIds.filter(Boolean),
     medicineCodes:inventorySnapshot.medicineQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.code),
     equipmentIds:inventorySnapshot.equipmentQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.id),
   };

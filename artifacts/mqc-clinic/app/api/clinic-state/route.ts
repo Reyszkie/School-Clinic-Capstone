@@ -188,6 +188,7 @@ function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = fa
     symptoms: Array.isArray(row.symptoms) ? row.symptoms : [],
     known_conditions: row.knownConditions ?? row.known_conditions ?? null,
     allergies_history: row.allergiesHistory ?? row.allergies_history ?? null,
+    allergies_details: row.allergiesDetails ?? row.allergies_details ?? null,
     current_medication: row.currentMedication ?? row.current_medication ?? null,
     previous_similar: row.previousSimilar ?? row.previous_similar ?? null,
     last_meal: row.lastMeal ?? row.last_meal ?? null,
@@ -367,6 +368,7 @@ function visitFromRow(row: Record<string, unknown>, patients: Array<Record<strin
     symptoms: row.symptoms,
     knownConditions: row.known_conditions,
     allergiesHistory: row.allergies_history,
+    allergiesDetails: row.allergies_details,
     currentMedication: row.current_medication,
     previousSimilar: row.previous_similar,
     lastMeal: row.last_meal,
@@ -644,16 +646,20 @@ export async function PUT(request: Request) {
 
     if (visitMutation) {
       const visitIds = new Set(Array.isArray(visitMutation.visitIds) ? visitMutation.visitIds.map(String) : []);
+      const patientIds = new Set(Array.isArray(visitMutation.patientIds) ? visitMutation.patientIds.map(String) : []);
       const medicineCodes = new Set(Array.isArray(visitMutation.medicineCodes) ? visitMutation.medicineCodes.map(String) : []);
       const equipmentIds = new Set(Array.isArray(visitMutation.equipmentIds) ? visitMutation.equipmentIds.map(String) : []);
       const visits = Array.isArray(snapshot.consultations) ? snapshot.consultations as Array<Record<string, unknown>> : [];
+      const patients = Array.isArray(snapshot.students) ? snapshot.students as Array<Record<string, unknown>> : [];
       const medicines = Array.isArray(snapshot.medicines) ? snapshot.medicines as Array<Record<string, unknown>> : [];
       const equipment = Array.isArray(snapshot.equipment) ? snapshot.equipment as Array<Record<string, unknown>> : [];
       const affectedVisits = visits.filter(row => visitIds.has(String(row.id)));
+      const affectedPatients = patients.filter(row => patientIds.has(String(row.id)));
       const affectedMedicines = medicines.filter(row => medicineCodes.has(String(row.code)));
       const affectedEquipment = equipment.filter(row => equipmentIds.has(String(row.id)));
 
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
+      if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
       if (affectedMedicines.length !== medicineCodes.size) throw new Error("A medicine inventory record for this save could not be found.");
       if (affectedEquipment.length !== equipmentIds.size) throw new Error("An equipment inventory record for this save could not be found.");
 
@@ -665,6 +671,7 @@ export async function PUT(request: Request) {
           body: JSON.stringify({ id: clinicStateId, state: clinicSnapshot }),
         }),
         upsertTableRows("clinical_visits", "id", affectedVisits.map(row => normalizeVisitRow(row, row.status !== "Superseded"))),
+        upsertTableRows("patients", "id", affectedPatients.map(normalizePatientRow)),
         upsertTableRows("medicines", "code", affectedMedicines.map(normalizeMedicineRow)),
         upsertTableRows("equipment", "id", affectedEquipment.map(normalizeEquipmentRow)),
       ]);

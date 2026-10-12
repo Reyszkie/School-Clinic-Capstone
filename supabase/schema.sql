@@ -127,6 +127,7 @@ create table if not exists public.clinical_visits (
 
 alter table public.clinical_visits
   add column if not exists respiratory_rate text,
+  add column if not exists allergies_details text,
   add column if not exists reason_other text,
   add column if not exists equipment_used jsonb not null default '[]'::jsonb,
   add column if not exists equipment_quantity integer,
