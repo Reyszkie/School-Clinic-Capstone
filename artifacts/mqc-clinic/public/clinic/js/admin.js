@@ -125,34 +125,35 @@ function bindAuditTab(){
   document.querySelectorAll('[data-apage]').forEach(b=> b.onclick=()=>{ state.auditPage += b.dataset.apage==='next'?1:-1; if(state.auditPage<1) state.auditPage=1; renderAdminTabBody(); });
 }
 function renderDeletedTab(){
-  const delStudents=DELETED_STUDENTS;
-  const delConsults=CONSULTATIONS.filter(c=>c.deleted);
-  const delMeds=MEDICINES.filter(m=>m.deleted);
-  const delEq=EQUIPMENT.filter(e=>e.deleted);
+  const delStudents=DELETED_STUDENTS||[];
+  const delConsults=CONSULTATIONS.filter(c=>c.deleted||c.status==="Deleted");
+  const delMeds=MEDICINES.filter(m=>m.deleted||m.deletedAt);
+  const delEq=EQUIPMENT.filter(e=>e.deleted||e.deletedAt);
+  const delUsers=DELETED_USERS||[];
   const section=(title, rows, empty)=>`
     <div class="card" style="margin-bottom:16px;">
       <div class="panel-title"><h4>${title}</h4></div>
       ${rows.length===0?emptyState(empty):`<div class="table-wrap"><table>${rows}</table></div>`}
     </div>`;
   const consultRows = delConsults.length? `<thead><tr><th>Record</th><th>Patient</th><th>Date</th><th></th></tr></thead><tbody>${
-    delConsults.map(c=>`<tr><td class="mono">${c.id}</td><td>${escapeHtml(c.studentName)}</td><td>${fmtDate(c.date)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-dc="${c.id}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dc="${c.id}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+    delConsults.map(c=>`<tr><td class="mono">${escapeHtml(c.id)}</td><td>${escapeHtml(c.studentName||c.studentId||"Unknown patient")}</td><td>${fmtDate(c.date)}</td>
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-dc="${escapeHtml(c.id)}" title="Restore visit" aria-label="Restore visit ${escapeHtml(c.id)}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dc="${escapeHtml(c.id)}" title="Delete visit permanently" aria-label="Delete visit ${escapeHtml(c.id)} permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
   const studentRows = delStudents.length? `<thead><tr><th>Student ID</th><th>Name</th><th>Course / Year</th><th>Deleted</th><th></th></tr></thead><tbody>${
     delStudents.map(s=>`<tr><td class="mono">${escapeHtml(s.id)}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</td><td>${fmtDate(s.deletedAt)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-dp="${escapeHtml(s.id)}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dp="${escapeHtml(s.id)}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-dp="${escapeHtml(s.id)}" title="Restore patient" aria-label="Restore patient ${escapeHtml(s.name)}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dp="${escapeHtml(s.id)}" title="Delete patient permanently" aria-label="Delete patient ${escapeHtml(s.name)} permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
-  const medRows = delMeds.length? `<thead><tr><th>Code</th><th>Name</th><th></th></tr></thead><tbody>${
-    delMeds.map(m=>`<tr><td class="mono">${m.code}</td><td>${escapeHtml(m.name)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-dm="${m.code}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dm="${m.code}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+  const medRows = delMeds.length? `<thead><tr><th>Code</th><th>Name</th><th>Deleted</th><th></th></tr></thead><tbody>${
+    delMeds.map(m=>`<tr><td class="mono">${escapeHtml(m.code)}</td><td>${escapeHtml(m.name)}</td><td>${fmtDate(m.deletedAt)}</td>
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-dm="${escapeHtml(m.code)}" title="Restore medicine" aria-label="Restore medicine ${escapeHtml(m.name)}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dm="${escapeHtml(m.code)}" title="Delete medicine permanently" aria-label="Delete medicine ${escapeHtml(m.name)} permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
-  const eqRows = delEq.length? `<thead><tr><th>ID</th><th>Name</th><th></th></tr></thead><tbody>${
-    delEq.map(e=>`<tr><td class="mono">${e.id}</td><td>${escapeHtml(e.name)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-de="${e.id}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-de="${e.id}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+  const eqRows = delEq.length? `<thead><tr><th>ID</th><th>Name</th><th>Deleted</th><th></th></tr></thead><tbody>${
+    delEq.map(e=>`<tr><td class="mono">${escapeHtml(e.id)}</td><td>${escapeHtml(e.name)}</td><td>${fmtDate(e.deletedAt)}</td>
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-de="${escapeHtml(e.id)}" title="Restore equipment" aria-label="Restore equipment ${escapeHtml(e.name)}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-de="${escapeHtml(e.id)}" title="Delete equipment permanently" aria-label="Delete equipment ${escapeHtml(e.name)} permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
-  const userRows = DELETED_USERS.length? `<thead><tr><th>ID</th><th>Name</th><th></th></tr></thead><tbody>${
-    DELETED_USERS.map(u=>`<tr><td class="mono">${u.id}</td><td>${escapeHtml(u.name)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-du="${u.id}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-du="${u.id}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+  const userRows = delUsers.length? `<thead><tr><th>ID</th><th>Name</th><th>Deleted</th><th></th></tr></thead><tbody>${
+    delUsers.map(u=>`<tr><td class="mono">${escapeHtml(u.id)}</td><td>${escapeHtml(u.name)}</td><td>${fmtDate(u.deletedAt)}</td>
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-du="${escapeHtml(u.id)}" title="Restore user" aria-label="Restore user ${escapeHtml(u.name)}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-du="${escapeHtml(u.id)}" title="Delete user permanently" aria-label="Delete user ${escapeHtml(u.name)} permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
   return section("Deleted Patient Visits", consultRows, "No deleted patient visits.")
     + section("Deleted Patients", studentRows, "No deleted patients.")
@@ -160,22 +161,37 @@ function renderDeletedTab(){
     + section("Deleted Equipment", eqRows, "No deleted equipment.")
     + section("Deleted Users", userRows, "No deleted users.");
 }
+async function commitDeletedRecordChange({label,apply,rollback,purge,auditAction,module,status="Success",successTitle,successMessage}){
+  apply();
+  if(purge)PURGED_RECORDS.push(purge);
+  try{
+    await saveToClinicState(false,true);
+  }catch(error){
+    rollback();
+    if(purge)PURGED_RECORDS=PURGED_RECORDS.filter(row=>row!==purge);
+    toast("Change not saved",error.message||`Unable to update ${label}.`,'err');
+    renderAdminTabBody();
+    return;
+  }
+  await logAudit(auditAction,module,status,false);
+  toast(successTitle,successMessage,status==="Warning"?'warn':'ok');
+  renderAdminTabBody();
+}
 function bindDeletedTab(){
-  const rerender=()=>{ document.getElementById('admin-body').innerHTML=renderDeletedTab(); bindDeletedTab(); };
-  document.querySelectorAll('[data-restore-dc]').forEach(b=> b.onclick=()=>{ const r=CONSULTATIONS.find(c=>c.id===b.dataset.restoreDc); r.deleted=false; logAudit(`Record Restored — Patient Visit ${r.id}`,"Patient Visits"); toast('Restored', `Visit ${r.id} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-dp]').forEach(b=> b.onclick=()=>{ const s=DELETED_STUDENTS.find(x=>x.id===b.dataset.restoreDp); if(!s)return; DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id); const restored={...s,deleted:false}; delete restored.deletedAt; delete restored.deletedBy; STUDENTS.unshift(restored); logAudit(`Record Restored — Patient ${s.name}`,"Patient Visits"); toast('Restored', `${s.name} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-dm]').forEach(b=> b.onclick=()=>{ const r=MEDICINES.find(m=>m.code===b.dataset.restoreDm); r.deleted=false; logAudit(`Record Restored — ${r.name}`,"Inventory"); toast('Restored', `${r.name} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-de]').forEach(b=> b.onclick=()=>{ const r=EQUIPMENT.find(e=>e.id===b.dataset.restoreDe); r.deleted=false; logAudit(`Record Restored — ${r.name}`,"Inventory"); toast('Restored', `${r.name} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); if(!u)return; DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id); const restored={...u,deleted:false}; delete restored.deletedAt; delete restored.deletedBy; state.users.unshift(restored); logAudit(`User Restored — ${u.name}`,"User Management"); toast('Restored', `${u.name} restored.`,'ok'); rerender(); });
-
-  const permDelete=(label, table, key, value, action)=>{
-    confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); PURGED_RECORDS.push({table,key,value}); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToClinicState(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});
+  const confirmPurge=(label,table,key,value,action,rollback)=>{
+    const purge={table,key,value};
+    confirmDialog({title:"Permanently delete?",msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`,okLabel:"Delete Permanently",onConfirm:()=>commitDeletedRecordChange({label,apply:action,rollback,purge,auditAction:`Record Permanently Deleted — ${label}`,module:"Administration",status:"Warning",successTitle:"Permanently deleted",successMessage:`${label} has been permanently removed.`})});
   };
-  document.querySelectorAll('[data-perm-dc]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDc,"clinical_visits","id",b.dataset.permDc,()=>{ CONSULTATIONS=CONSULTATIONS.filter(c=>c.id!==b.dataset.permDc); }));
-  document.querySelectorAll('[data-perm-dp]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDp,"patients","id",b.dataset.permDp,()=>{ DELETED_STUDENTS=DELETED_STUDENTS.filter(s=>s.id!==b.dataset.permDp); }));
-  document.querySelectorAll('[data-perm-dm]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDm,"medicines","code",b.dataset.permDm,()=>{ MEDICINES=MEDICINES.filter(m=>m.code!==b.dataset.permDm); }));
-  document.querySelectorAll('[data-perm-de]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDe,"equipment","id",b.dataset.permDe,()=>{ EQUIPMENT=EQUIPMENT.filter(e=>e.id!==b.dataset.permDe); }));
-  document.querySelectorAll('[data-perm-du]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDu,"clinic_users","id",b.dataset.permDu,()=>{ DELETED_USERS=DELETED_USERS.filter(u=>u.id!==b.dataset.permDu); }));
+  document.querySelectorAll('[data-restore-dc]').forEach(b=>b.onclick=()=>{const r=CONSULTATIONS.find(c=>c.id===b.dataset.restoreDc);if(!r)return;const previous={deleted:r.deleted,deletedAt:r.deletedAt,status:r.status};commitDeletedRecordChange({label:`visit ${r.id}`,apply:()=>{r.deleted=false;delete r.deletedAt;if(r.status==="Deleted")r.status="Active";},rollback:()=>Object.assign(r,previous),auditAction:`Record Restored — Patient Visit ${r.id}`,module:"Patient Visits",successTitle:"Restored",successMessage:`Visit ${r.id} restored.`});});
+  document.querySelectorAll('[data-restore-dp]').forEach(b=>b.onclick=()=>{const patient=DELETED_STUDENTS.find(row=>row.id===b.dataset.restoreDp);if(!patient)return;const restored={...patient,deleted:false};delete restored.deletedAt;delete restored.deletedBy;commitDeletedRecordChange({label:`patient ${patient.name}`,apply:()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row.id!==patient.id);STUDENTS.unshift(restored);},rollback:()=>{const index=STUDENTS.findIndex(row=>row.id===patient.id);if(index>=0)STUDENTS.splice(index,1);DELETED_STUDENTS.unshift(patient);},auditAction:`Record Restored — Patient ${patient.name}`,module:"Patients",successTitle:"Restored",successMessage:`${patient.name} restored.`});});
+  document.querySelectorAll('[data-restore-dm]').forEach(b=>b.onclick=()=>{const item=MEDICINES.find(row=>row.code===b.dataset.restoreDm);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`medicine ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),auditAction:`Record Restored — ${item.name}`,module:"Inventory",successTitle:"Restored",successMessage:`${item.name} restored.`});});
+  document.querySelectorAll('[data-restore-de]').forEach(b=>b.onclick=()=>{const item=EQUIPMENT.find(row=>row.id===b.dataset.restoreDe);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`equipment ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),auditAction:`Record Restored — ${item.name}`,module:"Inventory",successTitle:"Restored",successMessage:`${item.name} restored.`});});
+  document.querySelectorAll('[data-restore-du]').forEach(b=>b.onclick=()=>{const user=DELETED_USERS.find(row=>row.id===b.dataset.restoreDu);if(!user)return;const restored={...user,deleted:false};delete restored.deletedAt;delete restored.deletedBy;commitDeletedRecordChange({label:`user ${user.name}`,apply:()=>{DELETED_USERS=DELETED_USERS.filter(row=>row.id!==user.id);state.users.unshift(restored);},rollback:()=>{state.users=state.users.filter(row=>row.id!==user.id);DELETED_USERS.unshift(user);},auditAction:`User Restored — ${user.name}`,module:"User Management",successTitle:"Restored",successMessage:`${user.name} restored.`});});
+  document.querySelectorAll('[data-perm-dc]').forEach(b=>b.onclick=()=>{const record=CONSULTATIONS.find(row=>row.id===b.dataset.permDc);if(!record)return;confirmPurge(`visit ${record.id}`,"clinical_visits","id",record.id,()=>{CONSULTATIONS=CONSULTATIONS.filter(row=>row!==record);},()=>CONSULTATIONS.unshift(record));});
+  document.querySelectorAll('[data-perm-dp]').forEach(b=>b.onclick=()=>{const record=DELETED_STUDENTS.find(row=>row.id===b.dataset.permDp);if(!record)return;confirmPurge(`patient ${record.name}`,"patients","id",record.id,()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row!==record);},()=>DELETED_STUDENTS.unshift(record));});
+  document.querySelectorAll('[data-perm-dm]').forEach(b=>b.onclick=()=>{const record=MEDICINES.find(row=>row.code===b.dataset.permDm);if(!record)return;confirmPurge(`medicine ${record.name}`,"medicines","code",record.code,()=>{MEDICINES=MEDICINES.filter(row=>row!==record);},()=>MEDICINES.unshift(record));});
+  document.querySelectorAll('[data-perm-de]').forEach(b=>b.onclick=()=>{const record=EQUIPMENT.find(row=>row.id===b.dataset.permDe);if(!record)return;confirmPurge(`equipment ${record.name}`,"equipment","id",record.id,()=>{EQUIPMENT=EQUIPMENT.filter(row=>row!==record);},()=>EQUIPMENT.unshift(record));});
+  document.querySelectorAll('[data-perm-du]').forEach(b=>b.onclick=()=>{const record=DELETED_USERS.find(row=>row.id===b.dataset.permDu);if(!record)return;confirmPurge(`user ${record.name}`,"clinic_users","id",record.id,()=>{DELETED_USERS=DELETED_USERS.filter(row=>row!==record);},()=>DELETED_USERS.unshift(record));});
 }
 function renderAdminTabBody(){
   const body=document.getElementById('admin-body');
