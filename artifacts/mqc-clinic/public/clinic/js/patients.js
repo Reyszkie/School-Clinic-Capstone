@@ -119,7 +119,9 @@ function openStudentForm(existing=null){
   document.getElementById("sf-year").onchange=e=>{
     document.getElementById("sf-course").innerHTML=courseOptionsForYearHtml(e.target.value);
   };
+  let patientSaveInProgress=false;
   document.getElementById("sf-save").onclick=async()=>{
+    if(patientSaveInProgress)return;
     const id=document.getElementById("sf-id").value.trim(), last=document.getElementById("sf-lastname").value.trim(), first=document.getElementById("sf-firstname").value.trim(), middle=document.getElementById("sf-middle").value.trim();
     if(!id||!last||!first){toast("Missing information","Student ID, last name, and given name are required.","err");return;}
     if(!isEdit&&STUDENTS.some(s=>s.id.toLowerCase()===id.toLowerCase())){toast("Duplicate Student ID",`A student with ID ${id} already exists.`,"err");return;}
@@ -127,18 +129,17 @@ function openStudentForm(existing=null){
     const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:document.getElementById("sf-guardian-contact").value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"None recorded",conditions:f.conditions||"None"};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
-    const saveButton=document.getElementById("sf-save");saveButton.disabled=true;
-    const saved=await commitClinicRecordMutation({
+    const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
+    let saved=false;
+    try{saved=await commitClinicRecordMutation({
       apply:()=>{
         if(wasEdit){if(index<0)throw new Error("This patient record is no longer available.");STUDENTS[index]={...previous,...rec};const updated=STUDENTS[index];CONSULTATIONS.forEach(visit=>{if(visit.studentId===updated.id){visit.studentName=updated.name;visit.course=updated.course;visit.year=updated.year;}});editingStudent=updated;state.selectedStudent=updated;}
         else{STUDENTS.unshift(rec);editingStudent=rec;state.selectedStudent=rec;}
       },
       rollback:()=>{if(wasEdit&&previous){STUDENTS[index]=previous;previousVisits.forEach(row=>Object.assign(row.visit,{studentName:row.studentName,course:row.course,year:row.year}));editingStudent=previous;state.selectedStudent=previous;}else{const patientIndex=STUDENTS.findIndex(patient=>patient.id===rec.id);if(patientIndex>=0)STUDENTS.splice(patientIndex,1);state.selectedStudent=null;}},
       auditAction:`${wasEdit?"Patient Record Updated":"Patient Added"} — ${rec.name} (${rec.id})`,module:"Patients",detail:rec.id,successTitle:wasEdit?"Patient updated":"Patient added",successMessage:wasEdit?`${rec.name}'s record has been updated.`:`Welcome, ${rec.name}! Added to patient records.`,refresh:renderConsultTabBody,
-    });
-    saveButton.disabled=false;
-    if(saved&&!wasEdit)closeModal();
-    if(saved&&wasEdit)document.getElementById("sf-status").textContent="Changes saved. You can keep editing or click X to close.";
+    });}finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
+    if(saved)closeModal();
   };
 }
 
@@ -264,7 +265,7 @@ function openConsultationForm(student, existing=null){
   const returnedQuantity=(itemType,itemId)=>returnedInventory.filter(entry=>entry.itemType===itemType&&entry.itemId===itemId).reduce((total,entry)=>total+Number(entry.quantity||0),0);
   const medicineAvailable=item=>(Number(item.qty)||0)+returnedQuantity("medicine",item.code);
   const equipmentAvailable=item=>(Number(item.qty)||0)+returnedQuantity("equipment",item.id);
-  const meds=MEDICINES.filter(m=>!m.deleted);
+  const meds=MEDICINES.filter(m=>!m.deleted&&!medicineIsExpired(m));
   const supplies=EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||item.name===existingSupply));
   const tools=EQUIPMENT.filter(item=>VISIT_TOOL_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||existingTools.includes(item.name)||f.medicine===item.name));
   const selectedTool=existingTools[0]||tools.find(item=>item.name===f.medicine)?.name||"";

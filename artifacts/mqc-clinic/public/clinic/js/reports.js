@@ -83,6 +83,7 @@ function monthlyReportData(month){
     if(visit.supplyUsed)equipment[visit.supplyUsed]=(equipment[visit.supplyUsed]||0)+(Number(visit.supplyQty)||1);
     [...new Set(visit.equipmentUsed||[])].forEach(tool=>{equipment[tool]=(equipment[tool]||0)+(Number(visit.equipmentQty)||1);});
   });
+  const inventoryAlerts=medicineAlertData();
   return {
     visits,previousMonthVisits,referrals,
     visitors:frequentVisitors(visits,1),
@@ -91,6 +92,7 @@ function monthlyReportData(month){
     equipment:Object.entries(equipment).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
     medicineInventory:currentMedicineInventory(),
     equipmentInventory:currentEquipmentInventory(),
+    inventoryAlerts,
   };
 }
 function monthlyTable(headers,rows,emptyText="No records for this month."){
@@ -106,8 +108,11 @@ function monthlyReportHtml(month){
   const referralRows=data.referrals.map(visit=>`<tr><td>${escapeHtml(visit.studentName||"—")}</td><td>${escapeHtml(visit.studentId||"—")}</td><td>${escapeHtml(fmtDate(visit.date))}</td><td>${escapeHtml(visit.outcome||"—")}</td></tr>`);
   const medicineInventoryRows=data.medicineInventory.map(({item,status})=>`<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category||"—")}</td><td>${Number(item.qty)||0}</td><td>${escapeHtml(item.unit||"—")}</td><td>${escapeHtml(status)}</td></tr>`);
   const equipmentInventoryRows=data.equipmentInventory.map(item=>`<tr><td>${escapeHtml(item.name)}</td><td>${Number(item.qty)||0}</td><td>${escapeHtml(item.condition||"—")}</td><td>${escapeHtml(item.status||"—")}</td></tr>`);
+  const alertMedicineRows=list=>list.map(item=>`<tr><td class="mono">${escapeHtml(item.code)}</td><td>${escapeHtml(item.name)}</td><td class="mono">${Number(item.qty)||0} ${escapeHtml(item.unit||"")}</td><td>${item.exp?escapeHtml(fmtDate(item.exp)):"—"}</td><td>${item.daysRemaining===undefined?escapeHtml(medStatus(item).label):item.daysRemaining===0?"Expires today":item.daysRemaining<0?`Expired ${Math.abs(item.daysRemaining)} day(s) ago`:`In ${item.daysRemaining} day(s)`}</td></tr>`);
+  const alertHeaders=["Code","Medicine","Available Qty","Expiration","Status"];
   return `<div class="monthly-report-content">
-    <div class="monthly-report-kpis"><div class="monthly-report-stat"><span>Total Clinic Visits</span><strong>${data.visits.length}</strong></div><div class="monthly-report-stat"><span>Previous Month</span><strong>${data.previousMonthVisits}</strong></div><div class="monthly-report-stat"><span>Referrals</span><strong>${data.referrals.length}</strong></div></div>
+    <div class="monthly-report-kpis"><div class="monthly-report-stat"><span>Total Clinic Visits</span><strong>${data.visits.length}</strong></div><div class="monthly-report-stat"><span>Previous Month</span><strong>${data.previousMonthVisits}</strong></div><div class="monthly-report-stat"><span>Referrals</span><strong>${data.referrals.length}</strong></div><div class="monthly-report-stat"><span>Low Stock Medicines Now</span><strong>${data.inventoryAlerts.lowStock.length}</strong></div><div class="monthly-report-stat"><span>Expiring Within 30 Days</span><strong>${data.inventoryAlerts.expiring.length}</strong></div><div class="monthly-report-stat"><span>Expired Medicines Now</span><strong>${data.inventoryAlerts.expired.length}</strong></div></div>
+    <section class="monthly-report-block"><h5>Current Inventory Alerts</h5><p class="inventory-report-note">Inventory alert status as of ${fmtDate(todayDateString())}. Alerts reflect current stock, independent of the selected visit reporting month.</p><h6>Low Stock Alert</h6>${monthlyTable(alertHeaders,alertMedicineRows(data.inventoryAlerts.lowStock),"No non-expired medicines meet the configured low-stock threshold.")}<h6>Expiring Medicine Alert — Next ${MEDICINE_EXPIRY_ALERT_DAYS} Days</h6>${monthlyTable(alertHeaders,alertMedicineRows(data.inventoryAlerts.expiring),"No medicines expire within the next 30 days.")}<h6>Expired Medicine Alert</h6>${monthlyTable(alertHeaders,alertMedicineRows(data.inventoryAlerts.expired),"No expired medicines.")}</section>
     <section class="monthly-report-block"><h5>Most Frequent Visitors</h5>${monthlyTable(["Student / Patient","Year Level","Section / Course","Visits"],visitors)}</section>
     <section class="monthly-report-block"><h5>Common Reasons for Clinic Visits</h5>${monthlyTable(["Reason / Symptom","Occurrences"],reasons)}</section>
     <section class="monthly-report-block"><h5>Recorded Referrals</h5>${monthlyTable(["Student","Student ID","Date","Disposition"],referralRows,"No referrals were recorded for this month.")}</section>

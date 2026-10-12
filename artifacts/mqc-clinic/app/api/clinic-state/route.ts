@@ -661,6 +661,43 @@ export async function PUT(request: Request) {
     const persistedSnapshot = { ...snapshot };
     delete persistedSnapshot.auditLogs;
     delete persistedSnapshot.purgeRequests;
+    const inventoryMutation = snapshot.inventoryMutation && typeof snapshot.inventoryMutation === "object"
+      ? snapshot.inventoryMutation as Record<string, unknown>
+      : null;
+    if (inventoryMutation) {
+      if (snapshot.visitMutation || snapshot.purgeRequests) return Response.json({ message: "Inventory record saves cannot be combined with other mutations." }, { status: 400 });
+      const itemType = inventoryMutation.itemType;
+      const itemId = String(inventoryMutation.itemId ?? "");
+      const table = itemType === "medicine" ? "medicines" : itemType === "equipment" ? "equipment" : null;
+      const key = itemType === "medicine" ? "code" : "id";
+      const rows = table === "medicines" && Array.isArray(snapshot.medicines)
+        ? snapshot.medicines as Array<Record<string, unknown>>
+        : table === "equipment" && Array.isArray(snapshot.equipment)
+          ? snapshot.equipment as Array<Record<string, unknown>>
+          : [];
+      const affected = rows.filter(row => String(row[key] ?? "") === itemId);
+      if (!table || !itemId || affected.length !== 1) return Response.json({ message: "The inventory record for this save could not be found." }, { status: 400 });
+
+      const currentSnapshotResponse = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
+      if (!currentSnapshotResponse.ok) throw new Error(`clinic_state inventory snapshot read returned ${currentSnapshotResponse.status}`);
+      const currentSnapshots = await currentSnapshotResponse.json() as Array<{ state?: Record<string, unknown> }>;
+      const currentState = currentSnapshots[0]?.state ?? {};
+      const stateUpdate = {
+        ...currentState,
+        inventoryTransactions: Array.isArray(snapshot.inventoryTransactions) ? snapshot.inventoryTransactions : currentState.inventoryTransactions ?? [],
+        savedAt: snapshot.savedAt ?? new Date().toISOString(),
+      };
+      const [snapshotResponse] = await Promise.all([
+        supabaseRequest("clinic_state", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ id: clinicStateId, state: stateUpdate }),
+        }),
+        upsertTableRows(table, key, [table === "medicines" ? normalizeMedicineRow(affected[0]) : normalizeEquipmentRow(affected[0])]),
+      ]);
+      if (!snapshotResponse.ok) throw new Error(`clinic_state inventory snapshot returned ${snapshotResponse.status}`);
+      return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
     const clinicUsersChanged = await hasClinicUserChanges(snapshot.users);
     if (clinicUsersChanged && session.role !== "Head Nurse & Administrator") {
       return Response.json({ message: "Only the Head Nurse & Administrator can change clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });

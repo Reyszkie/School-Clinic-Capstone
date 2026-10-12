@@ -117,7 +117,8 @@ function validateVisitInventoryUsage(visit,previousVisit=null){
   });
   for(const requirement of visitInventoryRequirements(visit)){
     const available=(Number(requirement.item.qty)||0)+(returning.get(inventoryItemKey(requirement.itemType,requirement.itemId))||0);
-    if(requirement.item.deleted||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||available<requirement.quantity){
+    if(requirement.itemType==="medicine"&&medicineIsExpired(requirement.item))throw new Error(`${requirement.item.name} is expired and cannot be dispensed.`);
+    if(requirement.item.deleted||requirement.itemType==="medicine"&&medicineIsExpired(requirement.item)||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||available<requirement.quantity){
       const label=requirement.itemType==="medicine"?`${requirement.item.name} ${requirement.item.unit||"unit(s)"}`:requirement.item.name;
       throw new Error(`${label} has only ${available} available; ${requirement.quantity} required.`);
     }
@@ -129,7 +130,8 @@ function applyVisitInventoryUsage(visit){
   for(const requirement of requirements){
     const alreadyApplied=active.some(entry=>entry.itemType===requirement.itemType&&entry.itemId===requirement.itemId);
     if(alreadyApplied)continue;
-    if(requirement.item.deleted||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||Number(requirement.item.qty)<requirement.quantity){
+    if(requirement.itemType==="medicine"&&medicineIsExpired(requirement.item))throw new Error(`${requirement.item.name} is expired and cannot be dispensed.`);
+    if(requirement.item.deleted||requirement.itemType==="medicine"&&medicineIsExpired(requirement.item)||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||Number(requirement.item.qty)<requirement.quantity){
       const available=Number(requirement.item.qty)||0;
       throw new Error(`${requirement.item.name} has only ${available} available; ${requirement.quantity} required.`);
     }
@@ -215,12 +217,12 @@ function saveToClinicState(_resetAuditLogs=false,throwOnError=false,purgeRequest
   return queueClinicStateSave(payload,throwOnError);
 }
 
-async function commitClinicRecordMutation({apply,rollback,auditAction,auditActions,module,status="Success",successTitle,successMessage,detail="",refresh=render}){
+async function commitClinicRecordMutation({apply,rollback,save=()=>saveToClinicState(false,true),auditAction,auditActions,module,status="Success",successTitle,successMessage,detail="",refresh=render}){
   let attempted=false;
   try{
     attempted=true;
     apply();
-    await saveToClinicState(false,true);
+    await save();
   }catch(error){
     if(attempted)rollback();
     toast("Change not saved",error.message||"Unable to update the clinic record.","err");
@@ -238,6 +240,19 @@ async function commitClinicRecordMutation({apply,rollback,auditAction,auditActio
   toast(successTitle,successMessage,status==="Warning"?"warn":"ok");
   refresh();
   return true;
+}
+
+function saveInventoryRecordToClinicState(itemType,itemId){
+  const item=itemType==="medicine"?MEDICINES.find(record=>record.code===itemId):EQUIPMENT.find(record=>record.id===itemId);
+  if(!item)return Promise.reject(new Error("The inventory record for this save could not be found."));
+  const payload={
+    inventoryMutation:{itemType,itemId},
+    medicines:itemType==="medicine"?[item]:[],
+    equipment:itemType==="equipment"?[item]:[],
+    inventoryTransactions:INVENTORY_TRANSACTIONS,
+    savedAt:new Date().toISOString(),
+  };
+  return queueClinicStateSave(payload,true);
 }
 
 function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[]){

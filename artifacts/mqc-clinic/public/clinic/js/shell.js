@@ -34,7 +34,7 @@ function renderShell(){
       navHtml+=`<button class="nav-item ${state.page===it.key?'active':''}" data-nav="${it.key}" style="--nav-c:${it.color};">${it.icon}<span>${it.label}</span></button>`;
     });
   });
-  const lowStockThreshold = state.settings.lowStockThreshold || 15;
+  const lowStockThreshold = Number(state.settings.lowStockThreshold ?? 15);
   const lowStockCount = MEDICINES.filter(m=>!m.deleted && m.qty>0 && m.qty<=lowStockThreshold).length + MEDICINES.filter(m=>!m.deleted && m.qty===0).length;
   const referralFlagCount = referralConcernList(REFERRAL_THRESHOLD).length;
 

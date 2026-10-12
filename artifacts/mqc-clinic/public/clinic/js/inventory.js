@@ -1,10 +1,30 @@
 /* ================= INVENTORY ================= */
+const MEDICINE_EXPIRY_ALERT_DAYS=30;
+function medicineExpiryDays(medicine){return medicine?clinicDateDaysUntil(medicine.exp):null;}
+function medicineIsExpired(medicine){const remaining=medicineExpiryDays(medicine);return remaining!==null&&remaining<0;}
+function medicineAlertData(today=todayDateString()){
+  const threshold=Number(state.settings.lowStockThreshold??15);
+  const active=MEDICINES.filter(medicine=>!medicine.deleted);
+  const expiring=[],expired=[];
+  active.forEach(medicine=>{
+    const remaining=clinicDateDaysUntil(medicine.exp,today);
+    if(remaining===null)return;
+    if(remaining<0)expired.push({...medicine,daysRemaining:remaining});
+    else if(remaining<=MEDICINE_EXPIRY_ALERT_DAYS)expiring.push({...medicine,daysRemaining:remaining});
+  });
+  const orderByExpiration=(a,b)=>a.daysRemaining-b.daysRemaining||a.name.localeCompare(b.name);
+  return {
+    lowStock:active.filter(medicine=>Number(medicine.qty)<=threshold),
+    expiring:expiring.sort(orderByExpiration),
+    expired:expired.sort(orderByExpiration),
+  };
+}
 function medStatus(m){
-  if(m.qty===0) return {label:"Out of Stock", chip:"chip-out"};
-  const d=daysUntil(m.exp);
-  if(d<0) return {label:"Expired", chip:"chip-expired"};
-  if(d<=(state.settings.expirationAlertDays||14)) return {label:"Expiring Soon", chip:"chip-expiring"};
-  if(m.qty<=(state.settings.lowStockThreshold||15)) return {label:"Low Stock", chip:"chip-low"};
+  if(medicineIsExpired(m)) return {label:"Expired", chip:"chip-expired"};
+  if(Number(m.qty)===0) return {label:"Out of Stock", chip:"chip-out"};
+  const d=medicineExpiryDays(m);
+  if(d!==null&&d<=MEDICINE_EXPIRY_ALERT_DAYS) return {label:"Expiring Soon", chip:"chip-expiring"};
+  if(Number(m.qty)<=Number(state.settings.lowStockThreshold??15)) return {label:"Low Stock", chip:"chip-low"};
   return {label:"Available", chip:"chip-available"};
 }
 function renderInventory(){
@@ -92,16 +112,17 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
       if(itemType==="medicine")MEDICINES=previousRecords;
       else EQUIPMENT=previousRecords;
     },
+    save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id),
     auditAction:existing?`Inventory Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`Inventory Item Added — ${record.name}`,
     detail:itemType==="medicine"?record.code:record.id,
     module:itemType==="medicine"?"Medicines":"Equipment",successTitle:existing?`${noun} updated`:`${noun} added`,
-    successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh,
+    successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh:()=>{if(state.page==="inventory")refresh();else render();},
   });
   return saved;
 }
 function openMedicineForm(existing=null){
   const isEdit=!!existing;
-  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", batch:"", exp:"2027-01-01", supplier:""};
+  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", batch:"", exp:"", supplier:""};
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} Medicine</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
@@ -131,9 +152,9 @@ function openMedicineForm(existing=null){
       supplier: document.getElementById('mf-supplier').value || "N/A",
       deleted:false,
     };
-    const saveButton=document.getElementById('mf-save');saveButton.disabled=true;
+    const saveButton=document.getElementById('mf-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     try{const saved=await saveInventoryRecord({itemType:"medicine",records:MEDICINES,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
-    finally{if(document.body.contains(saveButton))saveButton.disabled=false;}
+    finally{if(document.body.contains(saveButton)){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
   };
 }
 function bindMedicinesTab(){
@@ -234,9 +255,9 @@ function openEquipmentForm(existing=null){
     const rec={ id:document.getElementById('ef-id').value, name, qty:parseInt(document.getElementById('ef-qty').value)||0,
       condition:document.getElementById('ef-condition').value, lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
-    const saveButton=document.getElementById('ef-save');saveButton.disabled=true;
+    const saveButton=document.getElementById('ef-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     try{const saved=await saveInventoryRecord({itemType:"equipment",records:EQUIPMENT,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
-    finally{if(document.body.contains(saveButton))saveButton.disabled=false;}
+    finally{if(document.body.contains(saveButton)){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
   };
 }
 function bindEquipmentTab(){

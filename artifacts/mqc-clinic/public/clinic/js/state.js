@@ -83,7 +83,17 @@ function fmtDate(d){
     month: 'short', day: 'numeric', year: 'numeric'
   }).format(dt);
 }
-function daysUntil(dateStr){ const today=new Date(todayDateString()+"T00:00:00+08:00"); const target=new Date(dateStr+"T00:00:00+08:00"); return Math.round((target-today)/(1000*60*60*24)); }
+function clinicDateDaysUntil(dateStr,today=todayDateString()){
+  const parse=value=>{
+    if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+    const [year,month,day]=value.split("-").map(Number),timestamp=Date.UTC(year,month-1,day);
+    const date=new Date(timestamp);
+    return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?timestamp:null;
+  };
+  const target=parse(dateStr),reference=parse(today);
+  return target===null||reference===null?null:Math.floor((target-reference)/86400000);
+}
+function daysUntil(dateStr){return clinicDateDaysUntil(dateStr);}
 function uid(prefix){ return prefix+"-"+Math.floor(1000+Math.random()*9000); }
 function greetingWord(){ const h=new Date().getHours(); return h<12?"Good morning":h<18?"Good afternoon":"Good evening"; }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
