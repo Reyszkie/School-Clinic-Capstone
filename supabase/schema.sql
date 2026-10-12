@@ -33,7 +33,7 @@ create table if not exists public.patients (
   contact text,
   guardian_name text,
   guardian_contact text,
-  allergies text default 'None recorded',
+  allergies text default 'Not Yet Assessed',
   medical_conditions text default 'None',
   deleted_at timestamptz,
   deleted_by text,
@@ -41,7 +41,7 @@ create table if not exists public.patients (
   updated_at timestamptz not null default now()
 );
 
-alter table public.patients alter column allergies set default 'None recorded';
+alter table public.patients alter column allergies set default 'Not Yet Assessed';
 
 create table if not exists public.medicines (
   code text primary key,

@@ -118,7 +118,7 @@ function normalizePatientRow(row: Record<string, unknown>) {
     contact: row.contact ?? null,
     guardian_name: row.guardianName ?? row.guardian_name ?? null,
     guardian_contact: row.guardianContact ?? row.guardian_contact ?? null,
-    allergies: row.allergies ?? "None recorded",
+    allergies: row.allergies ?? "Not Yet Assessed",
     medical_conditions: row.conditions ?? row.medicalConditions ?? row.medical_conditions ?? "None",
     deleted_at: normalizeDeletedAt(row),
     deleted_by: row.deletedBy ?? row.deleted_by ?? null,

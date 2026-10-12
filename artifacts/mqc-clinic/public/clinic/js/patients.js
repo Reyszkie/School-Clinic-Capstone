@@ -55,9 +55,19 @@ function renderStudentClinicalRecords(student){
     <tbody>${rows}</tbody></table></div></div>`;
 }
 
+function patientAllergyStatus(value){
+  const allergy=String(value||"").trim();
+  const normalized=allergy.toLowerCase();
+  if(!allergy||["none recorded","not specified","not yet assessed","unknown"].includes(normalized))return {status:"unassessed",detail:""};
+  if(["no","none","none known","no known allergy","no known allergies","no allergies","nka"].includes(normalized))return {status:"none",detail:""};
+  return {status:"allergies",detail:allergy};
+}
+
 function renderStudentDetail(s, inModal=false){
   const displayName=s.name||[s.lastName,s.firstName,s.middleInitial].filter(Boolean).join(", ");
   const initials=displayName.split(/[\s,]+/).filter(Boolean).map(x=>x[0]).slice(0,2).join("");
+  const allergy=patientAllergyStatus(s.allergies);
+  const allergyValue=allergy.status==="allergies"?allergy.detail:allergy.status==="none"?"No Known Allergies":"Not Yet Assessed";
   return `<div class="${inModal?"student-detail-content":"card"}" ${inModal?"":"style=\"margin-top:16px;\""}><div class="student-card">
     <div class="s-avatar">${escapeHtml(initials)}</div><div style="flex:1"><h3 style="font-size:19px">${escapeHtml(displayName)}</h3>
       <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.id)} · ${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</div></div>
@@ -66,7 +76,7 @@ function renderStudentDetail(s, inModal=false){
     <button class="btn btn-outline-red" id="delete-student-btn">${ICONS.trash_sm} Delete Patient</button>
   </div><div class="info-grid">
     <div class="info-cell"><div class="lbl">Sex</div><div class="val">${escapeHtml(s.gender||s.sex||"—")}</div></div>
-    <div class="info-cell"><div class="lbl">Allergies</div><div class="val">${escapeHtml(s.allergies&&!['none known','none','none recorded'].includes(String(s.allergies).trim().toLowerCase())?s.allergies:"None recorded")}</div></div>
+    <div class="info-cell ${allergy.status==="allergies"?"warn":""}"><div class="lbl">${allergy.status==="allergies"?"Allergy Alert":"Allergies"}</div><div class="val">${escapeHtml(allergyValue)}</div></div>
     <div class="info-cell"><div class="lbl">Parent / Guardian</div><div class="val">${escapeHtml(s.guardianName||s.emergency||"—")}</div></div>
     <div class="info-cell"><div class="lbl">Guardian Contact</div><div class="val mono">${escapeHtml(s.guardianContact||"—")}</div></div>
     <div class="info-cell" style="grid-column:span 2"><div class="lbl">Course / Section / Strand</div><div class="val">${escapeHtml(s.course||"—")}</div></div>
@@ -103,6 +113,7 @@ function openStudentForm(existing=null){
   const parts=(f.name||"").split(",");
   const lastName=f.lastName||parts[0]||"";
   const firstName=f.firstName||(parts[1]||"").trim().split(" ")[0]||"";
+  const initialAllergy=patientAllergyStatus(f.allergies);
   const html=`<div class="modal-head"><h3 id="student-form-title">${isEdit?"Edit":"Add New"} Patient</h3><button class="modal-close" onclick="closeModal()" aria-label="Close patient form">${ICONS.x}</button></div>
   <div class="modal-body"><form class="form-grid" id="stu-form">
     <div class="f-field"><label>Student ID <span class="req">*</span></label><input id="sf-id" value="${escapeHtml(f.id)}" placeholder="e.g. 2026-10099" ${isEdit?"readonly style='background:#F7FAFD;'":""}></div>
@@ -114,10 +125,20 @@ function openStudentForm(existing=null){
     <div class="f-field"><label>Sex</label><select id="sf-gender">${["Male","Female"].map(g=>`<option ${f.gender===g?"selected":""}>${g}</option>`).join("")}</select></div>
     <div class="f-field"><label>Parent / Guardian Name</label><input id="sf-guardian" value="${escapeHtml(f.guardianName||f.emergency||"")}"></div>
     <div class="f-field"><label>Parent / Guardian Contact</label><input id="sf-guardian-contact" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"></div>
+    <div class="f-field"><label>Allergy Status</label><select id="sf-allergy-status"><option value="unassessed" ${initialAllergy.status==="unassessed"?"selected":""}>Not Yet Assessed</option><option value="none" ${initialAllergy.status==="none"?"selected":""}>No Known Allergies</option><option value="allergies" ${initialAllergy.status==="allergies"?"selected":""}>Has Allergies</option></select></div>
+    <div class="f-field ${initialAllergy.status==="allergies"?"":"hidden"}" id="sf-allergy-detail-wrap"><label for="sf-allergy-detail">Allergy Details <span class="req">*</span></label><input id="sf-allergy-detail" value="${escapeHtml(initialAllergy.detail)}" maxlength="500" autocomplete="off" ${initialAllergy.status==="allergies"?"required":""}></div>
   </form></div><div class="modal-foot"><span class="form-save-status" id="sf-status" aria-live="polite"></span><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Patient"}</button></div>`;
   openModal(html);
   document.getElementById("sf-year").onchange=e=>{
     document.getElementById("sf-course").innerHTML=courseOptionsForYearHtml(e.target.value);
+  };
+  const allergyStatus=document.getElementById("sf-allergy-status"),allergyDetail=document.getElementById("sf-allergy-detail"),allergyDetailWrap=document.getElementById("sf-allergy-detail-wrap");
+  allergyStatus.onchange=()=>{
+    const hasAllergies=allergyStatus.value==="allergies";
+    allergyDetailWrap.classList.toggle("hidden",!hasAllergies);
+    allergyDetail.required=hasAllergies;
+    if(!hasAllergies)allergyDetail.value="";
+    if(hasAllergies)allergyDetail.focus();
   };
   let patientSaveInProgress=false;
   document.getElementById("sf-save").onclick=async()=>{
@@ -125,8 +146,10 @@ function openStudentForm(existing=null){
     const id=document.getElementById("sf-id").value.trim(), last=document.getElementById("sf-lastname").value.trim(), first=document.getElementById("sf-firstname").value.trim(), middle=document.getElementById("sf-middle").value.trim();
     if(!id||!last||!first){toast("Missing information","Student ID, last name, and given name are required.","err");return;}
     if(!isEdit&&STUDENTS.some(s=>s.id.toLowerCase()===id.toLowerCase())){toast("Duplicate Student ID",`A student with ID ${id} already exists.`,"err");return;}
+    const allergyValue=allergyStatus.value==="allergies"?allergyDetail.value.replace(/[\u0000-\u001f\u007f]/g,"").trim():allergyStatus.value==="none"?"No Known Allergies":"Not Yet Assessed";
+    if(allergyStatus.value==="allergies"&&!allergyValue){allergyDetail.focus();toast("Missing information","Specify the patient's allergies or choose another allergy status.","err");return;}
     const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
-    const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:document.getElementById("sf-guardian-contact").value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"None recorded",conditions:f.conditions||"None"};
+    const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:document.getElementById("sf-guardian-contact").value,emergency:document.getElementById("sf-guardian").value,allergies:allergyValue,conditions:f.conditions||"None"};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
@@ -246,11 +269,11 @@ function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForIte
 }
 
 function mergePatientAllergies(currentValue,newValue){
-  const isEmpty=value=>!value||["none","none known","none recorded"].includes(String(value).trim().toLowerCase());
+  const isEmpty=value=>!value||["no","none","none known","no known allergy","no known allergies","no allergies","nka","none recorded","not specified","not yet assessed","unknown"].includes(String(value).trim().toLowerCase());
   const entries=[...(isEmpty(currentValue)?[]:String(currentValue).split(/[;,]/)),...String(newValue).split(/[;,]/)].map(value=>value.trim()).filter(Boolean);
   const seen=new Set();
   const unique=entries.filter(value=>{const key=value.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;});
-  return unique.join("; ")||"None recorded";
+  return unique.join("; ")||"Not Yet Assessed";
 }
 
 function openConsultationForm(student, existing=null){
@@ -363,15 +386,17 @@ function openConsultationForm(student, existing=null){
     rec.supplyUsed=supplyName||(isEdit&&!supplies.some(item=>item.name===existingSupply)?existingSupply:"");
     rec.equipmentUsed=selectedEquipment?[selectedEquipment]:(isEdit?existingTools.filter(name=>!tools.some(item=>item.name===name)):[]);
     const saveButton=document.getElementById("cf-save");
+    const saveLabel=saveButton.innerHTML;
     let inventorySnapshot=null,visitsSnapshot=null,previousSnapshot=null,previousAllergies=null;
+    visitSaveInProgress=true;
+    saveButton.disabled=true;
+    saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     try{
       validateVisitInventoryUsage(rec,previous);
       inventorySnapshot=captureInventoryState();
       visitsSnapshot=CONSULTATIONS.slice();
       previousSnapshot=previous?{...previous}:null;
       previousAllergies=student.allergies;
-      visitSaveInProgress=true;
-      saveButton.disabled=true;
       if(isEdit){
         reverseVisitInventoryUsage(previous);
         const revision=Number(previous.revision)||1;
@@ -383,13 +408,13 @@ function openConsultationForm(student, existing=null){
         previous.supersededAt=new Date().toISOString();
       }else rec.revision=1;
       applyVisitInventoryUsage(rec);
-      if(allergyAnswerValue==="Yes")student.allergies=mergePatientAllergies(student.allergies,allergyDetail);
+      student.allergies=allergyAnswerValue==="Yes"?mergePatientAllergies(student.allergies,allergyDetail):"No Known Allergies";
       CONSULTATIONS.unshift(rec);
-      await saveVisitToClinicState([rec.id,previous?.id],inventorySnapshot,allergyAnswerValue==="Yes"?[student.id]:[]);
+      await saveVisitToClinicState([rec.id,previous?.id],inventorySnapshot,[student.id]);
       let auditSucceeded=true;
       try{
         const auditActions=[{action:`${isEdit?"Patient Visit Revised":"Patient Visit Created"} — ${rec.id}`,module:"Patient Visits",detail:rec.id},...clinicInventoryAuditActions(inventorySnapshot,`visit ${rec.id}`)];
-        if(allergyAnswerValue==="Yes")auditActions.push({action:`Patient Allergies Recorded — ${student.id} from visit ${rec.id}`,module:"Patients",detail:student.id});
+        auditActions.push({action:`Patient Allergies ${allergyAnswerValue==="Yes"?"Recorded":"Confirmed None"} — ${student.id} from visit ${rec.id}`,module:"Patients",detail:student.id});
         for(const event of auditActions)await logAudit(event.action,event.module,"Success",false,true,event.detail||"");
       }catch{auditSucceeded=false;}
       if(auditSucceeded){
@@ -402,11 +427,12 @@ function openConsultationForm(student, existing=null){
         restoreInventoryState(inventorySnapshot);
         CONSULTATIONS.splice(0,CONSULTATIONS.length,...visitsSnapshot);
         if(previous&&previousSnapshot)Object.assign(previous,previousSnapshot);
-        if(previousAllergies!==null)student.allergies=previousAllergies;
+        student.allergies=previousAllergies;
       }
-      visitSaveInProgress=false;
-      saveButton.disabled=false;
       toast("Visit not saved",error.message||"The visit could not be saved because inventory could not be updated.","err");
+    }finally{
+      visitSaveInProgress=false;
+      if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}
     }
   };
 }

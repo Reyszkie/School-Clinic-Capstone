@@ -64,7 +64,7 @@ function openUserForm(existing=null){
   document.getElementById('uf-save').onclick=async()=>{
     if(savingUser)return;
     savingUser=true;
-    const saveButton=document.getElementById('uf-save');saveButton.disabled=true;
+    const saveButton=document.getElementById('uf-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     try{
     const last=document.getElementById('uf-lastname').value.trim();
     const first=document.getElementById('uf-firstname').value.trim();
@@ -111,7 +111,7 @@ function openUserForm(existing=null){
       toast(isEdit?"User update failed":"Account creation failed",error.message||"The user account could not be saved.","err");
     }finally{
       savingUser=false;
-      if(saveButton.isConnected)saveButton.disabled=false;
+      if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}
     }
   };
 }
