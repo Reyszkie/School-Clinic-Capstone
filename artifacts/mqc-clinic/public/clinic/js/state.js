@@ -129,9 +129,9 @@ function toast(title, msg, type="ok"){
   wrap.appendChild(el);
   setTimeout(()=>{ el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3400);
 }
-function logAudit(action, module, status="Success", persist=true){
+function logAudit(action, module, status="Success", persist=true, throwOnFailure=false,detail=""){
   const user=state.currentUser;
-  const auditWrite=fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,module,status})})
+  const auditWrite=fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,module,status,detail})})
     .then(async response=>{
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.message||`Supabase returned ${response.status}`);
@@ -145,7 +145,9 @@ function logAudit(action, module, status="Success", persist=true){
     .catch(error=>{
       console.error('MQC Clinic: audit event was not saved to Supabase.',error);
       setSyncStatus('Audit sync failed','error');
+      if(throwOnFailure)throw error;
       toast('Audit log not synced','The activity could not be saved to Supabase. Please check the connection and try again.','err');
+      return null;
     });
   if(persist)saveToClinicState();
   return auditWrite;

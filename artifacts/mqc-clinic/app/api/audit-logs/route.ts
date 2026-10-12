@@ -42,6 +42,7 @@ export async function POST(request: Request) {
   const action = typeof input.action === "string" ? input.action.trim() : "";
   const module = typeof input.module === "string" ? input.module.trim() : "";
   const status = input.status === "Warning" || input.status === "Error" ? input.status : "Success";
+  const detail = typeof input.detail === "string" ? input.detail.trim().slice(0, 250) : "";
 
   if (!action || action.length > 500 || !module || module.length > 100) {
     return Response.json({ message: "Audit event has invalid required fields." }, { status: 400 });
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
         user_id: users[0].id,
         user_name: users[0].name || session.userName,
         role: session.role,
-        action,
+        action: detail ? `${action} — ${detail}`.slice(0, 500) : action,
         module,
         status,
       }),

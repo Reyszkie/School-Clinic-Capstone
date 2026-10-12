@@ -19,13 +19,16 @@ function renderSettings(){
   </div>`;
 }
 function bindSettings(){
-  document.getElementById("appearance-theme")?.addEventListener("change",event=>{
+  document.getElementById("appearance-theme")?.addEventListener("change",async event=>{
+    const previousTheme=state.settings.appearanceTheme;
     applyClinicTheme(event.target.value);
+    try{await saveToClinicState(false,true);}
+    catch(error){applyClinicTheme(previousTheme);event.target.value=previousTheme;toast("Appearance not saved",error.message||"Unable to save the selected theme.","err");return;}
     try{window.localStorage.setItem("mqc_clinic_appearance_theme_v1",state.settings.appearanceTheme);}catch{}
-    saveToClinicState();
-    toast("Appearance updated","Your color theme has been saved.","ok");
+    try{await logAudit(`Appearance Theme Changed — ${state.settings.appearanceTheme}`,"Settings","Success",false,true);toast("Appearance updated","Your color theme has been saved.","ok");}
+    catch{toast("Appearance saved; audit sync failed","The theme was saved, but its audit entry could not be recorded.","err");}
   });
-  document.getElementById("backup-btn")?.addEventListener("click",()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);toast("Backup created","A JSON backup of clinic records was downloaded.","ok");});
+  document.getElementById("backup-btn")?.addEventListener("click",async()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);try{await logAudit("Clinic Data Backup Exported","Settings","Success",false,true);toast("Backup created","A JSON backup of clinic records was downloaded.","ok");}catch{toast("Backup created; audit sync failed","The backup downloaded, but its audit entry could not be recorded.","err");}});
   document.getElementById("restore-file")?.addEventListener("change",event=>{
     const file=event.target.files[0];
     if(!file)return;
@@ -49,8 +52,8 @@ function bindSettings(){
         if(Array.isArray(backup.purged))PURGED_RECORDS=backup.purged;
         if(backup.settings)state.settings={...state.settings,...backup.settings};
         await queueClinicStateSave(snapshotData(true),true);
-        logAudit("Backup Restored","Settings");
-        toast("Backup restored","Clinic records were restored successfully.","ok");
+        try{await logAudit("Backup Restored","Settings","Success",false,true);toast("Backup restored","Clinic records were restored successfully.","ok");}
+        catch{toast("Backup restored; audit sync failed","Clinic records were restored, but the audit entry could not be recorded.","err");}
         render();
       }catch(error){
         toast("Restore failed",error.message||"Choose a valid MQC Clinic JSON backup.","err");

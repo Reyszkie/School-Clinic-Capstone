@@ -103,17 +103,6 @@ async function hasClinicUserChanges(rows: unknown) {
     || snapshotUsers.some(user => !submittedIds.has(String(user.id ?? "")) && !submittedUsernames.has(String(user.username ?? "").toLowerCase()));
 }
 
-async function hasNewPurgeRecords(rows: unknown) {
-  if (!Array.isArray(rows) || !rows.length) return false;
-  const response = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
-  if (!response.ok) throw new Error(`clinic_state purge-history lookup returned ${response.status}`);
-  const snapshots = await response.json() as Array<{ state?: Record<string, unknown> }>;
-  const priorRows = Array.isArray(snapshots[0]?.state?.purged) ? snapshots[0].state.purged as Array<Record<string, unknown>> : [];
-  const keyFor = (row: Record<string, unknown>) => `${row.table}:${row.key}:${String(row.value)}`;
-  const priorKeys = new Set(priorRows.map(keyFor));
-  return (rows as Array<Record<string, unknown>>).some(row => !priorKeys.has(keyFor(row)));
-}
-
 function normalizePatientRow(row: Record<string, unknown>) {
   const name = row.name ?? [row.lastName ?? row.last_name ?? "", row.firstName ?? row.first_name ?? "", row.middleInitial ?? row.middle_initial ?? ""].filter(Boolean).join(", ");
   return {
@@ -129,7 +118,7 @@ function normalizePatientRow(row: Record<string, unknown>) {
     contact: row.contact ?? null,
     guardian_name: row.guardianName ?? row.guardian_name ?? null,
     guardian_contact: row.guardianContact ?? row.guardian_contact ?? null,
-    allergies: row.allergies ?? "None known",
+    allergies: row.allergies ?? "None recorded",
     medical_conditions: row.conditions ?? row.medicalConditions ?? row.medical_conditions ?? "None",
     deleted_at: normalizeDeletedAt(row),
     deleted_by: row.deletedBy ?? row.deleted_by ?? null,
@@ -517,8 +506,9 @@ async function upsertTableRows(tableName: string, conflictKey: string, rows: Arr
   }
 }
 
-async function purgeRows(rows: unknown) {
-  if (!Array.isArray(rows)) return;
+async function validatePurgeRows(rows: unknown) {
+  if (rows === undefined) return { requests: [] as Array<{ table: string; key: string; value: string | number }>, groups: [] as Array<{ table: string; key: string; values: Array<string | number> }>, linkedAuthUsers: [] as string[] };
+  if (!Array.isArray(rows)) throw new Error("Permanent-delete requests must be an array.");
   const allowedTables: Record<string, string> = {
     patients: "id",
     clinical_visits: "id",
@@ -526,18 +516,51 @@ async function purgeRows(rows: unknown) {
     equipment: "id",
     clinic_users: "id",
   };
+  const groups = new Map<string, { table: string; key: string; values: Array<string | number> }>();
+  const requests: Array<{ table: string; key: string; value: string | number }> = [];
   for (const item of rows) {
-    if (!item || typeof item !== "object") continue;
+    if (!item || typeof item !== "object") throw new Error("A permanent-delete request is invalid.");
     const purge = item as { table?: unknown; key?: unknown; value?: unknown };
     if (typeof purge.table !== "string" || typeof purge.key !== "string" || allowedTables[purge.table] !== purge.key || (typeof purge.value !== "string" && typeof purge.value !== "number")) {
-      throw new Error("Backup contains an unsupported permanent-delete record.");
+      throw new Error("The permanent-delete request is not supported.");
     }
-    if (purge.table === "patients" && purge.key === "id") {
-      const visitsResponse = await supabaseRequest(`clinical_visits?patient_id=eq.${encodeURIComponent(String(purge.value))}`, { method: "DELETE" });
-      if (!visitsResponse.ok) throw new Error(`clinical_visits delete returned ${visitsResponse.status}`);
+    const request = { table: purge.table, key: purge.key, value: purge.value };
+    requests.push(request);
+    const groupKey = `${purge.table}:${purge.key}`;
+    const group = groups.get(groupKey) ?? { table: purge.table, key: purge.key, values: [] };
+    if (!group.values.some(value => String(value) === String(purge.value))) group.values.push(purge.value);
+    groups.set(groupKey, group);
+  }
+  const validatedGroups = [...groups.values()];
+  const linkedAuthUsers: string[] = [];
+  for (const group of validatedGroups) {
+    const values = group.values.map(value => `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`).join(",");
+    const selection = group.table === "clinic_users" ? `${group.key},deleted_at,auth_user_id` : group.table === "clinical_visits" ? `${group.key},deleted_at,status` : `${group.key},deleted_at`;
+    const lookup = await supabaseRequest(`${group.table}?${group.key}=${encodeURIComponent(`in.(${values})`)}&select=${selection}`);
+    if (!lookup.ok) throw new Error(`${group.table} delete validation returned ${lookup.status}`);
+    const records = await lookup.json() as Array<Record<string, unknown>>;
+    if (records.length !== group.values.length || records.some(record => !(record.deleted_at || record.status === "Deleted"))) {
+      throw new Error("Only records already in Deleted Records can be permanently removed.");
     }
-    const response = await supabaseRequest(`${purge.table}?${purge.key}=eq.${encodeURIComponent(String(purge.value))}`, { method: "DELETE" });
-    if (!response.ok) throw new Error(`${purge.table} delete returned ${response.status}`);
+    if (group.table === "clinic_users") linkedAuthUsers.push(...records.map(record => record.auth_user_id).filter((id): id is string => typeof id === "string" && Boolean(id)));
+  }
+  return { requests, groups: validatedGroups, linkedAuthUsers };
+}
+
+async function purgeRows(prepared: Awaited<ReturnType<typeof validatePurgeRows>>) {
+  for (const group of prepared.groups) {
+    const values = group.values.map(value => `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`).join(",");
+    const response = await supabaseRequest(`${group.table}?${group.key}=${encodeURIComponent(`in.(${values})`)}`, { method: "DELETE" });
+    if (!response.ok) throw new Error(`${group.table} delete returned ${response.status}`);
+  }
+  if (prepared.linkedAuthUsers.length) {
+    const { url, key } = supabaseConfig();
+    const results = await Promise.all(prepared.linkedAuthUsers.map(id => fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      cache: "no-store",
+    })));
+    if (results.some(response => !response.ok && response.status !== 404)) throw new Error("One or more linked authentication accounts could not be permanently deleted.");
   }
 }
 
@@ -637,6 +660,7 @@ export async function PUT(request: Request) {
     const snapshot = state as Record<string, unknown>;
     const persistedSnapshot = { ...snapshot };
     delete persistedSnapshot.auditLogs;
+    delete persistedSnapshot.purgeRequests;
     const clinicUsersChanged = await hasClinicUserChanges(snapshot.users);
     if (clinicUsersChanged && session.role !== "Head Nurse & Administrator") {
       return Response.json({ message: "Only the Head Nurse & Administrator can change clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
@@ -652,8 +676,18 @@ export async function PUT(request: Request) {
         return Response.json({ message: "The signed-in account cannot be disabled or deleted by this change." }, { status: 409, headers: { "Cache-Control": "no-store" } });
       }
     }
-    if (await hasNewPurgeRecords(snapshot.purged) && session.role !== "Head Nurse & Administrator") {
+    const purgeRequest = await validatePurgeRows(snapshot.purgeRequests);
+    if (purgeRequest.requests.length && session.role !== "Head Nurse & Administrator") {
       return Response.json({ message: "Only the Head Nurse & Administrator can permanently delete clinic records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    }
+    if (purgeRequest.requests.some((record) => record.table === "clinic_users" && String(record.value) === session.userId)) {
+      return Response.json({ message: "You cannot permanently delete your signed-in account." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+    }
+    if (purgeRequest.requests.length) {
+      if (snapshot.visitMutation) return Response.json({ message: "Permanent deletion cannot be combined with a visit save." }, { status: 400 });
+      const history = Array.isArray(snapshot.purged) ? snapshot.purged as Array<Record<string, unknown>> : [];
+      const historyKeys = new Set(history.map(record => `${record.table}:${record.key}:${String(record.value)}`));
+      persistedSnapshot.purged = [...history,...purgeRequest.requests.filter(record=>!historyKeys.has(`${record.table}:${record.key}:${String(record.value)}`))];
     }
     const visitMutation = snapshot.visitMutation && typeof snapshot.visitMutation === "object"
       ? snapshot.visitMutation as Record<string, unknown>
@@ -661,16 +695,20 @@ export async function PUT(request: Request) {
 
     if (visitMutation) {
       const visitIds = new Set(Array.isArray(visitMutation.visitIds) ? visitMutation.visitIds.map(String) : []);
+      const patientIds = new Set(Array.isArray(visitMutation.patientIds) ? visitMutation.patientIds.map(String) : []);
       const medicineCodes = new Set(Array.isArray(visitMutation.medicineCodes) ? visitMutation.medicineCodes.map(String) : []);
       const equipmentIds = new Set(Array.isArray(visitMutation.equipmentIds) ? visitMutation.equipmentIds.map(String) : []);
       const visits = Array.isArray(snapshot.consultations) ? snapshot.consultations as Array<Record<string, unknown>> : [];
+      const patients = Array.isArray(snapshot.students) ? snapshot.students as Array<Record<string, unknown>> : [];
       const medicines = Array.isArray(snapshot.medicines) ? snapshot.medicines as Array<Record<string, unknown>> : [];
       const equipment = Array.isArray(snapshot.equipment) ? snapshot.equipment as Array<Record<string, unknown>> : [];
       const affectedVisits = visits.filter(row => visitIds.has(String(row.id)));
+      const affectedPatients = patients.filter(row => patientIds.has(String(row.id)));
       const affectedMedicines = medicines.filter(row => medicineCodes.has(String(row.code)));
       const affectedEquipment = equipment.filter(row => equipmentIds.has(String(row.id)));
 
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
+      if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
       if (affectedMedicines.length !== medicineCodes.size) throw new Error("A medicine inventory record for this save could not be found.");
       if (affectedEquipment.length !== equipmentIds.size) throw new Error("An equipment inventory record for this save could not be found.");
 
@@ -682,6 +720,7 @@ export async function PUT(request: Request) {
           body: JSON.stringify({ id: clinicStateId, state: clinicSnapshot }),
         }),
         upsertTableRows("clinical_visits", "id", affectedVisits.map(row => normalizeVisitRow(row, row.status !== "Superseded"))),
+        upsertTableRows("patients", "id", affectedPatients.map(normalizePatientRow)),
         upsertTableRows("medicines", "code", affectedMedicines.map(normalizeMedicineRow)),
         upsertTableRows("equipment", "id", affectedEquipment.map(normalizeEquipmentRow)),
       ]);
@@ -728,7 +767,7 @@ export async function PUT(request: Request) {
         updated_at: new Date().toISOString(),
       }]);
     }
-    await purgeRows(snapshot.purged);
+    await purgeRows(purgeRequest);
 
     try {
       const snapshotResponse = await supabaseRequest("clinic_state", {

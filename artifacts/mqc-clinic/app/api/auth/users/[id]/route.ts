@@ -58,6 +58,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const [existing] = await existingResponse.json() as Array<{ id: string; auth_user_id: string | null; username: string; role: string; status: string; deleted_at: string | null }>;
     if (!existing || existing.deleted_at) return Response.json({ message: "This user record is no longer available." }, { status: 404 });
     if (id === session.userId && status !== "Active") return Response.json({ message: "You cannot disable your signed-in account." }, { status: 409 });
+    if (id === session.userId && role !== "Head Nurse & Administrator") return Response.json({ message: "You cannot remove administrator access from your signed-in account." }, { status: 409 });
 
     if (existing.role === "Head Nurse & Administrator" && existing.status === "Active" && (role !== existing.role || status !== "Active")) {
       const remainingAdmins = await supabaseRequest(`clinic_users?role=eq.Head%20Nurse%20%26%20Administrator&status=eq.Active&deleted_at=is.null&id=neq.${encodeURIComponent(id)}&select=id&limit=1`);

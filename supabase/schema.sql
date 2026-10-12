@@ -33,13 +33,15 @@ create table if not exists public.patients (
   contact text,
   guardian_name text,
   guardian_contact text,
-  allergies text default 'None known',
+  allergies text default 'None recorded',
   medical_conditions text default 'None',
   deleted_at timestamptz,
   deleted_by text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.patients alter column allergies set default 'None recorded';
 
 create table if not exists public.medicines (
   code text primary key,

@@ -50,7 +50,6 @@ function reportDetail(key){
   else {const obj=key==="reasons"?d.reasons:key==="levels"?d.levels:d.outcomes;detailModal(key==="reasons"?"Common Reasons for Visits":key==="levels"?"Visits by Grade Level / Section":"Patient Disposition","Summary of active clinic visits",`<div class="table-wrap"><table class="report-detail-summary-table"><colgroup><col><col class="report-detail-count-column"></colgroup><thead><tr><th>Category</th><th class="report-count">Visits</th></tr></thead><tbody>${summaryList(obj)}</tbody></table></div>`);}
 }
 function printReports(){
-  logAudit("Clinic Report Printed","Reports","Success",false);
   const d=reportData(),flagged=referralConcernList();
   const table=(title,headers,rows)=>`<h2>${title}</h2><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${headers.length}">No data</td></tr>`}</tbody></table>`;
   const summaryRows=(obj)=>Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([key,value])=>[escapeHtml(key),value]);
@@ -59,6 +58,7 @@ function printReports(){
   const referralRows=flagged.map(v=>[escapeHtml(v.studentName||"—"),escapeHtml(v.studentId||"—"),v.count]);
   const html=`<p class="report-meta">Clinical reports · Printed ${escapeHtml(new Date().toLocaleString("en-PH",{timeZone:"Asia/Manila"}))}</p><p class="summary"><b>Total Clinic Visits:</b> ${d.visits.length}<br><b>Unique Students Served:</b> ${d.unique}<br><b>Frequent Clinic Visitors:</b> ${d.frequent.length}<br><b>Common Reasons:</b> ${Object.keys(d.reasons).length}<br><b>Grade Levels / Sections:</b> ${Object.keys(d.levels).length}<br><b>Visits This Month:</b> ${d.monthVisits.length}<br><b>Patient Dispositions:</b> ${Object.keys(d.outcomes).length}</p>${table("Common Reasons for Visits",["Reason","Visits"],summaryRows(d.reasons))}${table("Patient Disposition",["Outcome","Visits"],summaryRows(d.outcomes))}${table("Visits by Grade Level / Section",["Year / Grade","Visits"],summaryRows(d.levels))}${table("Clinic Visit Trends",["Record","Date","Student","Reason","Outcome"],visitRows)}${table("Frequent Clinic Visitors",["Student","Student ID","Course / Year","Visits"],frequentRows)}${table("Recorded Referrals This Month",["Student","Student ID","Referral Visits"],referralRows)}`;
   printInPlace("MQC Clinic Report",html);
+  logAudit("Clinic Report Printed","Reports","Success",false);
 }
 function previousMonthKey(month){
   const [year,monthNumber]=month.split("-").map(Number);
@@ -123,10 +123,10 @@ function renderMonthlyReportSection(){
   return `<section class="monthly-report-section" id="monthly-report-section"><div class="card"><div class="monthly-report-header"><div><h4>Monthly Report</h4><p>Visit activity and inventory roll-forward by month.</p></div><div class="monthly-report-actions"><label for="monthly-report-month">Month and year</label><input type="month" id="monthly-report-month" value="${escapeHtml(month)}"><button class="btn btn-dark" id="monthly-print-report">${ICONS.print} Print Report</button></div></div><div id="monthly-report-content">${monthlyReportHtml(month)}</div></div></section>`;
 }
 function printMonthlyReport(){
-  logAudit(`Monthly Report Printed — ${state.reportMonth||todayDateString().slice(0,7)}`,"Reports","Success",false);
   const month=state.reportMonth||todayDateString().slice(0,7),report=monthlyReportHtml(month);
   const title=`${state.settings.clinicName} — Monthly Clinic Report`;
   printInPlace(title,`<h2>${escapeHtml(reportMonthLabel(month))} Monthly Report</h2><p class="report-meta">Generated ${escapeHtml(new Date().toLocaleString("en-PH",{timeZone:"Asia/Manila"}))}</p>${report}`);
+  logAudit(`Monthly Report Printed — ${month}`,"Reports","Success",false);
 }
 function bindReports(){
   if(!clinicDataLoaded)return;

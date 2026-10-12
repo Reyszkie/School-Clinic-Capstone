@@ -170,6 +170,7 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
     if(password!==(user.password||loginPassword)){
       error.textContent="That password does not match this clinic account.";
       error.style.display="block";
+      logAudit("Identity Verification Failed","Authentication","Warning",false);
       return;
     }
     state.currentUser=ensureVisibleClinicUser(user);

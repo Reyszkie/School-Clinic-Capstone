@@ -19,7 +19,7 @@ function renderUsersTab(){
   const rows = state.users.map(u=>`
     <tr>
       <td class="mono">${u.id}</td>
-      <td>${escapeHtml(u.name)}</td>
+      <td>${canManageAccounts?`<button class="user-detail-link" type="button" data-view-user="${escapeHtml(u.id)}">${escapeHtml(u.name)}</button>`:escapeHtml(u.name)}</td>
       <td>${u.role}</td>
       <td><span class="chip ${u.status==='Active'?'chip-available':'chip-void'}">${u.status}</span></td>
       ${canManageAccounts?`<td><div class="row-actions">
@@ -50,7 +50,7 @@ function openUserForm(existing=null){
       <div class="f-field"><label>Last Name <span class="req">*</span></label><input type="text" id="uf-lastname" value="${escapeHtml(f.lastName||parts[0]||"")}" required></div>
       <div class="f-field"><label>First Name <span class="req">*</span></label><input type="text" id="uf-firstname" value="${escapeHtml(f.firstName||(parts[1]||"").trim()||"")}" required></div>
       <div class="f-field"><label>Middle Initial</label><input type="text" id="uf-middle" value="${escapeHtml(f.middleInitial||"")}" maxlength="3"></div>
-      <div class="f-field"><label>Role</label><select id="uf-role">${["Head Nurse & Administrator","Head Nurse","Staff Nurse"].map(r=>`<option ${f.role===r?'selected':''}>${r}</option>`).join("")}</select></div>
+      <div class="f-field"><label>Role</label><select id="uf-role">${[["Head Nurse & Administrator","Administrator/Head Nurse"],["Head Nurse","Head Nurse"],["Staff Nurse","Staff Nurse"]].map(([value,label])=>`<option value="${value}" ${f.role===value?'selected':''}>${label}</option>`).join("")}</select></div>
       <div class="f-field"><label>Username <span class="req">*</span></label><input type="text" id="uf-username" value="${escapeHtml(f.username||"")}" required></div>
       <div class="f-field"><label>Status</label><select id="uf-status">${["Active","Disabled"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
       ${isEdit?"":`<div class="f-field"><label>Password <span class="req">*</span></label><div class="input-row"><input type="password" id="uf-password" value="" autocomplete="new-password" required><button type="button" class="toggle-pw" data-toggle-password="uf-password" aria-label="Show password">${ICONS.eye}</button></div></div>
@@ -60,7 +60,12 @@ function openUserForm(existing=null){
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="uf-save">${ICONS.check} Save User</button></div>`;
   openModal(html);
   document.querySelectorAll("[data-toggle-password]").forEach(btn=>btn.onclick=()=>{const input=document.getElementById(btn.dataset.togglePassword); if(!input) return; const showing=input.type!=="password"; input.type=showing?"password":"text"; btn.innerHTML=showing?ICONS.eye:ICONS.eye_off; btn.setAttribute("aria-label", showing?"Show password":"Hide password"); });
+  let savingUser=false;
   document.getElementById('uf-save').onclick=async()=>{
+    if(savingUser)return;
+    savingUser=true;
+    const saveButton=document.getElementById('uf-save');saveButton.disabled=true;
+    try{
     const last=document.getElementById('uf-lastname').value.trim();
     const first=document.getElementById('uf-firstname').value.trim();
     const middle=document.getElementById('uf-middle').value.trim();
@@ -86,18 +91,32 @@ function openUserForm(existing=null){
       if(!response.ok){toast("User update failed",saved.message||"Unable to save the user account.","err");return;}
       state.users[previousIndex]={...previous,...saved};
       if(state.currentUser?.id===f.id){Object.assign(state.currentUser,{name:saved.name,username:saved.username,role:saved.role,status:saved.status});saveAuthSession(state.currentUser,Boolean(window.localStorage.getItem(AUTH_SESSION_KEY)));}
-      await logAudit(`User Updated — ${name}`,"User Management","Success",false);
-      toast("User updated",`${name} has been updated.`,"ok");
+      const auditActions=[`User Updated — ${name}`];
+      if(previous.role!==saved.role)auditActions.push(`User Role Changed — ${name}: ${previous.role} → ${saved.role}`);
+      if(previous.status!==saved.status)auditActions.push(`User Status Changed — ${name}: ${previous.status} → ${saved.status}`);
+      let auditSucceeded=true;
+      for(const action of auditActions){try{await logAudit(action,"User Management","Success",false,true,f.id);}catch{auditSucceeded=false;}}
+      if(auditSucceeded)toast("User updated",`${name} has been updated.`,"ok");
+      else toast("User updated; audit sync failed","The account was updated, but one or more audit entries could not be recorded.","err");
       closeModal();renderAdminTabBody();
     }else{
       state.users.unshift(rec);
-      await logAudit(`User Added — ${name}`,"User Management","Success",false);
-      toast('User added', `${name} added as ${rec.role}.`,'ok');
+      let auditSucceeded=true;
+      try{await logAudit(`User Added — ${name}`,"User Management","Success",false,true,rec.id);}catch{auditSucceeded=false;}
+      if(auditSucceeded)toast('User added', `${name} added as ${rec.role}.`,'ok');
+      else toast("User added; audit sync failed","The account was created, but its audit entry could not be recorded.","err");
       closeModal();renderAdminTabBody();
+    }
+    }catch(error){
+      toast(isEdit?"User update failed":"Account creation failed",error.message||"The user account could not be saved.","err");
+    }finally{
+      savingUser=false;
+      if(saveButton.isConnected)saveButton.disabled=false;
     }
   };
 }
 function bindUsersTab(){
+  document.querySelectorAll('[data-view-user]').forEach(button=>button.onclick=()=>openUserDetails(state.users.find(user=>user.id===button.dataset.viewUser)));
   document.getElementById('add-user-btn').onclick=()=>openUserForm();
   document.querySelectorAll('[data-edit-user]').forEach(b=> b.onclick=()=>openUserForm(state.users.find(u=>u.id===b.dataset.editUser)));
   document.querySelectorAll('[data-toggle-user]').forEach(b=>{
@@ -107,7 +126,7 @@ function bindUsersTab(){
       if(u.id===state.currentUser?.id&&u.status==="Active"){toast("Cannot disable signed-in account","Sign in with another administrator account before disabling this user.","err");return;}
       if(u.status==="Active"&&isClinicAdminRole(u.role)&&state.users.filter(user=>user.status==="Active"&&isClinicAdminRole(user.role)).length<=1){toast("Administrator required","At least one active administrator account must remain.","err");return;}
       const previousStatus=u.status,nextStatus=u.status==='Active'?'Disabled':'Active';
-      await commitClinicRecordMutation({apply:()=>{u.status=nextStatus;},rollback:()=>{u.status=previousStatus;},auditAction:`User ${nextStatus==='Active'?'Enabled':'Disabled'} — ${u.name}`,module:"User Management",successTitle:`User ${nextStatus.toLowerCase()}`,successMessage:`${u.name} is now ${nextStatus.toLowerCase()}.`,refresh:renderAdminTabBody});
+      await commitClinicRecordMutation({apply:()=>{u.status=nextStatus;},rollback:()=>{u.status=previousStatus;},auditAction:`User ${nextStatus==='Active'?'Enabled':'Disabled'} — ${u.name}`,module:"User Management",detail:u.id,successTitle:`User ${nextStatus.toLowerCase()}`,successMessage:`${u.name} is now ${nextStatus.toLowerCase()}.`,refresh:renderAdminTabBody});
     };
   });
   document.querySelectorAll('[data-del-user]').forEach(b=>{
@@ -118,10 +137,16 @@ function bindUsersTab(){
       if(u.status==="Active"&&isClinicAdminRole(u.role)&&state.users.filter(user=>user.status==="Active"&&isClinicAdminRole(user.role)).length<=1){toast("Administrator required","At least one active administrator account must remain.","err");return;}
       const index=state.users.findIndex(user=>user.id===u.id),deleted={...u,deleted:true,deletedAt:new Date().toISOString()};
       confirmDialog({title:"Delete this user?", msg:`<b>${escapeHtml(u.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete User", onConfirm:async()=>{
-        await commitClinicRecordMutation({apply:()=>{state.users=state.users.filter(x=>x.id!==u.id);DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);DELETED_USERS.unshift(deleted);},rollback:()=>{DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);state.users.splice(index,0,u);},auditAction:`Record Deleted — User ${u.name}`,module:"User Management",status:"Warning",successTitle:"User deleted",successMessage:`${u.name} moved to Deleted Records.`,refresh:renderAdminTabBody});
+        await commitClinicRecordMutation({apply:()=>{state.users=state.users.filter(x=>x.id!==u.id);DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);DELETED_USERS.unshift(deleted);},rollback:()=>{DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);state.users.splice(index,0,u);},auditAction:`Record Deleted — User ${u.name}`,module:"User Management",status:"Warning",detail:u.id,successTitle:"User deleted",successMessage:`${u.name} moved to Deleted Records.`,refresh:renderAdminTabBody});
       }});
     };
   });
+}
+function openUserDetails(user){
+  if(!user||!canManageClinicAccounts())return;
+  const details=[["Full Name",user.name],["User ID",user.id],["Username",user.username],["Role",user.role],["Account Status",user.status]];
+  openModal(`<div class="modal-head"><h3>User Details</h3><button class="modal-close" onclick="closeModal()" aria-label="Close user details">${ICONS.x}</button></div><div class="modal-body"><table class="record-detail-table"><tbody>${details.map(([label,value])=>`<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value||"—")}</td></tr>`).join("")}</tbody></table></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button></div>`,`sm`);
+  logAudit(`User Details Viewed — ${user.id}`,"User Management","Success",false,false,user.id);
 }
 function renderAuditTab(){
   const perPage=10;
@@ -194,10 +219,10 @@ function renderDeletedTab(){
 async function commitDeletedRecordChange({label,apply,rollback,purge,auditAction,auditActions,module,status="Success",successTitle,successMessage}){
   let applied=false;
   try{
-    apply();
     applied=true;
+    apply();
     if(purge)PURGED_RECORDS.push(purge);
-    await saveToClinicState(false,true);
+    await saveToClinicState(false,true,purge?[purge]:[]);
   }catch(error){
     if(applied)rollback();
     if(purge)PURGED_RECORDS=PURGED_RECORDS.filter(row=>row!==purge);
@@ -206,14 +231,21 @@ async function commitDeletedRecordChange({label,apply,rollback,purge,auditAction
     return;
   }
   const events=auditActions||[{action:auditAction,module,status}];
-  for(const event of events)await logAudit(event.action,event.module||module,event.status||status,false);
+  try{
+    for(const event of events)await logAudit(event.action,event.module||module,event.status||status,false,true,event.detail||"");
+  }catch{
+    toast("Record changed; audit sync failed","The record change was saved, but its audit entry could not be recorded.","err");
+    renderAdminTabBody();
+    return;
+  }
   toast(successTitle,successMessage,status==="Warning"?'warn':'ok');
   renderAdminTabBody();
 }
 function bindDeletedTab(){
   const confirmPurge=(label,table,key,value,action,rollback,auditActions)=>{
      const purge={table, key, value};
-     confirmDialog({title:"Permanently delete?",msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`,okLabel:"Delete Permanently",onConfirm:()=>commitDeletedRecordChange({label,apply:action,rollback,purge,auditAction:`Record Permanently Deleted — ${label}`,auditActions,module:"Administration",status:"Warning",successTitle:"Permanently deleted",successMessage:`${label} has been permanently removed.`})});
+      const events=auditActions||[{action:`Record Permanently Deleted — ${label}`,module:"Administration",detail:String(value)}];
+      confirmDialog({title:"Permanently delete?",msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`,okLabel:"Delete Permanently",onConfirm:()=>commitDeletedRecordChange({label,apply:action,rollback,purge,auditAction:`Record Permanently Deleted — ${label}`,auditActions:events,module:"Administration",status:"Warning",successTitle:"Permanently deleted",successMessage:`${label} has been permanently removed.`})});
   };
   document.querySelectorAll('[data-restore-dc]').forEach(b=>b.onclick=()=>{
     const record=CONSULTATIONS.find(row=>row.id===b.dataset.restoreDc);if(!record)return;
@@ -222,18 +254,18 @@ function bindDeletedTab(){
     if(restoredPatient){delete restoredPatient.deletedAt;delete restoredPatient.deletedBy;}
     const previous={deleted:record.deleted,deletedAt:record.deletedAt,status:record.status},patientIndex=patient?DELETED_STUDENTS.indexOf(patient):-1;
     const inventorySnapshot=captureInventoryState();
-    confirmDialog({title:"Restore this patient visit?",msg:`Visit <b>${escapeHtml(record.id)}</b> will return to Patient Visits${patient?" and its deleted patient will also be restored":""}.`,okLabel:"Restore Visit",danger:false,onConfirm:()=>commitDeletedRecordChange({label:`visit ${record.id}`,apply:()=>{if(patient&&STUDENTS.some(row=>row.id===patient.id))throw new Error("A record with this patient ID is already active.");validateVisitInventoryUsage(record);applyVisitInventoryUsage(record);if(patient){DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row.id!==patient.id);STUDENTS.unshift(restoredPatient);}record.deleted=false;delete record.deletedAt;if(record.status==="Deleted")record.status="Active";},rollback:()=>{restoreInventoryState(inventorySnapshot);Object.assign(record,previous);if(patient){const activeIndex=STUDENTS.findIndex(row=>row.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(patientIndex,DELETED_STUDENTS.length),0,patient);}},auditActions:[{action:`Record Restored — Patient Visit ${record.id}`,module:"Patient Visits"},...(patient?[{action:`Record Restored — Patient ${patient.name}`,module:"Patients"}]:[])],module:"Patient Visits",successTitle:"Restored",successMessage:`Visit ${record.id} restored.`})});
+    confirmDialog({title:"Restore this patient visit?",msg:`Visit <b>${escapeHtml(record.id)}</b> will return to Patient Visits${patient?" and its deleted patient will also be restored":""}.`,okLabel:"Restore Visit",danger:false,onConfirm:()=>commitDeletedRecordChange({label:`visit ${record.id}`,apply:()=>{if(patient&&STUDENTS.some(row=>row.id===patient.id))throw new Error("A record with this patient ID is already active.");validateVisitInventoryUsage(record);applyVisitInventoryUsage(record);if(patient){DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row.id!==patient.id);STUDENTS.unshift(restoredPatient);}record.deleted=false;delete record.deletedAt;if(record.status==="Deleted")record.status="Active";},rollback:()=>{restoreInventoryState(inventorySnapshot);Object.assign(record,previous);if(patient){const activeIndex=STUDENTS.findIndex(row=>row.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(patientIndex,DELETED_STUDENTS.length),0,patient);}},auditActions:[{action:`Record Restored — Patient Visit ${record.id}`,module:"Patient Visits",detail:record.id},...(patient?[{action:`Record Restored — Patient ${patient.name}`,module:"Patients",detail:patient.id}]:[]),...clinicInventoryAuditActions(inventorySnapshot,`visit ${record.id} restored`)],module:"Patient Visits",successTitle:"Restored",successMessage:`Visit ${record.id} restored.`})});
   });
   document.querySelectorAll('[data-restore-dp]').forEach(b=>b.onclick=()=>{
     const patient=DELETED_STUDENTS.find(row=>row.id===b.dataset.restoreDp);if(!patient)return;
     if(STUDENTS.some(row=>row.id===patient.id)){toast("Patient already exists","A record with this patient ID is already active.","err");return;}
     const restored={...patient,deleted:false};delete restored.deletedAt;delete restored.deletedBy;
     const deletedIndex=DELETED_STUDENTS.indexOf(patient);
-    commitDeletedRecordChange({label:`patient ${patient.name}`,apply:()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row.id!==patient.id);STUDENTS.unshift(restored);},rollback:()=>{const activeIndex=STUDENTS.findIndex(row=>row.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(deletedIndex,DELETED_STUDENTS.length),0,patient);},auditAction:`Record Restored — Patient ${patient.name}`,module:"Patients",successTitle:"Restored",successMessage:`${patient.name} restored.`});
+    commitDeletedRecordChange({label:`patient ${patient.name}`,apply:()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row.id!==patient.id);STUDENTS.unshift(restored);},rollback:()=>{const activeIndex=STUDENTS.findIndex(row=>row.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(deletedIndex,DELETED_STUDENTS.length),0,patient);},auditAction:`Record Restored — Patient ${patient.name}`,module:"Patients",auditActions:[{action:`Record Restored — Patient ${patient.name}`,module:"Patients",detail:patient.id}],successTitle:"Restored",successMessage:`${patient.name} restored.`});
   });
-  document.querySelectorAll('[data-restore-dm]').forEach(b=>b.onclick=()=>{const item=MEDICINES.find(row=>row.code===b.dataset.restoreDm);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`medicine ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),auditAction:`Record Restored — ${item.name}`,module:"Inventory",successTitle:"Restored",successMessage:`${item.name} restored.`});});
-  document.querySelectorAll('[data-restore-de]').forEach(b=>b.onclick=()=>{const item=EQUIPMENT.find(row=>row.id===b.dataset.restoreDe);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`equipment ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),auditAction:`Record Restored — ${item.name}`,module:"Inventory",successTitle:"Restored",successMessage:`${item.name} restored.`});});
-  document.querySelectorAll('[data-restore-du]').forEach(b=>b.onclick=()=>{if(!canManageClinicAccounts())return;const user=DELETED_USERS.find(row=>row.id===b.dataset.restoreDu);if(!user)return;if(state.users.some(row=>row.id===user.id||row.username.toLowerCase()===String(user.username).toLowerCase())){toast("User already exists","An active account already uses this user ID or username.","err");return;}const restored={...user,deleted:false};delete restored.deletedAt;delete restored.deletedBy;commitDeletedRecordChange({label:`user ${user.name}`,apply:()=>{DELETED_USERS=DELETED_USERS.filter(row=>row.id!==user.id);state.users.unshift(restored);},rollback:()=>{state.users=state.users.filter(row=>row.id!==user.id);DELETED_USERS.unshift(user);},auditAction:`User Restored — ${user.name}`,module:"User Management",successTitle:"Restored",successMessage:`${user.name} restored.`});});
+  document.querySelectorAll('[data-restore-dm]').forEach(b=>b.onclick=()=>{const item=MEDICINES.find(row=>row.code===b.dataset.restoreDm);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`medicine ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),auditAction:`Record Restored — ${item.name}`,module:"Medicines",auditActions:[{action:`Record Restored — Medicine ${item.name}`,module:"Medicines",detail:item.code}],successTitle:"Restored",successMessage:`${item.name} restored.`});});
+  document.querySelectorAll('[data-restore-de]').forEach(b=>b.onclick=()=>{const item=EQUIPMENT.find(row=>row.id===b.dataset.restoreDe);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`equipment ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),auditAction:`Record Restored — ${item.name}`,module:"Equipment",auditActions:[{action:`Record Restored — Equipment ${item.name}`,module:"Equipment",detail:item.id}],successTitle:"Restored",successMessage:`${item.name} restored.`});});
+  document.querySelectorAll('[data-restore-du]').forEach(b=>b.onclick=()=>{if(!canManageClinicAccounts())return;const user=DELETED_USERS.find(row=>row.id===b.dataset.restoreDu);if(!user)return;if(state.users.some(row=>row.id===user.id||row.username.toLowerCase()===String(user.username).toLowerCase())){toast("User already exists","An active account already uses this user ID or username.","err");return;}const restored={...user,deleted:false};delete restored.deletedAt;delete restored.deletedBy;commitDeletedRecordChange({label:`user ${user.name}`,apply:()=>{DELETED_USERS=DELETED_USERS.filter(row=>row.id!==user.id);state.users.unshift(restored);},rollback:()=>{state.users=state.users.filter(row=>row.id!==user.id);DELETED_USERS.unshift(user);},auditAction:`User Restored — ${user.name}`,module:"User Management",auditActions:[{action:`User Restored — ${user.name}`,module:"User Management",detail:user.id}],successTitle:"Restored",successMessage:`${user.name} restored.`});});
   document.querySelectorAll('[data-perm-dc]').forEach(b=>b.onclick=()=>{if(!canManageClinicAccounts())return;const record=CONSULTATIONS.find(row=>row.id===b.dataset.permDc);if(!record)return;const previous=CONSULTATIONS.slice();confirmPurge(`visit ${record.id}`,"clinical_visits","id",record.id,()=>{CONSULTATIONS=CONSULTATIONS.filter(row=>row!==record);},()=>{CONSULTATIONS=previous;});});
   document.querySelectorAll('[data-perm-dp]').forEach(b=>b.onclick=()=>{
     if(!canManageClinicAccounts())return;

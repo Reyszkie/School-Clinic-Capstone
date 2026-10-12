@@ -138,7 +138,6 @@ function applyVisitInventoryUsage(visit){
     if(active.some(entry=>entry.itemType===requirement.itemType&&entry.itemId===requirement.itemId))return;
     requirement.item.qty=Number(requirement.item.qty)-requirement.quantity;
     recordInventoryTransaction(requirement.itemType,requirement.item,"used",requirement.quantity,visit.date,visit.id);
-    logAudit(`Inventory Used — ${requirement.item.name} × ${requirement.quantity} for visit ${visit.id}`,"Inventory","Success",false);
   });
 }
 function reverseVisitInventoryUsage(visit){
@@ -150,9 +149,22 @@ function reverseVisitInventoryUsage(visit){
     item.qty=(Number(item.qty)||0)+quantity;
     const reversal=recordInventoryTransaction(entry.itemType,item,"reversed",quantity,todayDateString(),visit.id);
     if(reversal)reversal.reversesTransactionId=entry.id;
-    logAudit(`Inventory Restored — ${item.name} × ${quantity} from visit ${visit.id}`,"Inventory","Success",false);
   });
   return active.length;
+}
+function clinicInventoryAuditActions(snapshot,reference=""){
+  const previous=new Map([
+    ...snapshot.medicineQuantities.map(([item,quantity])=>[inventoryItemKey("medicine",item.code),Number(quantity)||0]),
+    ...snapshot.equipmentQuantities.map(([item,quantity])=>[inventoryItemKey("equipment",item.id),Number(quantity)||0]),
+  ]);
+  return [
+    ...MEDICINES.map(item=>({type:"medicine",item,key:inventoryItemKey("medicine",item.code)})),
+    ...EQUIPMENT.map(item=>({type:"equipment",item,key:inventoryItemKey("equipment",item.id)})),
+  ].flatMap(({type,item,key})=>{
+    if(!previous.has(key))return [];
+    const prior=previous.get(key),current=Number(item.qty)||0;
+    return prior===current?[]:[{action:`Inventory Stock Updated — ${item.name}: ${prior} → ${current}`,module:type==="medicine"?"Medicines":"Equipment",detail:`${type==="medicine"?item.code:item.id}${reference?`; ${reference}`:""}`}];
+  });
 }
 function ensureInventoryLedger(){
   const known=new Set(INVENTORY_TRANSACTIONS.map(entry=>inventoryItemKey(entry.itemType,entry.itemId)));
@@ -197,30 +209,42 @@ function queueClinicStateSave(payload,throwOnError=false){
   return saveOperation;
 }
 
-function saveToClinicState(_resetAuditLogs=false,throwOnError=false){
-  return queueClinicStateSave(snapshotData(false),throwOnError);
+function saveToClinicState(_resetAuditLogs=false,throwOnError=false,purgeRequests=[]){
+  const payload=snapshotData(false);
+  if(purgeRequests.length)payload.purgeRequests=purgeRequests;
+  return queueClinicStateSave(payload,throwOnError);
 }
 
-async function commitClinicRecordMutation({apply,rollback,auditAction,module,status="Success",successTitle,successMessage,refresh=render}){
-  apply();
+async function commitClinicRecordMutation({apply,rollback,auditAction,auditActions,module,status="Success",successTitle,successMessage,detail="",refresh=render}){
+  let attempted=false;
   try{
+    attempted=true;
+    apply();
     await saveToClinicState(false,true);
   }catch(error){
-    rollback();
+    if(attempted)rollback();
     toast("Change not saved",error.message||"Unable to update the clinic record.","err");
     refresh();
     return false;
   }
-  await logAudit(auditAction,module,status,false);
+  try{
+    const events=auditActions||[{action:auditAction,module,status,detail}];
+    for(const event of events)await logAudit(event.action,event.module||module,event.status||status,false,true,event.detail||detail);
+  }catch{
+    toast("Record saved; audit sync failed","The change was saved, but its audit entry could not be recorded.","err");
+    refresh();
+    return true;
+  }
   toast(successTitle,successMessage,status==="Warning"?"warn":"ok");
   refresh();
   return true;
 }
 
-function saveVisitToClinicState(visitIds,inventorySnapshot){
+function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[]){
   const payload=snapshotData(false);
   payload.visitMutation={
     visitIds:visitIds.filter(Boolean),
+    patientIds:patientIds.filter(Boolean),
     medicineCodes:inventorySnapshot.medicineQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.code),
     equipmentIds:inventorySnapshot.equipmentQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.id),
   };
@@ -251,6 +275,7 @@ function applyStoredData(data){
   if(Array.isArray(data.deletedStudents)) DELETED_STUDENTS = data.deletedStudents;
   else if(Array.isArray(data.students)) DELETED_STUDENTS = data.students.filter(s=>s.deleted);
   if(Array.isArray(data.deletedUsers)) DELETED_USERS = data.deletedUsers;
+  if(Array.isArray(data.purged)) PURGED_RECORDS = data.purged;
   if(Array.isArray(data.users)) state.users = data.users;
   if(data.settings && typeof data.settings==="object") state.settings = {...state.settings,...data.settings};
   try{
@@ -295,7 +320,16 @@ function startClinicRefresh(){
     if(!state.loggedIn||modalStack.length||document.visibilityState==="hidden")return;
     const previousStatus=clinicDataStatus;
     const refreshed=await hydrateFromSharedStorage();
-    if(refreshed&&(clinicDataChanged||previousStatus!==clinicDataStatus))render();
+    if(refreshed&&(clinicDataChanged||previousStatus!==clinicDataStatus)){
+      const app=document.getElementById("app");
+      const activeElement=document.activeElement;
+      const activeId=activeElement?.id;
+      const selectionStart=typeof activeElement?.selectionStart==="number"?activeElement.selectionStart:null;
+      const selectionEnd=typeof activeElement?.selectionEnd==="number"?activeElement.selectionEnd:null;
+      const hadFocus=Boolean(activeElement&&activeElement!==document.body&&app?.contains(activeElement));
+      render();
+      if(hadFocus&&activeId){const replacement=document.getElementById(activeId);if(replacement){replacement.focus();if(selectionStart!==null&&typeof replacement.setSelectionRange==="function")replacement.setSelectionRange(selectionStart,selectionEnd);}}
+    }
   },5000);
 }
 

@@ -68,6 +68,37 @@ function renderMedicinesTab(){
     </div>
   </div>`;
 }
+async function saveInventoryRecord({itemType,records,record,existing,refresh}){
+  const previousRecords=records.slice();
+  const inventorySnapshot=captureInventoryState();
+  const previousQuantity=existing?Number(existing.qty)||0:0;
+  const noun=itemType==="medicine"?"Medicine":"Equipment";
+  const saved=await commitClinicRecordMutation({
+    apply:()=>{
+      ensureInventoryLedger();
+      if(existing){
+        const index=records.findIndex(item=>item[itemType==="medicine"?"code":"id"]===existing[itemType==="medicine"?"code":"id"]);
+        if(index<0)throw new Error(`This ${noun.toLowerCase()} record is no longer available.`);
+        records[index]=record;
+        recordInventoryQuantityChange(itemType,record,previousQuantity,record.qty);
+      }else{
+        records.unshift(record);
+        if(record.qty)recordInventoryTransaction(itemType,record,"added",record.qty);
+        else recordInventoryTransaction(itemType,record,"baseline",0);
+      }
+    },
+    rollback:()=>{
+      restoreInventoryState(inventorySnapshot);
+      if(itemType==="medicine")MEDICINES=previousRecords;
+      else EQUIPMENT=previousRecords;
+    },
+    auditAction:existing?`Inventory Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`Inventory Item Added — ${record.name}`,
+    detail:itemType==="medicine"?record.code:record.id,
+    module:itemType==="medicine"?"Medicines":"Equipment",successTitle:existing?`${noun} updated`:`${noun} added`,
+    successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh,
+  });
+  return saved;
+}
 function openMedicineForm(existing=null){
   const isEdit=!!existing;
   const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", batch:"", exp:"2027-01-01", supplier:""};
@@ -87,11 +118,9 @@ function openMedicineForm(existing=null){
   </div>
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="mf-save">${ICONS.check} Save Medicine</button></div>`;
   openModal(html);
-  document.getElementById('mf-save').onclick=()=>{
+  document.getElementById('mf-save').onclick=async()=>{
     const name=document.getElementById('mf-name').value.trim();
     if(!name){ toast('Missing information','Medicine name is required.','err'); return; }
-    const previousQuantity=isEdit?Number(existing.qty)||0:0;
-    ensureInventoryLedger();
     const rec={
       code: document.getElementById('mf-code').value, name,
       category: document.getElementById('mf-category').value || "General",
@@ -102,9 +131,9 @@ function openMedicineForm(existing=null){
       supplier: document.getElementById('mf-supplier').value || "N/A",
       deleted:false,
     };
-    if(isEdit){ const idx=MEDICINES.findIndex(m=>m.code===existing.code); MEDICINES[idx]=rec; recordInventoryQuantityChange("medicine",rec,previousQuantity,rec.qty); logAudit(`Inventory Updated — ${rec.name}`,"Inventory"); toast('Medicine updated', `${rec.name} has been updated.`,'ok'); }
-    else { MEDICINES.unshift(rec); if(rec.qty)recordInventoryTransaction("medicine",rec,"added",rec.qty);else recordInventoryTransaction("medicine",rec,"baseline",0); logAudit(`Inventory Item Added — ${rec.name}`,"Inventory"); toast('Medicine added', `${rec.name} added to inventory.`,'ok'); }
-    closeModal(); renderInventoryTabBody();
+    const saveButton=document.getElementById('mf-save');saveButton.disabled=true;
+    try{const saved=await saveInventoryRecord({itemType:"medicine",records:MEDICINES,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
+    finally{if(document.body.contains(saveButton))saveButton.disabled=false;}
   };
 }
 function bindMedicinesTab(){
@@ -130,7 +159,7 @@ function bindMedicinesTab(){
       if(!rec)return;
       confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Inventory",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to Deleted Records.`,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Medicines",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.code,refresh:rerender});
       }});
     };
   });
@@ -199,17 +228,15 @@ function openEquipmentForm(existing=null){
   </div>
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="ef-save">${ICONS.check} Save Equipment</button></div>`;
   openModal(html);
-  document.getElementById('ef-save').onclick=()=>{
+  document.getElementById('ef-save').onclick=async()=>{
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information','Equipment name is required.','err'); return; }
-    const previousQuantity=isEdit?Number(existing.qty)||0:0;
-    ensureInventoryLedger();
     const rec={ id:document.getElementById('ef-id').value, name, qty:parseInt(document.getElementById('ef-qty').value)||0,
       condition:document.getElementById('ef-condition').value, lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
-    if(isEdit){ const idx=EQUIPMENT.findIndex(e=>e.id===existing.id); EQUIPMENT[idx]=rec; recordInventoryQuantityChange("equipment",rec,previousQuantity,rec.qty); logAudit(`Inventory Updated — ${rec.name}`,"Inventory"); toast('Equipment updated', `${rec.name} has been updated.`,'ok'); }
-    else { EQUIPMENT.unshift(rec); if(rec.qty)recordInventoryTransaction("equipment",rec,"added",rec.qty);else recordInventoryTransaction("equipment",rec,"baseline",0); logAudit(`Inventory Item Added — ${rec.name}`,"Inventory"); toast('Equipment added', `${rec.name} added to inventory.`,'ok'); }
-    closeModal(); renderInventoryTabBody();
+    const saveButton=document.getElementById('ef-save');saveButton.disabled=true;
+    try{const saved=await saveInventoryRecord({itemType:"equipment",records:EQUIPMENT,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
+    finally{if(document.body.contains(saveButton))saveButton.disabled=false;}
   };
 }
 function bindEquipmentTab(){
@@ -235,7 +262,7 @@ function bindEquipmentTab(){
       if(!rec)return;
       confirmDialog({title:"Delete this equipment record?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Equipment ${rec.name}`,module:"Inventory",status:"Warning",successTitle:"Equipment deleted",successMessage:`${rec.name} moved to Deleted Records.`,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Equipment ${rec.name}`,module:"Equipment",status:"Warning",successTitle:"Equipment deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.id,refresh:rerender});
       }});
     };
   });
