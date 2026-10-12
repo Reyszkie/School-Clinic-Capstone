@@ -127,11 +127,10 @@ function bindMedicinesTab(){
   document.querySelectorAll('[data-del-med]').forEach(b=>{
     b.onclick=()=>{
       const rec=MEDICINES.find(m=>m.code===b.dataset.delMed);
-      confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:()=>{
-        rec.deleted=true;
-        logAudit(`Record Deleted — ${rec.name}`,"Inventory","Warning");
-        toast('Medicine deleted', `${rec.name} moved to Deleted Records.`,'warn');
-        rerender();
+      if(!rec)return;
+      confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
+        const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Inventory",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to Deleted Records.`,refresh:rerender});
       }});
     };
   });
@@ -233,11 +232,10 @@ function bindEquipmentTab(){
   document.querySelectorAll('[data-del-eq]').forEach(b=>{
     b.onclick=()=>{
       const rec=EQUIPMENT.find(e=>e.id===b.dataset.delEq);
-      confirmDialog({title:"Delete this equipment record?", msg:`<b>${escapeHtml(rec.name)}</b> will be removed from the active list.`, okLabel:"Delete Item", onConfirm:()=>{
-        rec.deleted=true;
-        logAudit(`Record Deleted — ${rec.name}`,"Inventory","Warning");
-        toast('Equipment deleted', `${rec.name} removed from active inventory.`,'warn');
-        rerender();
+      if(!rec)return;
+      confirmDialog({title:"Delete this equipment record?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
+        const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Equipment ${rec.name}`,module:"Inventory",status:"Warning",successTitle:"Equipment deleted",successMessage:`${rec.name} moved to Deleted Records.`,refresh:rerender});
       }});
     };
   });

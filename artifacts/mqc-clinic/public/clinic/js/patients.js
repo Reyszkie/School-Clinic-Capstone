@@ -178,15 +178,16 @@ function bindStudentDetailActions(student,root=document){
 
 function deleteStudent(s){
   if(!s)return;
-  confirmDialog({title:"Delete this patient?",msg:`<b>${escapeHtml(s.name)}</b> (${s.id}) will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Patient",onConfirm:()=>{
+  confirmDialog({title:"Delete this patient?",msg:`<b>${escapeHtml(s.name)}</b> (${s.id}) will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Patient",onConfirm:async()=>{
     const index=STUDENTS.findIndex(x=>x.id===s.id);
     if(index<0)return;
-    const deleted={...s,deleted:true,deletedAt:todayDateString(),deletedBy:state.currentUser?.name||"System"};
-    STUDENTS.splice(index,1);
-    DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id);
-    DELETED_STUDENTS.unshift(deleted);
-    if(state.selectedStudent?.id===s.id)state.selectedStudent=null;
-    logAudit(`Record Deleted — Patient ${s.name} (${s.id})`,"Patient Visits","Warning");saveToClinicState();toast("Patient deleted",`${s.name} moved to Deleted Records.`,"warn");renderConsultTabBody();
+    const deleted={...s,deleted:true,deletedAt:new Date().toISOString(),deletedBy:state.currentUser?.name||"System"};
+    await commitClinicRecordMutation({
+      apply:()=>{STUDENTS.splice(index,1);DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id);DELETED_STUDENTS.unshift(deleted);if(state.selectedStudent?.id===s.id)state.selectedStudent=null;},
+      rollback:()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id);STUDENTS.splice(index,0,s);},
+      auditAction:`Record Deleted — Patient ${s.name} (${s.id})`,module:"Patients",status:"Warning",
+      successTitle:"Patient deleted",successMessage:`${s.name} moved to Deleted Records.`,refresh:renderConsultTabBody,
+    });
   }});
 }
 
@@ -454,7 +455,7 @@ function bindConsultHistory(){
    document.querySelectorAll("[data-view-consult]").forEach(b=>b.onclick=()=>viewConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.viewConsult)));
   document.querySelectorAll("[data-print]").forEach(b=>b.onclick=()=>printConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.print)));
   document.querySelectorAll("[data-edit-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.editConsult);openConsultationForm(STUDENTS.find(s=>s.id===c.studentId)||{id:c.studentId,name:c.studentName},c);});
-  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:async()=>{const snapshot=captureInventoryState(),wasDeleted=c.deleted;try{reverseVisitInventoryUsage(c);c.deleted=true;logAudit(`Record Deleted — Patient Visit ${c.id}`,"Patient Visits","Warning",false);await saveToClinicState(false,true);toast("Visit deleted",`Record ${c.id} moved to Deleted Records; used inventory was restored.`,"warn");rerender();}catch(error){restoreInventoryState(snapshot);c.deleted=wasDeleted;toast("Visit not deleted",error.message||"The visit and inventory changes could not be saved.","err");}}});});
+  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);if(!c)return;confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:async()=>{const snapshot=captureInventoryState(),previous={deleted:c.deleted,deletedAt:c.deletedAt,status:c.status};const deletedAt=new Date().toISOString();await commitClinicRecordMutation({apply:()=>{reverseVisitInventoryUsage(c);c.deleted=true;c.deletedAt=deletedAt;c.status="Deleted";},rollback:()=>{restoreInventoryState(snapshot);Object.assign(c,previous);},auditAction:`Record Deleted — Patient Visit ${c.id}`,module:"Patient Visits",status:"Warning",successTitle:"Visit deleted",successMessage:`Record ${c.id} moved to Deleted Records; used inventory was restored.`,refresh:rerender});}});});
   document.querySelectorAll("[data-restore-consult]").forEach(b=>b.onclick=async()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.restoreConsult),snapshot=captureInventoryState(),wasDeleted=c.deleted,previousStatus=c.status;try{validateVisitInventoryUsage(c);applyVisitInventoryUsage(c);c.deleted=false;if(c.status==="Deleted")c.status="Active";logAudit(`Record Restored — Patient Visit ${c.id}`,"Patient Visits","Success",false);await saveToClinicState(false,true);rerender();}catch(error){restoreInventoryState(snapshot);c.deleted=wasDeleted;c.status=previousStatus;toast("Visit not restored",error.message||"The visit cannot be restored because inventory or database save failed.","err");}});
 }
 

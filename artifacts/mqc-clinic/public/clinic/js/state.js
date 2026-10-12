@@ -137,7 +137,7 @@ function logAudit(action, module, status="Success", persist=true){
       if(!response.ok)throw new Error(result.message||`Supabase returned ${response.status}`);
       const createdAt=new Date(result.created_at);
       const stamp=manilaDateParts(createdAt);
-      const entry={id:result.id,date:stamp.date,time:new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hour12:true}).format(createdAt),user:result.user_name||user?.name||"System",userId:result.user_id||user?.id||null,role:result.role||user?.role||"Unknown",action:result.action||action,module:result.module||module,status:result.status||status,timestamp:createdAt.toISOString()};
+      const entry={id:result.id,date:stamp.date,time:new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).format(createdAt),user:result.user_name||user?.name||"System",userId:result.user_id||user?.id||null,role:result.role||user?.role||"Unknown",action:result.action||action,module:result.module||module,status:result.status||status,timestamp:createdAt.toISOString()};
       AUDIT_LOGS.unshift(entry);
       if(state.page==="admin"&&state.adminTab==="audit")renderAdminTabBody();
       return entry;

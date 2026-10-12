@@ -32,6 +32,11 @@ function toDateValue(value: unknown): string | null {
   return String(value);
 }
 
+function normalizeDeletedAt(row: Record<string, unknown>) {
+  if (!row.deleted && row.status !== "Deleted") return null;
+  return toDateValue(row.deletedAt ?? row.deleted_at) ?? new Date().toISOString();
+}
+
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const result = Number(value);
@@ -49,7 +54,7 @@ function normalizeUserRow(row: Record<string, unknown>) {
     role: row.role ?? "Staff Nurse",
     username: row.username ?? null,
     status: row.status ?? "Active",
-    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
+    deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
   };
   if (row.authUserId !== undefined || row.auth_user_id !== undefined) normalized.auth_user_id = row.authUserId ?? row.auth_user_id;
@@ -126,7 +131,7 @@ function normalizePatientRow(row: Record<string, unknown>) {
     guardian_contact: row.guardianContact ?? row.guardian_contact ?? null,
     allergies: row.allergies ?? "None known",
     medical_conditions: row.conditions ?? row.medicalConditions ?? row.medical_conditions ?? "None",
-    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
+    deleted_at: normalizeDeletedAt(row),
     deleted_by: row.deletedBy ?? row.deleted_by ?? null,
     updated_at: new Date().toISOString(),
   };
@@ -142,7 +147,7 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
     batch_number: row.batch ?? row.batchNumber ?? row.batch_number ?? null,
     expiration_date: toDateValue(row.exp ?? row.expirationDate ?? row.expiration_date),
     supplier: row.supplier ?? null,
-    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
+    deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
   };
 }
@@ -156,7 +161,7 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
     condition,
     last_maintenance_date: toDateValue(row.lastMaint ?? row.lastMaintenanceDate ?? row.last_maintenance_date),
     status: row.status ?? "Available",
-    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
+    deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
   };
 }
@@ -224,7 +229,7 @@ function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = fa
     revision: toNumber(row.revision) ?? 1,
     supersedes_id: row.supersedesId ?? row.supersedes_id ?? null,
     superseded_by: row.supersededBy ?? row.superseded_by ?? null,
-    deleted_at: row.deleted ? new Date().toISOString() : toDateValue(row.deletedAt ?? row.deleted_at),
+    deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
   };
 }
@@ -429,7 +434,7 @@ function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, 
   const parsedCreatedAt = new Date(createdAt);
   const validCreatedAt = createdAt && !Number.isNaN(parsedCreatedAt.getTime());
   const date = validCreatedAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(parsedCreatedAt) : "";
-  const time = validCreatedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: true }).format(parsedCreatedAt) : "";
+  const time = validCreatedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }).format(parsedCreatedAt) : "";
   const linkedUser = users.find((user) => user.id === row.user_id);
   return { id: row.id, date, time, user: row.user_name, userId: row.user_id, role: row.role ?? linkedUser?.role ?? "Unknown", action: row.action, module: row.module, status: row.status, timestamp: createdAt };
 }
@@ -632,8 +637,20 @@ export async function PUT(request: Request) {
     const snapshot = state as Record<string, unknown>;
     const persistedSnapshot = { ...snapshot };
     delete persistedSnapshot.auditLogs;
-    if (await hasClinicUserChanges(snapshot.users) && session.role !== "Head Nurse & Administrator") {
+    const clinicUsersChanged = await hasClinicUserChanges(snapshot.users);
+    if (clinicUsersChanged && session.role !== "Head Nurse & Administrator") {
       return Response.json({ message: "Only the Head Nurse & Administrator can change clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    }
+    if (clinicUsersChanged) {
+      const submittedUsers = Array.isArray(snapshot.users) ? snapshot.users as Array<Record<string, unknown>> : [];
+      const activeAdministrators = submittedUsers.filter((user) => user.role === "Head Nurse & Administrator" && user.status === "Active" && !user.deleted && !user.deletedAt);
+      const requestingUser = submittedUsers.find((user) => String(user.id ?? "") === session.userId);
+      if (!activeAdministrators.length) {
+        return Response.json({ message: "At least one active administrator account must remain." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
+      if (!requestingUser || requestingUser.status !== "Active" || requestingUser.deleted || requestingUser.deletedAt) {
+        return Response.json({ message: "The signed-in account cannot be disabled or deleted by this change." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
     }
     if (await hasNewPurgeRecords(snapshot.purged) && session.role !== "Head Nurse & Administrator") {
       return Response.json({ message: "Only the Head Nurse & Administrator can permanently delete clinic records." }, { status: 403, headers: { "Cache-Control": "no-store" } });

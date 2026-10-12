@@ -201,6 +201,22 @@ function saveToClinicState(_resetAuditLogs=false,throwOnError=false){
   return queueClinicStateSave(snapshotData(false),throwOnError);
 }
 
+async function commitClinicRecordMutation({apply,rollback,auditAction,module,status="Success",successTitle,successMessage,refresh=render}){
+  apply();
+  try{
+    await saveToClinicState(false,true);
+  }catch(error){
+    rollback();
+    toast("Change not saved",error.message||"Unable to update the clinic record.","err");
+    refresh();
+    return false;
+  }
+  await logAudit(auditAction,module,status,false);
+  toast(successTitle,successMessage,status==="Warning"?"warn":"ok");
+  refresh();
+  return true;
+}
+
 function saveVisitToClinicState(visitIds,inventorySnapshot){
   const payload=snapshotData(false);
   payload.visitMutation={
@@ -280,7 +296,7 @@ function startClinicRefresh(){
     const previousStatus=clinicDataStatus;
     const refreshed=await hydrateFromSharedStorage();
     if(refreshed&&(clinicDataChanged||previousStatus!==clinicDataStatus))render();
-  },15000);
+  },5000);
 }
 
 function saveAuthSession(user, rememberMe=false){
