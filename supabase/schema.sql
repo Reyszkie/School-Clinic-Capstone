@@ -29,7 +29,7 @@ create table if not exists public.patients (
   course text not null,
   year_level text not null,
   gender text,
-  age integer check (age is null or age between 0 and 120),
+  age integer constraint patients_age_check check (age is null or age between 0 and 120),
   contact text,
   guardian_name text,
   guardian_contact text,
@@ -47,7 +47,7 @@ create table if not exists public.medicines (
   code text primary key,
   name text not null,
   category text not null default 'General',
-  quantity integer not null default 0 check (quantity >= 0),
+  quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
   batch_number text,
   expiration_date date,
@@ -68,8 +68,6 @@ create table if not exists public.equipment (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
-alter table public.equipment drop column if exists expiration_date;
 
 create table if not exists public.clinical_visits (
   id text primary key,
@@ -135,13 +133,16 @@ alter table public.clinical_visits
   add column if not exists supply_used text,
   add column if not exists supply_quantity integer;
 
-alter table public.clinical_visits
-  drop constraint if exists clinical_visits_equipment_quantity_check,
-  add constraint clinical_visits_equipment_quantity_check
-    check (equipment_quantity is null or equipment_quantity > 0),
-  drop constraint if exists clinical_visits_supply_quantity_check,
-  add constraint clinical_visits_supply_quantity_check
-    check (supply_quantity is null or supply_quantity > 0);
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'clinical_visits_equipment_quantity_check' and conrelid = 'public.clinical_visits'::regclass) then
+    alter table public.clinical_visits add constraint clinical_visits_equipment_quantity_check check (equipment_quantity is null or equipment_quantity > 0) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'clinical_visits_supply_quantity_check' and conrelid = 'public.clinical_visits'::regclass) then
+    alter table public.clinical_visits add constraint clinical_visits_supply_quantity_check check (supply_quantity is null or supply_quantity > 0) not valid;
+  end if;
+end;
+$$;
 
 -- Upgrade existing databases so deleting a patient also deletes that patient's visits.
 alter table public.clinical_visits
@@ -206,6 +207,33 @@ create table if not exists public.clinic_sync_meta (
   normalized_ready boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+-- Add missing checks to existing installations without rejecting legacy rows.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'patients_age_check' and conrelid = 'public.patients'::regclass) then
+    alter table public.patients add constraint patients_age_check check (age is null or age between 0 and 120) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'medicines_quantity_check' and conrelid = 'public.medicines'::regclass) then
+    alter table public.medicines add constraint medicines_quantity_check check (quantity >= 0) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'equipment_quantity_check' and conrelid = 'public.equipment'::regclass) then
+    alter table public.equipment add constraint equipment_quantity_check check (quantity >= 0) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'clinic_settings_low_stock_threshold_check' and conrelid = 'public.clinic_settings'::regclass) then
+    alter table public.clinic_settings add constraint clinic_settings_low_stock_threshold_check check (low_stock_threshold >= 0) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'clinic_settings_expiration_alert_days_check' and conrelid = 'public.clinic_settings'::regclass) then
+    alter table public.clinic_settings add constraint clinic_settings_expiration_alert_days_check check (expiration_alert_days >= 0) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'clinic_settings_password_min_length_check' and conrelid = 'public.clinic_settings'::regclass) then
+    alter table public.clinic_settings add constraint clinic_settings_password_min_length_check check (password_min_length > 0) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'clinic_settings_session_timeout_minutes_check' and conrelid = 'public.clinic_settings'::regclass) then
+    alter table public.clinic_settings add constraint clinic_settings_session_timeout_minutes_check check (session_timeout_minutes > 0) not valid;
+  end if;
+end;
+$$;
 
 insert into public.clinic_sync_meta (id, normalized_ready)
 values (1, false)
@@ -312,14 +340,7 @@ insert into public.clinic_users (
 values (
   'NRS-TEST', 'Test Nurse', 'Nurse', 'Test', 'Staff Nurse', 'testnurse', extensions.crypt('test12345', extensions.gen_salt('bf')), 'Active'
 )
-on conflict (username) do update set
-  name = excluded.name,
-  last_name = excluded.last_name,
-  first_name = excluded.first_name,
-  role = excluded.role,
-  password_hash = excluded.password_hash,
-  status = excluded.status,
-  updated_at = now();
+on conflict do nothing;
 
 -- Migrate clinic users already saved in the legacy browser snapshot.
 insert into public.clinic_users (
@@ -359,16 +380,7 @@ where snapshots.id = 1
   and coalesce(nullif(user_row->>'name', ''), concat_ws(', ', nullif(user_row->>'lastName', ''), nullif(user_row->>'firstName', ''))) is not null
   and nullif(user_row->>'lastName', '') is not null
   and nullif(user_row->>'firstName', '') is not null
-on conflict (username) do update set
-  auth_user_id = coalesce(excluded.auth_user_id, public.clinic_users.auth_user_id),
-  name = excluded.name,
-  last_name = excluded.last_name,
-  first_name = excluded.first_name,
-  middle_initial = excluded.middle_initial,
-  role = excluded.role,
-  status = excluded.status,
-  deleted_at = excluded.deleted_at,
-  updated_at = now();
+on conflict do nothing;
 
 update public.clinic_sync_meta
 set normalized_ready = true,
@@ -397,7 +409,6 @@ where id = 1
   );
 
 -- Repair legacy audit rows when the old snapshot still contains a verifiable user ID.
--- To reset audit history once, run: delete from public.audit_logs;
 
 update public.audit_logs as logs
 set user_name = users.name
@@ -437,24 +448,6 @@ where logs.user_id is null
       and logs.module = entries.entry->>'module'
       and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
   );
-
--- Remove duplicate audit rows created by the old snapshot sync behavior.
-with ranked_logs as (
-  select
-    id,
-    row_number() over (
-      partition by date_trunc('minute', created_at), coalesce(user_id, ''), user_name, action, module, status
-      order by id
-    ) as duplicate_rank
-  from public.audit_logs
-), duplicate_logs as (
-  select id
-  from ranked_logs
-  where duplicate_rank > 1
-)
-delete from public.audit_logs as logs
-using duplicate_logs
-where logs.id = duplicate_logs.id;
 
 create or replace function public.prevent_audit_log_mutation()
 returns trigger

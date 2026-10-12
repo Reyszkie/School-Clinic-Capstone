@@ -160,7 +160,7 @@ function openStudentForm(existing=null){
         else{STUDENTS.unshift(rec);editingStudent=rec;state.selectedStudent=rec;}
       },
       rollback:()=>{if(wasEdit&&previous){STUDENTS[index]=previous;previousVisits.forEach(row=>Object.assign(row.visit,{studentName:row.studentName,course:row.course,year:row.year}));editingStudent=previous;state.selectedStudent=previous;}else{const patientIndex=STUDENTS.findIndex(patient=>patient.id===rec.id);if(patientIndex>=0)STUDENTS.splice(patientIndex,1);state.selectedStudent=null;}},
-      auditAction:`${wasEdit?"Patient Record Updated":"Patient Added"} — ${rec.name} (${rec.id})`,module:"Patients",detail:rec.id,successTitle:wasEdit?"Patient updated":"Patient added",successMessage:wasEdit?`${rec.name}'s record has been updated.`:`Welcome, ${rec.name}! Added to patient records.`,refresh:renderConsultTabBody,
+      auditAction:`${wasEdit?"Patient Record Updated":"Patient Added"} — ${rec.id}`,module:"Patients",detail:rec.id,successTitle:wasEdit?"Patient updated":"Patient added",successMessage:wasEdit?`${rec.name}'s record has been updated.`:`Welcome, ${rec.name}! Added to patient records.`,refresh:renderConsultTabBody,
     });}finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
     if(saved)closeModal();
   };
@@ -205,7 +205,7 @@ function deleteStudent(s){
     await commitClinicRecordMutation({
       apply:()=>{STUDENTS.splice(index,1);DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id);DELETED_STUDENTS.unshift(deleted);if(state.selectedStudent?.id===s.id)state.selectedStudent=null;},
       rollback:()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id);STUDENTS.splice(index,0,s);},
-      auditAction:`Record Deleted — Patient ${s.name} (${s.id})`,module:"Patients",status:"Warning",detail:s.id,
+      auditAction:`Record Deleted — Patient ${s.id}`,module:"Patients",status:"Warning",detail:s.id,
       successTitle:"Patient deleted",successMessage:`${s.name} moved to Deleted Records.`,refresh:renderConsultTabBody,
     });
   }});
@@ -513,7 +513,7 @@ function bindConsultHistory(){
     if(restoredPatient){delete restoredPatient.deletedAt;delete restoredPatient.deletedBy;}
     const patientIndex=patient?DELETED_STUDENTS.indexOf(patient):-1;
     const snapshot=captureInventoryState(),previousVisit={deleted:visit.deleted,deletedAt:visit.deletedAt,status:visit.status};
-    await commitClinicRecordMutation({apply:()=>{if(patient&&STUDENTS.some(record=>record.id===patient.id))throw new Error("A patient with this ID is already active.");validateVisitInventoryUsage(visit);applyVisitInventoryUsage(visit);if(patient){DELETED_STUDENTS.splice(patientIndex,1);STUDENTS.unshift(restoredPatient);}visit.deleted=false;delete visit.deletedAt;if(visit.status==="Deleted")visit.status="Active";},rollback:()=>{restoreInventoryState(snapshot);Object.assign(visit,previousVisit);if(patient){const activeIndex=STUDENTS.findIndex(record=>record.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(patientIndex,DELETED_STUDENTS.length),0,patient);}},auditActions:[{action:`Record Restored — Patient Visit ${visit.id}`,module:"Patient Visits"},...(patient?[{action:`Record Restored — Patient ${patient.name}`,module:"Patients"}]:[]),...clinicInventoryAuditActions(snapshot,`visit ${visit.id} restored`)],module:"Patient Visits",successTitle:"Visit restored",successMessage:`Record ${visit.id} returned to Patient Visits.`,refresh:rerender});
+    await commitClinicRecordMutation({apply:()=>{if(patient&&STUDENTS.some(record=>record.id===patient.id))throw new Error("A patient with this ID is already active.");validateVisitInventoryUsage(visit);applyVisitInventoryUsage(visit);if(patient){DELETED_STUDENTS.splice(patientIndex,1);STUDENTS.unshift(restoredPatient);}visit.deleted=false;delete visit.deletedAt;if(visit.status==="Deleted")visit.status="Active";},rollback:()=>{restoreInventoryState(snapshot);Object.assign(visit,previousVisit);if(patient){const activeIndex=STUDENTS.findIndex(record=>record.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(patientIndex,DELETED_STUDENTS.length),0,patient);}},auditActions:[{action:`Record Restored — Patient Visit ${visit.id}`,module:"Patient Visits"},...(patient?[{action:`Record Restored — Patient ${patient.id}`,module:"Patients",detail:patient.id}]:[]),...clinicInventoryAuditActions(snapshot,`visit ${visit.id} restored`)],module:"Patient Visits",successTitle:"Visit restored",successMessage:`Record ${visit.id} returned to Patient Visits.`,refresh:rerender});
   });
 }
 

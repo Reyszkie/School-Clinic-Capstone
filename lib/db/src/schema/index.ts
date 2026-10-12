@@ -3,9 +3,11 @@ import {
 	bigserial,
 	boolean,
 	date,
+	index,
 	integer,
 	jsonb,
 	pgTable,
+	pgSchema,
 	check,
 	text,
 	time,
@@ -14,11 +16,16 @@ import {
 	uuid,
 } from "drizzle-orm/pg-core";
 
+const authSchema = pgSchema("auth");
+const authUsersTable = authSchema.table("users", {
+	id: uuid("id").primaryKey(),
+});
+
 export const clinicUsersTable = pgTable(
 	"clinic_users",
 	{
 		id: text("id").primaryKey(),
-		authUserId: uuid("auth_user_id").unique(),
+		authUserId: uuid("auth_user_id").references(() => authUsersTable.id, { onDelete: "set null" }),
 		name: text("name").notNull(),
 		lastName: text("last_name").notNull(),
 		firstName: text("first_name").notNull(),
@@ -32,7 +39,8 @@ export const clinicUsersTable = pgTable(
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [
-		uniqueIndex("clinic_users_username_unique").on(table.username),
+		uniqueIndex("clinic_users_username_key").on(table.username),
+		uniqueIndex("clinic_users_auth_user_id_key").on(table.authUserId),
 		check("clinic_users_role_check", sql`${table.role} in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse')`),
 		check("clinic_users_status_check", sql`${table.status} in ('Active', 'Disabled')`),
 	],
@@ -51,13 +59,15 @@ export const patientsTable = pgTable("patients", {
 	contact: text("contact"),
 	guardianName: text("guardian_name"),
 	guardianContact: text("guardian_contact"),
-	allergies: text("allergies").default("None known"),
+	allergies: text("allergies").default("Not Yet Assessed"),
 	medicalConditions: text("medical_conditions").default("None"),
 	deletedAt: timestamp("deleted_at", { withTimezone: true }),
 	deletedBy: text("deleted_by"),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	check("patients_age_check", sql`${table.age} is null or ${table.age} between 0 and 120`),
+]);
 
 export const medicinesTable = pgTable("medicines", {
 	code: text("code").primaryKey(),
@@ -71,7 +81,10 @@ export const medicinesTable = pgTable("medicines", {
 	deletedAt: timestamp("deleted_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	check("medicines_quantity_check", sql`${table.quantity} >= 0`),
+	index("medicines_expiration_idx").on(table.expirationDate),
+]);
 
 export const equipmentTable = pgTable("equipment", {
 	id: text("id").primaryKey(),
@@ -86,12 +99,13 @@ export const equipmentTable = pgTable("equipment", {
 }, (table) => [
 	check("equipment_condition_check", sql`${table.condition} in ('Good', 'Fair', 'Poor')`),
 	check("equipment_status_check", sql`${table.status} in ('Available', 'Under Maintenance', 'Damaged', 'Replacement Needed')`),
+	check("equipment_quantity_check", sql`${table.quantity} >= 0`),
 ]);
 
 export const clinicalVisitsTable = pgTable("clinical_visits", {
 	id: text("id").primaryKey(),
 	patientId: text("patient_id").notNull().references(() => patientsTable.id, { onDelete: "cascade" }),
-	nurseId: text("nurse_id").references(() => clinicUsersTable.id),
+	nurseId: text("nurse_id").references(() => clinicUsersTable.id, { onDelete: "set null" }),
 	nurseName: text("nurse_name").notNull(),
 	visitDate: date("visit_date").notNull(),
 	visitTime: text("visit_time").notNull(),
@@ -118,7 +132,7 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	notes: text("notes"),
 	interventions: jsonb("interventions").$type<string[]>().notNull().default([]),
 	treatmentGiven: text("treatment_given"),
-	medicineCode: text("medicine_code").references(() => medicinesTable.code),
+	medicineCode: text("medicine_code").references(() => medicinesTable.code, { onDelete: "set null" }),
 	medicineName: text("medicine_name"),
 	medicineQuantity: integer("medicine_quantity"),
 	equipmentUsed: jsonb("equipment_used").$type<string[]>().notNull().default([]),
@@ -147,18 +161,22 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	check("clinical_visits_medicine_quantity_check", sql`${table.medicineQuantity} is null or ${table.medicineQuantity} > 0`),
 	check("clinical_visits_equipment_quantity_check", sql`${table.equipmentQuantity} is null or ${table.equipmentQuantity} > 0`),
 	check("clinical_visits_supply_quantity_check", sql`${table.supplyQuantity} is null or ${table.supplyQuantity} > 0`),
+	index("clinical_visits_patient_date_idx").on(table.patientId, table.visitDate.desc()),
+	index("clinical_visits_date_idx").on(table.visitDate.desc()),
 ]);
 
 export const auditLogsTable = pgTable("audit_logs", {
 	id: bigserial("id", { mode: "number" }).primaryKey(),
-	userId: text("user_id").references(() => clinicUsersTable.id),
+	userId: text("user_id").references(() => clinicUsersTable.id, { onDelete: "set null" }),
 	userName: text("user_name").notNull(),
+	role: text("role").notNull().default("Unknown"),
 	action: text("action").notNull(),
 	module: text("module").notNull(),
 	status: text("status").notNull().default("Success"),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	check("audit_logs_status_check", sql`${table.status} in ('Success', 'Warning', 'Error')`),
+	index("audit_logs_created_at_idx").on(table.createdAt.desc()),
 ]);
 
 export const clinicSettingsTable = pgTable("clinic_settings", {
@@ -180,16 +198,22 @@ export const clinicSettingsTable = pgTable("clinic_settings", {
 	timezone: text("timezone").notNull().default("Asia/Manila"),
 	language: text("language").notNull().default("English"),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+	check("clinic_settings_id_check", sql`${table.id} = 1`),
+	check("clinic_settings_low_stock_threshold_check", sql`${table.lowStockThreshold} >= 0`),
+	check("clinic_settings_expiration_alert_days_check", sql`${table.expirationAlertDays} >= 0`),
+	check("clinic_settings_password_min_length_check", sql`${table.passwordMinLength} > 0`),
+	check("clinic_settings_session_timeout_minutes_check", sql`${table.sessionTimeout} > 0`),
+]);
 
 export const clinicStateTable = pgTable("clinic_state", {
 	id: integer("id").primaryKey(),
 	state: jsonb("state").$type<Record<string, unknown>>().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [check("clinic_state_id_check", sql`${table.id} = 1`)]);
 
 export const clinicSyncMetaTable = pgTable("clinic_sync_meta", {
 	id: integer("id").primaryKey(),
 	normalizedReady: boolean("normalized_ready").notNull().default(false),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [check("clinic_sync_meta_id_check", sql`${table.id} = 1`)]);
