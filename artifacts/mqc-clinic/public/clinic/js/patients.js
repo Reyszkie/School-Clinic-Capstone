@@ -252,9 +252,7 @@ function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForIte
 
 function openConsultationForm(student, existing=null){
   if(!student)return;
-  const isEdit=!!existing;
-  const recordedAllergies=student.allergies&&student.allergies.toLowerCase()!=="none known"?student.allergies:"";
-  const f=existing||{date:todayDateString(),time:currentTimeString(),nurse:state.currentUser.name,complaint:"",description:"",symptomStart:"",painLevel:"0 – No pain",painLocation:"",symptoms:[],knownConditions:"No",allergiesHistory:recordedAllergies?"Yes":"No",allergiesDetails:recordedAllergies,currentMedication:"No",previousSimilar:"No",lastMeal:"",weight:"",height:"",temp:"",bp:"",pulse:"",respiratoryRate:"",spo2:"",assessment:"Stable",assessmentOther:"",notes:"",interventions:[],supplyUsed:"",supplyQty:1,equipmentUsed:[],equipmentQty:1,treatmentGiven:"",dosage:"",outcome:"Treated and Released",releasedAt:"",remarks:"",guardianContacted:"not applicable",guardianMethod:"phone call",personContacted:"",staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",medicine:"",medQty:1};
+  const isEdit=!!existing, f=existing||{date:todayDateString(),time:currentTimeString(),nurse:state.currentUser.name,complaint:"",description:"",symptomStart:"",painLevel:"0 – No pain",painLocation:"",symptoms:[],knownConditions:"No",allergiesHistory:"No",currentMedication:"No",previousSimilar:"No",lastMeal:"",weight:"",height:"",temp:"",bp:"",pulse:"",respiratoryRate:"",spo2:"",assessment:"Stable",assessmentOther:"",notes:"",interventions:[],supplyUsed:"",supplyQty:1,equipmentUsed:[],equipmentQty:1,treatmentGiven:"",dosage:"",outcome:"Treated and Released",releasedAt:"",remarks:"",guardianContacted:"not applicable",guardianMethod:"phone call",personContacted:"",staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",medicine:"",medQty:1};
   const existingSupply=f.supplyUsed||(f.equipmentUsed||[]).find(name=>VISIT_SUPPLY_NAMES.includes(name))||"";
   const existingTools=(f.equipmentUsed||[]).filter(name=>VISIT_TOOL_NAMES.includes(name));
   const returnedInventory=isEdit?activeVisitInventoryTransactions(existing.id):[];
@@ -278,7 +276,7 @@ function openConsultationForm(student, existing=null){
     <div class="f-field full"><label>Symptoms</label><div style="padding-top:5px">${optionListHtml(SYMPTOMS,f.symptoms||[],"symptom")}<label class="option-check"><input type="checkbox" id="cf-symptom-other" data-free-text-toggle="symptom-other" ${f.symptoms?.some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="symptom-other" placeholder="Enter other symptoms" value="${escapeHtml((f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
     <div class="f-field full"><label>Medical History</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
       <label>Known Medical Conditions<select id="cf-conditions"><option>No</option><option ${f.knownConditions==="Yes"?"selected":""}>Yes</option></select></label>
-      <div><label for="cf-allergies">Allergies</label><select id="cf-allergies"><option ${f.allergiesHistory!=="Yes"?"selected":""}>No</option><option ${f.allergiesHistory==="Yes"?"selected":""}>Yes</option></select><div id="cf-allergy-details-wrap" class="${f.allergiesHistory==="Yes"?"":"hidden"}" style="margin-top:8px"><label for="cf-allergy-details">Specify allergies</label><input id="cf-allergy-details" value="${escapeHtml(f.allergiesDetails||recordedAllergies)}" placeholder="Enter specific allergies"></div></div>
+      <label>Allergies<select id="cf-allergies"><option>No</option><option ${f.allergiesHistory==="Yes"?"selected":""}>Yes</option></select></label>
       <label>Current Medication<select id="cf-current-med"><option>No</option><option ${f.currentMedication==="Yes"?"selected":""}>Yes</option></select></label>
       <label>Previous Similar Symptoms<select id="cf-previous"><option>No</option><option ${f.previousSimilar==="Yes"?"selected":""}>Yes</option></select></label>
       <label style="grid-column:span 2">Last Meal / Food Consumed<input id="cf-meal" value="${escapeHtml(f.lastMeal||"")}"></label>
@@ -322,16 +320,6 @@ function openConsultationForm(student, existing=null){
     reasonOtherInput.required=isOther;
     if(!isOther)reasonOtherInput.value="";
   });
-  const allergySelect=document.getElementById("cf-allergies");
-  const allergyDetailsWrap=document.getElementById("cf-allergy-details-wrap");
-  const allergyDetailsInput=document.getElementById("cf-allergy-details");
-  allergySelect.addEventListener("change",()=>{
-    const hasAllergies=allergySelect.value==="Yes";
-    allergyDetailsWrap.classList.toggle("hidden",!hasAllergies);
-    allergyDetailsInput.required=hasAllergies;
-    if(!hasAllergies)allergyDetailsInput.value="";
-  });
-  allergyDetailsInput.required=allergySelect.value==="Yes";
   bindOptionFreeText("symptom-other",(f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
   bindOptionFreeText("assessment-other",f.assessmentOther||"");
   bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
@@ -343,8 +331,6 @@ function openConsultationForm(student, existing=null){
   document.getElementById("cf-save").onclick=async()=>{
     if(visitSaveInProgress)return;
     const complaint=complaintSelect.value,reasonOther=reasonOtherInput.value.trim();if(!complaint){toast("Missing information","Please select a reason for the clinic visit.","err");return;}if(complaint==="Other"&&!reasonOther){reasonOtherInput.focus();toast("Missing information","Specify the custom reason for the clinic visit.","err");return;}
-    const allergyDetails=allergyDetailsInput.value.trim();
-    if(allergySelect.value==="Yes"&&!allergyDetails){allergyDetailsInput.focus();toast("Missing information","Specify the patient's allergies.","err");return;}
     const medName=document.getElementById("cf-medicine").value, medQty=Number(document.getElementById("cf-medqty").value), med=MEDICINES.find(m=>m.name===medName);
     const supplyName=document.getElementById("cf-supply").value,supplyQty=Number(document.getElementById("cf-supply-qty").value);
     const equipmentQty=Number(document.getElementById("cf-equipment-qty").value);
@@ -357,13 +343,13 @@ function openConsultationForm(student, existing=null){
     const assessment=selectedChecks('[data-check-group="assessment"]')[0]||"";
     const assessmentOther=document.querySelector('[data-free-text="assessment-other"]')?.value.trim()||"";
     const interventions=selectedChecks('[data-check-group="intervention"]'); const interventionOther=document.querySelector('[data-free-text="intervention-other"]')?.value.trim(); if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther:complaint==="Other"?reasonOther:"",description:document.getElementById("cf-description").value,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:document.getElementById("cf-location").value,symptoms,knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergySelect.value,allergiesDetails:allergyDetails,currentMedication:document.getElementById("cf-current-med").value,previousSimilar:document.getElementById("cf-previous").value,lastMeal:document.getElementById("cf-meal").value,weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment,assessmentOther,notes:document.getElementById("cf-notes").value,interventions,treatmentGiven:document.getElementById("cf-treatment")?.value||"",dosage:document.getElementById("cf-dosage").value,medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyQty,equipmentQty,outcome:document.getElementById("cf-outcome").value,releasedAt:document.getElementById("cf-released").value,remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
+    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther:complaint==="Other"?reasonOther:"",description:document.getElementById("cf-description").value,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:document.getElementById("cf-location").value,symptoms,knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:document.getElementById("cf-allergies").value,currentMedication:document.getElementById("cf-current-med").value,previousSimilar:document.getElementById("cf-previous").value,lastMeal:document.getElementById("cf-meal").value,weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment,assessmentOther,notes:document.getElementById("cf-notes").value,interventions,treatmentGiven:document.getElementById("cf-treatment")?.value||"",dosage:document.getElementById("cf-dosage").value,medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyQty,equipmentQty,outcome:document.getElementById("cf-outcome").value,releasedAt:document.getElementById("cf-released").value,remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
     rec.respiratoryRate=document.getElementById("cf-respiratory-rate").value;
     const selectedEquipment=document.getElementById("cf-equipment").value;
     rec.supplyUsed=supplyName||(isEdit&&!supplies.some(item=>item.name===existingSupply)?existingSupply:"");
     rec.equipmentUsed=selectedEquipment?[selectedEquipment]:(isEdit?existingTools.filter(name=>!tools.some(item=>item.name===name)):[]);
     const saveButton=document.getElementById("cf-save");
-    let inventorySnapshot=null,visitsSnapshot=null,previousSnapshot=null,previousPatientAllergies=student.allergies;
+    let inventorySnapshot=null,visitsSnapshot=null,previousSnapshot=null;
     try{
       validateVisitInventoryUsage(rec,previous);
       inventorySnapshot=captureInventoryState();
@@ -382,14 +368,13 @@ function openConsultationForm(student, existing=null){
         previous.supersededAt=new Date().toISOString();
       }else rec.revision=1;
       applyVisitInventoryUsage(rec);
-      if(allergySelect.value==="Yes")student.allergies=allergyDetails;
       CONSULTATIONS.unshift(rec);
       if(isEdit){
         logAudit(`Patient Visit Revised — ${previous.id} → ${rec.id}`,"Patient Visits","Success",false);
       }else{
         logAudit(`Patient Visit Saved — ${rec.id}`,"Patient Visits","Success",false);
       }
-      await saveVisitToClinicState([rec.id,previous?.id],inventorySnapshot,allergySelect.value==="Yes"?[student.id]:[]);
+      await saveVisitToClinicState([rec.id,previous?.id],inventorySnapshot);
       if(isEdit)toast("Visit revision saved",`Created new record ${rec.id}; the original remains available in Visit History.`,"ok");
       else toast("Visit saved",`Recorded visit for ${student.name}.`,"ok");
       closeModal();renderPage();
@@ -398,7 +383,6 @@ function openConsultationForm(student, existing=null){
         restoreInventoryState(inventorySnapshot);
         CONSULTATIONS.splice(0,CONSULTATIONS.length,...visitsSnapshot);
         if(previous&&previousSnapshot)Object.assign(previous,previousSnapshot);
-        student.allergies=previousPatientAllergies;
       }
       visitSaveInProgress=false;
       saveButton.disabled=false;
@@ -418,7 +402,7 @@ function consultationRows(c){
     ["Detailed Description",c.description||"—"],
     ["Symptoms",(c.symptoms||[]).join(", ")||"—"],
     ["Pain",`${c.painLevel||"—"}${c.painLocation?" · "+c.painLocation:""}`],
-    ["Medical History",`Conditions: ${c.knownConditions||"—"} · Allergies: ${c.allergiesHistory||"—"}${c.allergiesDetails?` (${c.allergiesDetails})`:""} · Current medication: ${c.currentMedication||"—"} · Previous similar symptoms: ${c.previousSimilar||"—"}`],
+    ["Medical History",`Conditions: ${c.knownConditions||"—"} · Allergies: ${c.allergiesHistory||"—"} · Current medication: ${c.currentMedication||"—"} · Previous similar symptoms: ${c.previousSimilar||"—"}`],
     ["Last Meal / Food",c.lastMeal||"—"],
     ["Vital Signs",`Temp ${c.temp||"—"} °C · Pulse ${c.pulse||"—"} bpm · Respiratory rate ${c.respiratoryRate||"—"} breaths/min · BP ${c.bp||"—"} mmHg · SpO2 ${c.spo2||"—"} %`],
     ["Nurse's Assessment",c.assessment||c.diagnosis||"—"],
