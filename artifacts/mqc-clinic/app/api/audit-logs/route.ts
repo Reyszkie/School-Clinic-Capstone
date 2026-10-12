@@ -23,6 +23,51 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
   });
 }
 
+export async function GET(request: Request) {
+  const session = await readActiveClinicSession(request);
+  if (!session) return Response.json({ message: "Sign in to view audit activity." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+
+  try {
+    const after = new URL(request.url).searchParams.get("after");
+    if (after !== null && !/^\d+$/.test(after)) return Response.json({ message: "Audit cursor is invalid." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    const rows: Array<Record<string, unknown>> = [];
+    const pageSize = 1000;
+    for (let offset = 0; ; offset += pageSize) {
+      const path = after === null
+        ? "audit_logs?select=id,user_id,user_name,role,action,module,status,created_at&order=created_at.desc,id.desc"
+        : `audit_logs?select=id,user_id,user_name,role,action,module,status,created_at&id=gt.${after}&order=id.asc`;
+      const response = await supabaseRequest(path, {
+        headers: { Range: `${offset}-${offset + pageSize - 1}`, "Range-Unit": "items" },
+      });
+      if (!response.ok) throw new Error(`audit_logs read returned ${response.status}: ${await response.text()}`);
+      const page = await response.json() as Array<Record<string, unknown>>;
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    const logs = rows.map(row => {
+      const createdAt = String(row.created_at ?? "");
+      const parsed = new Date(createdAt);
+      const valid = createdAt && !Number.isNaN(parsed.getTime());
+      return {
+        id: row.id,
+        date: valid ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(parsed) : "",
+        time: valid ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }).format(parsed) : "",
+        user: row.user_name,
+        userId: row.user_id,
+        role: row.role ?? "Unknown",
+        action: row.action,
+        module: row.module,
+        status: row.status,
+        timestamp: createdAt,
+      };
+    });
+    return Response.json(logs, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("Unable to read audit activity", error);
+    return Response.json({ message: "Unable to read audit activity from Supabase." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+}
+
 export async function POST(request: Request) {
   const session = await readActiveClinicSession(request);
   if (!session) return Response.json({ message: "Sign in to record audit activity." }, { status: 401, headers: { "Cache-Control": "no-store" } });
@@ -41,9 +86,9 @@ export async function POST(request: Request) {
   const input = body as Record<string, unknown>;
   const action = typeof input.action === "string" ? input.action.trim() : "";
   const module = typeof input.module === "string" ? input.module.trim() : "";
-  const status = input.status === "Warning" || input.status === "Error" ? input.status : "Success";
+  const status = input.status ?? "Success";
 
-  if (!action || action.length > 500 || !module || module.length > 100) {
+  if (!action || action.length > 500 || !module || module.length > 100 || !["Success", "Warning", "Error"].includes(String(status))) {
     return Response.json({ message: "Audit event has invalid required fields." }, { status: 400 });
   }
 
