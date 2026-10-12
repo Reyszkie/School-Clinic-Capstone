@@ -197,5 +197,17 @@ function renderAdminTabBody(){
   const body=document.getElementById('admin-body');
   if(state.adminTab==='users'){ body.innerHTML=renderUsersTab(); bindUsersTab(); }
   else if(state.adminTab==='audit'){ body.innerHTML=renderAuditTab(); bindAuditTab(); }
-  else { body.innerHTML=renderDeletedTab(); bindDeletedTab(); }
+  else {
+    try{
+      body.innerHTML=renderDeletedTab();
+      bindDeletedTab();
+    }catch(error){
+      console.error("Unable to render deleted clinic records.",error);
+      body.innerHTML=["Patient Visits","Patients","Medicines","Equipment","Users"].map(category=>`
+        <div class="card" style="margin-bottom:16px;">
+          <div class="panel-title"><h4>Deleted ${category}</h4></div>
+          ${emptyState("Deleted records could not be loaded. Check the clinic sync status and reload this page.")}
+        </div>`).join("");
+    }
+  }
 }
