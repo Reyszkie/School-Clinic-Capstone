@@ -161,11 +161,6 @@ create table if not exists public.audit_logs (
 );
 
 alter table public.audit_logs add column if not exists role text not null default 'Unknown';
-drop trigger if exists audit_logs_prevent_mutation on public.audit_logs;
-update public.audit_logs as logs
-set role = users.role
-from public.clinic_users as users
-where logs.user_id = users.id and logs.role = 'Unknown';
 
 alter table public.audit_logs enable row level security;
 
@@ -395,65 +390,8 @@ where id = 1
     )
   );
 
--- Repair legacy audit rows when the old snapshot still contains a verifiable user ID.
--- To reset audit history once, run: delete from public.audit_logs;
-
-update public.audit_logs as logs
-set user_name = users.name
-from public.clinic_users as users
-where logs.user_id = users.id
-  and lower(logs.user_name) = 'system';
-
-update public.audit_logs as logs
-set user_id = (
-      select users.id
-      from public.clinic_state as snapshots
-      cross join lateral jsonb_array_elements(coalesce(snapshots.state->'auditLogs', '[]'::jsonb)) as entries(entry)
-      join public.clinic_users as users on users.id = nullif(entries.entry->>'userId', '')
-      where logs.action = entries.entry->>'action'
-        and logs.module = entries.entry->>'module'
-        and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
-      limit 1
-    ),
-    user_name = (
-      select users.name
-      from public.clinic_state as snapshots
-      cross join lateral jsonb_array_elements(coalesce(snapshots.state->'auditLogs', '[]'::jsonb)) as entries(entry)
-      join public.clinic_users as users on users.id = nullif(entries.entry->>'userId', '')
-      where logs.action = entries.entry->>'action'
-        and logs.module = entries.entry->>'module'
-        and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
-      limit 1
-    )
-where logs.user_id is null
-  and lower(logs.user_name) = 'system'
-  and exists (
-    select 1
-    from public.clinic_state as snapshots
-    cross join lateral jsonb_array_elements(coalesce(snapshots.state->'auditLogs', '[]'::jsonb)) as entries(entry)
-    join public.clinic_users as users on users.id = nullif(entries.entry->>'userId', '')
-    where logs.action = entries.entry->>'action'
-      and logs.module = entries.entry->>'module'
-      and logs.created_at::date = to_date(entries.entry->>'date', 'YYYY-MM-DD')
-  );
-
--- Remove duplicate audit rows created by the old snapshot sync behavior.
-with ranked_logs as (
-  select
-    id,
-    row_number() over (
-      partition by date_trunc('minute', created_at), coalesce(user_id, ''), user_name, action, module, status
-      order by id
-    ) as duplicate_rank
-  from public.audit_logs
-), duplicate_logs as (
-  select id
-  from ranked_logs
-  where duplicate_rank > 1
-)
-delete from public.audit_logs as logs
-using duplicate_logs
-where logs.id = duplicate_logs.id;
+-- Audit history is immutable. Do not infer legacy actors or deduplicate by minute:
+-- repeated actions can be legitimate, and matching by date can assign the wrong user.
 
 create or replace function public.prevent_audit_log_mutation()
 returns trigger
