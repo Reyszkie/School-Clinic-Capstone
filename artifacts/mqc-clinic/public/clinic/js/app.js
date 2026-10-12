@@ -35,23 +35,8 @@ function afterPageRender(){
   if(state.page==='admin'){
     document.querySelectorAll('[data-atab]').forEach(b=> b.onclick=()=>{ state.adminTab=b.dataset.atab; render(); });
     renderAdminTabBody();
-    refreshAdministrationData();
   }
   if(state.page==='settings'){ bindSettings(); }
-}
-
-async function refreshAdministrationData(){
-  await serverSaveChain;
-  const loaded=await hydrateFromSharedStorage();
-  if(loaded){
-    if(state.loggedIn&&state.page==='admin')renderAdminTabBody();
-    return;
-  }
-  if(clinicDataLoaded||!state.loggedIn||state.page!=='admin')return;
-  const body=document.getElementById('admin-body');
-  if(!body)return;
-  body.innerHTML=`<div class="card" role="alert"><p>Administration data could not be loaded from the shared clinic database.</p><button class="btn" id="retry-admin-sync">${ICONS.restore} Retry</button></div>`;
-  document.getElementById('retry-admin-sync')?.addEventListener('click',refreshAdministrationData);
 }
 
 /* ================= INIT ================= */
