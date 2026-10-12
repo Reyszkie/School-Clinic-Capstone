@@ -25,19 +25,6 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
   });
 }
 
-async function deleteSupabaseAuthUser(authUserId: string) {
-  const { url, key } = supabaseConfig();
-  const response = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(authUserId)}`, {
-    method: "DELETE",
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-    cache: "no-store",
-  });
-  if (!response.ok && response.status !== 404) {
-    const details = await response.text();
-    throw new Error(`Supabase Auth user delete returned ${response.status}: ${details}`);
-  }
-}
-
 function toDateValue(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "string") return value;
@@ -545,13 +532,6 @@ async function purgeRows(rows: unknown) {
     if (purge.table === "patients" && purge.key === "id") {
       const visitsResponse = await supabaseRequest(`clinical_visits?patient_id=eq.${encodeURIComponent(String(purge.value))}`, { method: "DELETE" });
       if (!visitsResponse.ok) throw new Error(`clinical_visits delete returned ${visitsResponse.status}`);
-    }
-    if (purge.table === "clinic_users" && purge.key === "id") {
-      const userResponse = await supabaseRequest(`clinic_users?id=eq.${encodeURIComponent(String(purge.value))}&select=auth_user_id`);
-      if (!userResponse.ok) throw new Error(`clinic_users identity lookup returned ${userResponse.status}`);
-      const users = await userResponse.json() as Array<{ auth_user_id?: string | null }>;
-      const authUserId = users[0]?.auth_user_id;
-      if (authUserId) await deleteSupabaseAuthUser(authUserId);
     }
     const response = await supabaseRequest(`${purge.table}?${purge.key}=eq.${encodeURIComponent(String(purge.value))}`, { method: "DELETE" });
     if (!response.ok) throw new Error(`${purge.table} delete returned ${response.status}`);

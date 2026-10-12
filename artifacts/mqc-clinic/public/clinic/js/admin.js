@@ -136,23 +136,23 @@ function renderDeletedTab(){
     </div>`;
   const consultRows = delConsults.length? `<thead><tr><th>Record</th><th>Patient</th><th>Date</th><th></th></tr></thead><tbody>${
     delConsults.map(c=>`<tr><td class="mono">${c.id}</td><td>${escapeHtml(c.studentName)}</td><td>${fmtDate(c.date)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-dc="${c.id}" title="Restore record">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dc="${c.id}" title="Delete permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-dc="${c.id}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dc="${c.id}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
   const studentRows = delStudents.length? `<thead><tr><th>Student ID</th><th>Name</th><th>Course / Year</th><th>Deleted</th><th></th></tr></thead><tbody>${
     delStudents.map(s=>`<tr><td class="mono">${escapeHtml(s.id)}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</td><td>${fmtDate(s.deletedAt)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-dp="${escapeHtml(s.id)}" title="Restore record">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dp="${escapeHtml(s.id)}" title="Delete permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-dp="${escapeHtml(s.id)}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dp="${escapeHtml(s.id)}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
   const medRows = delMeds.length? `<thead><tr><th>Code</th><th>Name</th><th></th></tr></thead><tbody>${
     delMeds.map(m=>`<tr><td class="mono">${m.code}</td><td>${escapeHtml(m.name)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-dm="${m.code}" title="Restore record">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dm="${m.code}" title="Delete permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-dm="${m.code}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-dm="${m.code}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
   const eqRows = delEq.length? `<thead><tr><th>ID</th><th>Name</th><th></th></tr></thead><tbody>${
     delEq.map(e=>`<tr><td class="mono">${e.id}</td><td>${escapeHtml(e.name)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-de="${e.id}" title="Restore record">${ICONS.restore}</button><button class="mini-btn danger" data-perm-de="${e.id}" title="Delete permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-de="${e.id}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-de="${e.id}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
   const userRows = DELETED_USERS.length? `<thead><tr><th>ID</th><th>Name</th><th></th></tr></thead><tbody>${
     DELETED_USERS.map(u=>`<tr><td class="mono">${u.id}</td><td>${escapeHtml(u.name)}</td>
-    <td><div class="row-actions"><button class="mini-btn good" data-restore-du="${u.id}" title="Restore record">${ICONS.restore}</button><button class="mini-btn danger" data-perm-du="${u.id}" title="Delete permanently">${ICONS.trash_sm}</button></div></td></tr>`).join("")
+    <td><div class="row-actions"><button class="mini-btn good" data-restore-du="${u.id}">${ICONS.restore}</button><button class="mini-btn danger" data-perm-du="${u.id}">${ICONS.trash_sm}</button></div></td></tr>`).join("")
   }</tbody>`:"";
   return section("Deleted Patient Visits", consultRows, "No deleted patient visits.")
     + section("Deleted Patients", studentRows, "No deleted patients.")
@@ -166,12 +166,10 @@ function bindDeletedTab(){
     const snapshot={
       students:STUDENTS.map(row=>({...row})),
       deletedStudents:DELETED_STUDENTS.map(row=>({...row})),
-      consultations:CONSULTATIONS.map(row=>({...row})),
       medicines:MEDICINES.map(row=>({...row})),
       equipment:EQUIPMENT.map(row=>({...row})),
       users:state.users.map(row=>({...row})),
       deletedUsers:DELETED_USERS.map(row=>({...row})),
-      purged:PURGED_RECORDS.slice(),
     };
     try{
       restore();
@@ -181,12 +179,10 @@ function bindDeletedTab(){
     }catch(error){
       STUDENTS.splice(0,STUDENTS.length,...snapshot.students);
       DELETED_STUDENTS=snapshot.deletedStudents;
-      CONSULTATIONS=snapshot.consultations;
       MEDICINES=snapshot.medicines;
       EQUIPMENT=snapshot.equipment;
       state.users=snapshot.users;
       DELETED_USERS=snapshot.deletedUsers;
-      PURGED_RECORDS=snapshot.purged;
       toast('Restore failed',error.message||'The record could not be restored to the database.','err');
     }
     rerender();
@@ -210,39 +206,10 @@ function bindDeletedTab(){
   document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); if(!u)return; finishRestore(`User Restored — ${u.name}`,"User Management",()=>{DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);state.users.unshift({...u,deleted:false,deletedAt:null});}); });
 
   const permDelete=(label, table, key, value, action)=>{
-    confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`, okLabel:"Delete Permanently", onConfirm:async()=>{
-      const snapshot={
-        students:STUDENTS.map(row=>({...row})),
-        deletedStudents:DELETED_STUDENTS.map(row=>({...row})),
-        consultations:CONSULTATIONS.map(row=>({...row})),
-        medicines:MEDICINES.map(row=>({...row})),
-        equipment:EQUIPMENT.map(row=>({...row})),
-        users:state.users.map(row=>({...row})),
-        deletedUsers:DELETED_USERS.map(row=>({...row})),
-        purged:PURGED_RECORDS.slice(),
-      };
-      try{
-        action();
-        PURGED_RECORDS.push({table,key,value});
-        await saveToClinicState(false,true);
-        await logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning",false);
-        toast('Permanently deleted', `${label} has been permanently removed.`,'warn');
-      }catch(error){
-        STUDENTS.splice(0,STUDENTS.length,...snapshot.students);
-        DELETED_STUDENTS=snapshot.deletedStudents;
-        CONSULTATIONS=snapshot.consultations;
-        MEDICINES=snapshot.medicines;
-        EQUIPMENT=snapshot.equipment;
-        state.users=snapshot.users;
-        DELETED_USERS=snapshot.deletedUsers;
-        PURGED_RECORDS=snapshot.purged;
-        toast('Delete failed',error.message||'The record could not be permanently deleted.','err');
-      }
-      rerender();
-    }});
+    confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); PURGED_RECORDS.push({table,key,value}); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToClinicState(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});
   };
   document.querySelectorAll('[data-perm-dc]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDc,"clinical_visits","id",b.dataset.permDc,()=>{ CONSULTATIONS=CONSULTATIONS.filter(c=>c.id!==b.dataset.permDc); }));
-  document.querySelectorAll('[data-perm-dp]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDp,"patients","id",b.dataset.permDp,()=>{ DELETED_STUDENTS=DELETED_STUDENTS.filter(s=>s.id!==b.dataset.permDp); CONSULTATIONS=CONSULTATIONS.filter(c=>c.studentId!==b.dataset.permDp); }));
+  document.querySelectorAll('[data-perm-dp]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDp,"patients","id",b.dataset.permDp,()=>{ DELETED_STUDENTS=DELETED_STUDENTS.filter(s=>s.id!==b.dataset.permDp); }));
   document.querySelectorAll('[data-perm-dm]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDm,"medicines","code",b.dataset.permDm,()=>{ MEDICINES=MEDICINES.filter(m=>m.code!==b.dataset.permDm); }));
   document.querySelectorAll('[data-perm-de]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDe,"equipment","id",b.dataset.permDe,()=>{ EQUIPMENT=EQUIPMENT.filter(e=>e.id!==b.dataset.permDe); }));
   document.querySelectorAll('[data-perm-du]').forEach(b=> b.onclick=()=>permDelete(b.dataset.permDu,"clinic_users","id",b.dataset.permDu,()=>{ DELETED_USERS=DELETED_USERS.filter(u=>u.id!==b.dataset.permDu); }));
