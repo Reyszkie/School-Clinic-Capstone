@@ -162,11 +162,48 @@ function renderDeletedTab(){
 }
 function bindDeletedTab(){
   const rerender=()=>{ document.getElementById('admin-body').innerHTML=renderDeletedTab(); bindDeletedTab(); };
-  document.querySelectorAll('[data-restore-dc]').forEach(b=> b.onclick=()=>{ const r=CONSULTATIONS.find(c=>c.id===b.dataset.restoreDc); r.deleted=false; logAudit(`Record Restored — Patient Visit ${r.id}`,"Patient Visits"); toast('Restored', `Visit ${r.id} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-dp]').forEach(b=> b.onclick=()=>{ const s=DELETED_STUDENTS.find(x=>x.id===b.dataset.restoreDp); if(!s)return; DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id); const restored={...s,deleted:false}; delete restored.deletedAt; delete restored.deletedBy; STUDENTS.unshift(restored); logAudit(`Record Restored — Patient ${s.name}`,"Patient Visits"); toast('Restored', `${s.name} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-dm]').forEach(b=> b.onclick=()=>{ const r=MEDICINES.find(m=>m.code===b.dataset.restoreDm); r.deleted=false; logAudit(`Record Restored — ${r.name}`,"Inventory"); toast('Restored', `${r.name} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-de]').forEach(b=> b.onclick=()=>{ const r=EQUIPMENT.find(e=>e.id===b.dataset.restoreDe); r.deleted=false; logAudit(`Record Restored — ${r.name}`,"Inventory"); toast('Restored', `${r.name} restored.`,'ok'); rerender(); });
-  document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); if(!u)return; DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id); const restored={...u,deleted:false}; delete restored.deletedAt; delete restored.deletedBy; state.users.unshift(restored); logAudit(`User Restored — ${u.name}`,"User Management"); toast('Restored', `${u.name} restored.`,'ok'); rerender(); });
+  const finishRestore=async(action,module,restore)=>{
+    const snapshot={
+      students:STUDENTS.map(row=>({...row})),
+      deletedStudents:DELETED_STUDENTS.map(row=>({...row})),
+      medicines:MEDICINES.map(row=>({...row})),
+      equipment:EQUIPMENT.map(row=>({...row})),
+      users:state.users.map(row=>({...row})),
+      deletedUsers:DELETED_USERS.map(row=>({...row})),
+    };
+    try{
+      restore();
+      await saveToClinicState(false,true);
+      await logAudit(action,module,"Success",false);
+      toast('Restored',action.replace(/^.* — /,'' )+' restored.','ok');
+    }catch(error){
+      STUDENTS.splice(0,STUDENTS.length,...snapshot.students);
+      DELETED_STUDENTS=snapshot.deletedStudents;
+      MEDICINES=snapshot.medicines;
+      EQUIPMENT=snapshot.equipment;
+      state.users=snapshot.users;
+      DELETED_USERS=snapshot.deletedUsers;
+      toast('Restore failed',error.message||'The record could not be restored to the database.','err');
+    }
+    rerender();
+  };
+  document.querySelectorAll('[data-restore-dc]').forEach(b=> b.onclick=async()=>{
+    const r=CONSULTATIONS.find(c=>c.id===b.dataset.restoreDc); if(!r)return;
+    const snapshot=captureInventoryState(),wasDeleted=r.deleted,previousStatus=r.status,previousDeletedAt=r.deletedAt;
+    try{
+      validateVisitInventoryUsage(r);applyVisitInventoryUsage(r);r.deleted=false;r.deletedAt=null;if(r.status==="Deleted")r.status="Active";
+      await saveToClinicState(false,true);await logAudit(`Record Restored — Patient Visit ${r.id}`,"Patient Visits","Success",false);
+      toast('Restored',`Visit ${r.id} restored.`,'ok');
+    }catch(error){
+      restoreInventoryState(snapshot);r.deleted=wasDeleted;r.status=previousStatus;r.deletedAt=previousDeletedAt;
+      await hydrateFromSharedStorage();toast('Restore failed',error.message||'The visit could not be restored.','err');
+    }
+    rerender();
+  });
+  document.querySelectorAll('[data-restore-dp]').forEach(b=> b.onclick=()=>{ const s=DELETED_STUDENTS.find(x=>x.id===b.dataset.restoreDp); if(!s)return; finishRestore(`Record Restored — Patient ${s.name}`,"Patient Visits",()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(x=>x.id!==s.id);const restored={...s,deleted:false,deletedAt:null,deletedBy:null};STUDENTS.unshift(restored);}); });
+  document.querySelectorAll('[data-restore-dm]').forEach(b=> b.onclick=()=>{ const r=MEDICINES.find(m=>m.code===b.dataset.restoreDm); if(!r)return; finishRestore(`Record Restored — ${r.name}`,"Inventory",()=>{r.deleted=false;r.deletedAt=null;}); });
+  document.querySelectorAll('[data-restore-de]').forEach(b=> b.onclick=()=>{ const r=EQUIPMENT.find(e=>e.id===b.dataset.restoreDe); if(!r)return; finishRestore(`Record Restored — ${r.name}`,"Inventory",()=>{r.deleted=false;r.deletedAt=null;}); });
+  document.querySelectorAll('[data-restore-du]').forEach(b=> b.onclick=()=>{ const u=DELETED_USERS.find(x=>x.id===b.dataset.restoreDu); if(!u)return; finishRestore(`User Restored — ${u.name}`,"User Management",()=>{DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);state.users.unshift({...u,deleted:false,deletedAt:null});}); });
 
   const permDelete=(label, table, key, value, action)=>{
     confirmDialog({title:"Permanently delete?", msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`, okLabel:"Delete Permanently", onConfirm:()=>{ action(); PURGED_RECORDS.push({table,key,value}); logAudit(`Record Permanently Deleted — ${label}`,"Administration","Warning"); saveToClinicState(); toast('Permanently deleted', `${label} has been permanently removed.`,'warn'); rerender(); }});

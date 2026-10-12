@@ -1,8 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const SESSION_COOKIE = "mqc_clinic_session";
-const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
-const REMEMBERED_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const DEFAULT_SESSION_TIMEOUT_MINUTES = 30;
 
 type ClinicSession = { userId: string; userName: string; expiresAt: number };
 export type ActiveClinicSession = ClinicSession & { role: string; username: string };
@@ -17,8 +16,9 @@ function signature(payload: string) {
   return createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
 }
 
-export function createClinicSessionCookie(userId: string, userName: string, rememberMe = false) {
-  const maxAge = rememberMe ? REMEMBERED_SESSION_MAX_AGE_SECONDS : SESSION_MAX_AGE_SECONDS;
+export function createClinicSessionCookie(userId: string, userName: string, rememberMe = false, timeoutMinutes = DEFAULT_SESSION_TIMEOUT_MINUTES) {
+  const safeTimeoutMinutes = Number.isFinite(timeoutMinutes) ? Math.min(525600, Math.max(1, Math.floor(timeoutMinutes))) : DEFAULT_SESSION_TIMEOUT_MINUTES;
+  const maxAge = safeTimeoutMinutes * 60;
   const payload = Buffer.from(JSON.stringify({
     userId,
     userName,
