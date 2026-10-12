@@ -1,35 +1,34 @@
 /* ================= ADMIN ================= */
 function renderAdmin(){
-  const canManageAccounts=state.currentUser?.role==="Head Nurse & Administrator";
-  if(!canManageAccounts&&state.adminTab==="users")state.adminTab="audit";
   return `
   <div class="subtabs">
-    ${canManageAccounts?`<button class="subtab ${state.adminTab==='users'?'active':''}" data-atab="users">User Management</button>`:""}
+    <button class="subtab ${state.adminTab==='users'?'active':''}" data-atab="users">User Management</button>
     <button class="subtab ${state.adminTab==='audit'?'active':''}" data-atab="audit">Audit Logs</button>
     <button class="subtab ${state.adminTab==='deleted'?'active':''}" data-atab="deleted">Deleted Records</button>
   </div>
   <div id="admin-body"></div>`;
 }
 function renderUsersTab(){
+  const canManageAccounts=state.currentUser?.role==="Head Nurse & Administrator";
   const rows = state.users.map(u=>`
     <tr>
       <td class="mono">${u.id}</td>
       <td>${escapeHtml(u.name)}</td>
       <td>${u.role}</td>
       <td><span class="chip ${u.status==='Active'?'chip-available':'chip-void'}">${u.status}</span></td>
-      <td><div class="row-actions">
+      ${canManageAccounts?`<td><div class="row-actions">
         <button class="mini-btn" data-edit-user="${u.id}" title="Edit">${ICONS.edit}</button>
         <button class="mini-btn" data-toggle-user="${u.id}" title="${u.status==='Active'?'Disable':'Enable'}">${u.status==='Active'?ICONS.x:ICONS.check}</button>
         ${u.id===state.currentUser?.id?"":`<button class="mini-btn danger" data-del-user="${u.id}" title="Delete">${ICONS.trash_sm}</button>`}
-      </div></td>
+      </div></td>`:""}
     </tr>`).join("");
   return `
   <div class="card">
-    <div class="toolbar" style="justify-content:flex-end;">
+     ${canManageAccounts?`<div class="toolbar" style="justify-content:flex-end;">
       <button class="btn btn-coral" id="add-user-btn">${ICONS.plus} Add User</button>
-    </div>
+     </div>`:""}
     <div class="table-wrap">
-       <table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead>
+       <table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Status</th>${canManageAccounts?"<th></th>":""}</tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
   </div>`;
@@ -232,7 +231,7 @@ function bindDeletedTab(){
 }
 function renderAdminTabBody(){
   const body=document.getElementById('admin-body');
-  if(state.adminTab==='users'){ body.innerHTML=renderUsersTab(); bindUsersTab(); }
+  if(state.adminTab==='users'){ body.innerHTML=renderUsersTab(); if(state.currentUser?.role==="Head Nurse & Administrator")bindUsersTab(); }
   else if(state.adminTab==='audit'){ body.innerHTML=renderAuditTab(); bindAuditTab(); }
   else {
     try{
