@@ -431,7 +431,7 @@ function auditFromRow(row: Record<string, unknown>, users: Array<Record<string, 
   const parsedCreatedAt = new Date(createdAt);
   const validCreatedAt = createdAt && !Number.isNaN(parsedCreatedAt.getTime());
   const date = validCreatedAt ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(parsedCreatedAt) : "";
-  const time = validCreatedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }).format(parsedCreatedAt) : "";
+  const time = validCreatedAt ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: true }).format(parsedCreatedAt) : "";
   const linkedUser = users.find((user) => user.id === row.user_id);
   return { id: row.id, date, time, user: row.user_name, userId: row.user_id, role: row.role ?? linkedUser?.role ?? "Unknown", action: row.action, module: row.module, status: row.status, timestamp: createdAt };
 }
@@ -606,7 +606,7 @@ export async function GET(request: Request) {
       users: [...normalizedUsers, ...missingSnapshotUsers],
       deletedStudents: patients.filter((patient) => patient.deleted_at).map(patientFromRow),
       deletedUsers: users.filter((user) => user.deleted_at).map(userFromRow),
-      auditLogs: auditLogs.map((audit) => auditFromRow(audit, users)),
+      auditLogs: auditLogs.filter((audit) => session.role !== "Staff Nurse" || audit.user_id === session.userId).map((audit) => auditFromRow(audit, users)),
       ...(settingsRows[0] ? { settings: { ...snapshotSettings, ...settingsFromRow(settingsRows[0]) } } : {}),
       bootstrapRequired: usersNeedBootstrap,
     } : { ...snapshot, bootstrapRequired: true };

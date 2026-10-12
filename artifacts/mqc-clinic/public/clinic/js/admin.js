@@ -1,5 +1,3 @@
-  const snapshot=captureInventoryState(),wasDeleted=r.deleted,previousStatus=r.status,previousDeletedAt=r.deletedAt;
-  await saveToClinicState(false,true);await logAudit(`Record Restored — Patient Visit ${r.id}`,"Patient Visits","Success",false);await logInventoryChangesSince(snapshot);
 /* ================= ADMIN ================= */
 function renderAdmin(){
   return `
@@ -111,8 +109,8 @@ function renderAuditTab(){
   const rows=items.map(l=>`
     <tr>
       <td>${fmtDate(l.date)}</td><td class="mono">${l.time}</td><td>${escapeHtml(l.user)}</td><td>${escapeHtml(l.role||"Unknown")}</td>
-      <td>${escapeHtml(l.action)}</td><td>${escapeHtml(l.module)}</td>
-      <td><span class="chip ${l.status==='Success'?'chip-available':l.status==='Warning'?'chip-low':'chip-out'}">${escapeHtml(l.status)}</span></td>
+      <td>${escapeHtml(l.action)}</td><td>${l.module}</td>
+      <td><span class="chip ${l.status==='Success'?'chip-available':l.status==='Warning'?'chip-low':'chip-out'}">${l.status}</span></td>
     </tr>`).join("");
   return `
   <div class="card">
@@ -124,7 +122,6 @@ function renderAuditTab(){
   </div>`;
 }
 function bindAuditTab(){
-  refreshAuditLogs();
   document.querySelectorAll('[data-apage]').forEach(b=> b.onclick=()=>{ state.auditPage += b.dataset.apage==='next'?1:-1; if(state.auditPage<1) state.auditPage=1; renderAdminTabBody(); });
 }
 function renderDeletedTab(){
