@@ -20,11 +20,10 @@ function renderSettings(){
 }
 function bindSettings(){
   document.getElementById("appearance-theme")?.addEventListener("change",async event=>{
-    const previousTheme=state.settings.appearanceTheme;
     applyClinicTheme(event.target.value);
-    try{await saveToClinicState(false,true);}
-    catch(error){applyClinicTheme(previousTheme);event.target.value=previousTheme;toast("Appearance not saved",error.message||"Unable to save the selected theme.","err");return;}
     try{window.localStorage.setItem("mqc_clinic_appearance_theme_v1",state.settings.appearanceTheme);}catch{}
+    try{await saveToClinicState(false,true);}
+    catch(error){toast("Theme applied on this device","The theme is active and saved locally, but shared sync failed: "+(error.message||"Unable to sync the selected theme."),"err");return;}
     try{await logAudit(`Appearance Theme Changed — ${state.settings.appearanceTheme}`,"Settings","Success",false,true);toast("Appearance updated","Your color theme has been saved.","ok");}
     catch{toast("Appearance saved; audit sync failed","The theme was saved, but its audit entry could not be recorded.","err");}
   });

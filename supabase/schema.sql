@@ -192,12 +192,8 @@ create table if not exists public.clinic_settings (
   time_format text not null default '12-hour',
   timezone text not null default 'Asia/Manila',
   language text not null default 'English',
-  appearance_theme text not null default 'ocean',
   updated_at timestamptz not null default now()
 );
-
-alter table public.clinic_settings
-  add column if not exists appearance_theme text not null default 'ocean';
 
 create table if not exists public.clinic_state (
   id integer primary key check (id = 1),
