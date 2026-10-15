@@ -47,10 +47,7 @@ function renderLoginCard(){
           <button type="button" class="toggle-pw" id="toggle-pw" aria-label="Show password">${ICONS.eye}</button>
         </div>
       </div>
-      <div class="remember-row">
-        <label><input type="checkbox" id="remember-me"> Remember me</label>
-        <span class="login-security-note">Identity verification required</span>
-      </div>
+      <div class="login-security-note">Identity verification required</div>
       <button class="btn-primary" type="submit" id="login-btn">
         <div class="spinner" id="login-spinner"></div>
         <span id="login-btn-text">Sign In</span>
@@ -88,7 +85,7 @@ function attachLoginFormEvents(){
     if(serverHydrationPromise) await serverHydrationPromise;
     let response;
     try{
-      response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass,rememberMe:document.getElementById('remember-me').checked})});
+      response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
     }catch(err){
       spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
       errEl.textContent='Unable to connect to Supabase. Please try again.';
@@ -105,7 +102,6 @@ function attachLoginFormEvents(){
     const found=await response.json();
     if(found && found.status==='Disabled'){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='This account has been disabled. Contact the administrator.'; errEl.style.display='block'; return; }
     if(!found){ spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false; errEl.textContent='Invalid username or password.'; errEl.style.display='block'; return; }
-    const rememberMe=document.getElementById('remember-me').checked;
     let hydrated=false;
     try{
       hydrated=await hydrateFromSharedStorage();
@@ -130,12 +126,12 @@ function attachLoginFormEvents(){
       clinicDataLoaded=true;
       clinicDataStatus="ready";
     }
-    openIdentityVerification(visibleUser,rememberMe,pass);
+    openIdentityVerification(visibleUser,pass);
     spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
   });
 }
 
-function openIdentityVerification(user,rememberMe=false,loginPassword=""){
+function openIdentityVerification(user,loginPassword=""){
   const roleLabel=user.role||"Clinic staff";
   openModal(`<div class="modal-head"><div><div class="eyebrow">IDENTITY CHECK</div><h3>Verify your identity</h3></div><button class="modal-close" id="verification-close" aria-label="Close">${ICONS.x}</button></div>
     <div class="modal-body">
@@ -176,7 +172,7 @@ function openIdentityVerification(user,rememberMe=false,loginPassword=""){
     state.currentUser=ensureVisibleClinicUser(user);
     state.loggedIn=true;
     startClinicRefresh();
-    saveAuthSession(user,rememberMe);
+    saveAuthSession(user);
     closeModal();
     logAudit("Signed In","Authentication","Success",false);
     logAudit("Identity Verified","Authentication","Success",false);
