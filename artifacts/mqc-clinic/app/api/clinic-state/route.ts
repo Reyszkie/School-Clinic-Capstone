@@ -467,6 +467,7 @@ function settingsFromRow(row: Record<string, unknown>) {
     timeFormat: row.time_format,
     timezone: row.timezone,
     language: row.language,
+    appearanceTheme: row.appearance_theme,
   };
 }
 
@@ -801,6 +802,7 @@ export async function PUT(request: Request) {
         time_format: settings.timeFormat ?? settings.time_format ?? "12-hour",
         timezone: settings.timezone ?? "Asia/Manila",
         language: settings.language ?? "English",
+        appearance_theme: settings.appearanceTheme ?? settings.appearance_theme ?? "ocean",
         updated_at: new Date().toISOString(),
       }]);
     }
