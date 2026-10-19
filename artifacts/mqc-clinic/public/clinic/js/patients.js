@@ -113,7 +113,6 @@ function openStudentForm(existing=null){
   const parts=(f.name||"").split(",");
   const lastName=f.lastName||parts[0]||"";
   const firstName=f.firstName||(parts[1]||"").trim().split(" ")[0]||"";
-  const initialAllergy=patientAllergyStatus(f.allergies);
   const html=`<div class="modal-head"><h3 id="student-form-title">${isEdit?"Edit":"Add New"} Patient</h3><button class="modal-close" onclick="closeModal()" aria-label="Close patient form">${ICONS.x}</button></div>
   <div class="modal-body"><form class="form-grid" id="stu-form">
     <div class="f-field"><label>Student ID <span class="req">*</span></label><input id="sf-id" value="${escapeHtml(f.id)}" placeholder="e.g. 2026-10099" ${isEdit?"readonly style='background:#F7FAFD;'":""}></div>
@@ -124,32 +123,39 @@ function openStudentForm(existing=null){
     <div class="f-field full"><label>Course / Section / Strand <span class="req">*</span></label><select id="sf-course">${courseOptionsForYearHtml(f.year,f.course)}</select></div>
     <div class="f-field"><label>Sex</label><select id="sf-gender">${["Male","Female"].map(g=>`<option ${f.gender===g?"selected":""}>${g}</option>`).join("")}</select></div>
     <div class="f-field"><label>Parent / Guardian Name</label><input id="sf-guardian" value="${escapeHtml(f.guardianName||f.emergency||"")}"></div>
-    <div class="f-field"><label>Parent / Guardian Contact</label><input id="sf-guardian-contact" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"></div>
-    <div class="f-field"><label>Allergy Status</label><select id="sf-allergy-status"><option value="unassessed" ${initialAllergy.status==="unassessed"?"selected":""}>Not Yet Assessed</option><option value="none" ${initialAllergy.status==="none"?"selected":""}>No Known Allergies</option><option value="allergies" ${initialAllergy.status==="allergies"?"selected":""}>Has Allergies</option></select></div>
-    <div class="f-field ${initialAllergy.status==="allergies"?"":"hidden"}" id="sf-allergy-detail-wrap"><label for="sf-allergy-detail">Allergy Details <span class="req">*</span></label><input id="sf-allergy-detail" value="${escapeHtml(initialAllergy.detail)}" maxlength="500" autocomplete="off" ${initialAllergy.status==="allergies"?"required":""}></div>
+    <div class="f-field full"><label for="sf-guardian-contact">Parent / Guardian Contact <span class="req">*</span></label><input id="sf-guardian-contact" type="text" inputmode="numeric" pattern="[0-9]{11}" minlength="11" autocomplete="tel-national" required aria-describedby="sf-guardian-contact-hint sf-guardian-contact-error" aria-invalid="false" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"><div class="field-hint" id="sf-guardian-contact-hint">Enter exactly 11 digits, numbers only.</div><div class="field-error hidden" id="sf-guardian-contact-error" role="alert"></div></div>
   </form></div><div class="modal-foot"><span class="form-save-status" id="sf-status" aria-live="polite"></span><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Patient"}</button></div>`;
   openModal(html);
   document.getElementById("sf-year").onchange=e=>{
     document.getElementById("sf-course").innerHTML=courseOptionsForYearHtml(e.target.value);
   };
-  const allergyStatus=document.getElementById("sf-allergy-status"),allergyDetail=document.getElementById("sf-allergy-detail"),allergyDetailWrap=document.getElementById("sf-allergy-detail-wrap");
-  allergyStatus.onchange=()=>{
-    const hasAllergies=allergyStatus.value==="allergies";
-    allergyDetailWrap.classList.toggle("hidden",!hasAllergies);
-    allergyDetail.required=hasAllergies;
-    if(!hasAllergies)allergyDetail.value="";
-    if(hasAllergies)allergyDetail.focus();
+  const guardianContact=document.getElementById("sf-guardian-contact");
+  const guardianContactError=document.getElementById("sf-guardian-contact-error");
+  let guardianContactTouched=Boolean(guardianContact.value);
+  const updateGuardianContactValidity=()=>{
+    const valid=/^\d{11}$/.test(guardianContact.value);
+    guardianContact.setCustomValidity(valid?"":"Enter exactly 11 digits using numbers only.");
+    guardianContact.setAttribute("aria-invalid",String(guardianContactTouched&&!valid));
+    guardianContactError.textContent=valid?"":guardianContact.value?"Enter exactly 11 digits using numbers only.":"Parent / Guardian Contact is required.";
+    guardianContactError.classList.toggle("hidden",valid||!guardianContactTouched);
+    return valid;
   };
+  guardianContact.addEventListener("input",()=>{
+    guardianContactTouched=true;
+    guardianContact.value=guardianContact.value.replace(/\D/g,"").slice(0,11);
+    updateGuardianContactValidity();
+  });
+  updateGuardianContactValidity();
   let patientSaveInProgress=false;
   document.getElementById("sf-save").onclick=async()=>{
     if(patientSaveInProgress)return;
     const id=document.getElementById("sf-id").value.trim(), last=document.getElementById("sf-lastname").value.trim(), first=document.getElementById("sf-firstname").value.trim(), middle=document.getElementById("sf-middle").value.trim();
     if(!id||!last||!first){toast("Missing information","Student ID, last name, and given name are required.","err");return;}
     if(!isEdit&&STUDENTS.some(s=>s.id.toLowerCase()===id.toLowerCase())){toast("Duplicate Student ID",`A student with ID ${id} already exists.`,"err");return;}
-    const allergyValue=allergyStatus.value==="allergies"?allergyDetail.value.replace(/[\u0000-\u001f\u007f]/g,"").trim():allergyStatus.value==="none"?"No Known Allergies":"Not Yet Assessed";
-    if(allergyStatus.value==="allergies"&&!allergyValue){allergyDetail.focus();toast("Missing information","Specify the patient's allergies or choose another allergy status.","err");return;}
+    guardianContactTouched=true;
+    if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
     const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
-    const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:document.getElementById("sf-guardian-contact").value,emergency:document.getElementById("sf-guardian").value,allergies:allergyValue,conditions:f.conditions||"None"};
+    const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None"};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';

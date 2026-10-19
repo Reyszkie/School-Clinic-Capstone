@@ -289,6 +289,18 @@ async function readTable(tableName: string) {
   }
 }
 
+async function hasInvalidGuardianContactChange(rows: Array<Record<string, unknown>>) {
+  const existingPatients = await readTable("patients");
+  const existingById = new Map(existingPatients.map((patient) => [String(patient.id ?? ""), patient]));
+  return rows.some((patient) => {
+    const existing = existingById.get(String(patient.id ?? ""));
+    const submittedContact = patient.guardianContact ?? patient.guardian_contact ?? null;
+    const existingContact = existing?.guardian_contact ?? null;
+    if (existing && String(submittedContact ?? "") === String(existingContact ?? "")) return false;
+    return typeof submittedContact !== "string" || !/^\d{11}$/.test(submittedContact);
+  });
+}
+
 function patientFromRow(row: Record<string, unknown>) {
   return {
     id: row.id,
@@ -748,6 +760,9 @@ export async function PUT(request: Request) {
       if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
       if (affectedMedicines.length !== medicineCodes.size) throw new Error("A medicine inventory record for this save could not be found.");
       if (affectedEquipment.length !== equipmentIds.size) throw new Error("An equipment inventory record for this save could not be found.");
+      if (await hasInvalidGuardianContactChange(affectedPatients)) {
+        return Response.json({ message: "Parent / Guardian Contact must contain exactly 11 digits." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
 
       const { visitMutation: _visitMutation, ...clinicSnapshot } = persistedSnapshot;
       const [snapshotResponse] = await Promise.all([
@@ -766,7 +781,11 @@ export async function PUT(request: Request) {
     }
 
     if (Array.isArray(snapshot.students)) {
-      await upsertTableRows("patients", "id", snapshot.students.map((row) => normalizePatientRow(row as Record<string, unknown>)));
+      const patients = snapshot.students as Array<Record<string, unknown>>;
+      if (await hasInvalidGuardianContactChange(patients)) {
+        return Response.json({ message: "Parent / Guardian Contact must contain exactly 11 digits." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
+      await upsertTableRows("patients", "id", patients.map(normalizePatientRow));
     }
     if (Array.isArray(snapshot.medicines)) {
       await upsertTableRows("medicines", "code", snapshot.medicines.map((row) => normalizeMedicineRow(row as Record<string, unknown>)));
