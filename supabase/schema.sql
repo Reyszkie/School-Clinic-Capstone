@@ -60,6 +60,7 @@ create table if not exists public.medicines (
 create table if not exists public.equipment (
   id text primary key,
   name text not null,
+  category text not null default 'Medical Equipment' check (category in ('Medical Equipment', 'Medical Supplies')),
   quantity integer not null default 0 check (quantity >= 0),
   condition text not null default 'Good' check (condition in ('Good', 'Fair', 'Poor')),
   last_maintenance_date date,
@@ -68,6 +69,17 @@ create table if not exists public.equipment (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.equipment
+  add column if not exists category text not null default 'Medical Equipment';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'equipment_category_check' and conrelid = 'public.equipment'::regclass) then
+    alter table public.equipment add constraint equipment_category_check check (category in ('Medical Equipment', 'Medical Supplies')) not valid;
+  end if;
+end;
+$$;
 
 create table if not exists public.clinical_visits (
   id text primary key,

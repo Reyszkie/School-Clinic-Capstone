@@ -31,7 +31,8 @@ function renderInventory(){
   return `
   <div class="subtabs">
     <button class="subtab ${state.invTab==='medicines'?'active':''}" data-itab="medicines">Medicines</button>
-    <button class="subtab ${state.invTab==='equipment'?'active':''}" data-itab="equipment">Equipment & Medical Tools</button>
+    <button class="subtab ${state.invTab==='equipment'?'active':''}" data-itab="equipment">Medical Equipment</button>
+    <button class="subtab ${state.invTab==='supplies'?'active':''}" data-itab="supplies">Medical Supplies</button>
   </div>
   <div id="inv-body"></div>`;
 }
@@ -185,12 +186,13 @@ function bindMedicinesTab(){
     };
   });
 }
-function renderEquipmentTab(){
+function renderEquipmentTab(category){
+  const isSupplyCategory=category==="Medical Supplies";
   const perPage=8;
   const rawQ=document.getElementById('eq-search')?.value||"";
   const q=rawQ.toLowerCase();
   const statusF=document.getElementById('eq-status')?.value||"";
-  let list = EQUIPMENT.filter(e=>!e.deleted).filter(e=>{
+  let list = EQUIPMENT.filter(e=>!e.deleted&&e.category===category).filter(e=>{
     const matchQ=!q || e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q);
     const matchStatus = !statusF || e.status===statusF;
     return matchQ && matchStatus;
@@ -199,7 +201,7 @@ function renderEquipmentTab(){
   if(state.eqPage>totalPages) state.eqPage=totalPages;
   const pageItems=list.slice((state.eqPage-1)*perPage, state.eqPage*perPage);
   const chipMap={"Available":"chip-available","Under Maintenance":"chip-maint","Damaged":"chip-damaged","Replacement Needed":"chip-out"};
-  const rows = pageItems.length===0? `<tr><td colspan="7">${emptyState("No equipment matches your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="7">${emptyState(`No ${isSupplyCategory?"supplies":"equipment"} match your filters.`)}</td></tr>` :
     pageItems.map(e=>`
     <tr>
       <td class="mono">${e.id}</td>
@@ -216,15 +218,15 @@ function renderEquipmentTab(){
   return `
   <div class="card">
     <div class="toolbar">
-      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="eq-search" placeholder="Search equipment by name or ID..." value="${escapeHtml(rawQ)}"></div>
+      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="eq-search" placeholder="Search items by name or ID..." value="${escapeHtml(rawQ)}"></div>
       <select class="select-sm" id="eq-status">
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Under Maintenance","Damaged","Replacement Needed"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
       </select>
-      <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Equipment</button>
+      <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add ${isSupplyCategory?"Supply":"Equipment"}</button>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>ID</th><th>Equipment</th><th>Qty</th><th>Condition</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>ID</th><th>${isSupplyCategory?"Supply":"Equipment"}</th><th>Qty</th><th>Condition</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
@@ -232,27 +234,29 @@ function renderEquipmentTab(){
     </div>
   </div>`;
 }
-function openEquipmentForm(existing=null){
+function openEquipmentForm(existing=null,category=state.invTab==='supplies'?"Medical Supplies":"Medical Equipment"){
   const isEdit=!!existing;
-  const f=existing||{id:uid("EQP"), name:"", qty:1, condition:"Good", lastMaint:"2026-07-01", status:"Available"};
+  const f=existing||{id:uid("EQP"), name:"", category, qty:1, condition:"Good", lastMaint:"", status:"Available"};
+  const itemLabel=f.category==="Medical Supplies"?"Supply":"Equipment";
   const html=`
-  <div class="modal-head"><h3>${isEdit?'Edit':'Add'} Equipment</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
+  <div class="modal-head"><h3>${isEdit?'Edit':'Add'} ${itemLabel}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
     <form class="form-grid" id="eq-form">
-      <div class="f-field"><label>Equipment ID</label><input type="text" id="ef-id" value="${f.id}" ${isEdit?'readonly style="background:#F7FAFD;"':''}></div>
-      <div class="f-field full"><label>Equipment Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
+      <div class="f-field"><label>Item ID</label><input type="text" id="ef-id" value="${f.id}" ${isEdit?'readonly style="background:#F7FAFD;"':''}></div>
+      <div class="f-field full"><label>${itemLabel} Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
+      <div class="f-field"><label>Category</label><select id="ef-category">${["Medical Equipment","Medical Supplies"].map(value=>`<option ${f.category===value?'selected':''}>${value}</option>`).join("")}</select></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="ef-qty" value="${f.qty}"></div>
       <div class="f-field"><label>Condition</label><select id="ef-condition">${["Good","Fair","Poor"].map(c=>`<option ${f.condition===c?'selected':''}>${c}</option>`).join("")}</select></div>
       <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
     </form>
   </div>
-  <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="ef-save">${ICONS.check} Save Equipment</button></div>`;
+  <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="ef-save">${ICONS.check} Save ${itemLabel}</button></div>`;
   openModal(html);
   document.getElementById('ef-save').onclick=async()=>{
     const name=document.getElementById('ef-name').value.trim();
-    if(!name){ toast('Missing information','Equipment name is required.','err'); return; }
-    const rec={ id:document.getElementById('ef-id').value, name, qty:parseInt(document.getElementById('ef-qty').value)||0,
+    if(!name){ toast('Missing information',`${itemLabel} name is required.`,'err'); return; }
+    const rec={ id:document.getElementById('ef-id').value, name, category:document.getElementById('ef-category').value, qty:parseInt(document.getElementById('ef-qty').value)||0,
       condition:document.getElementById('ef-condition').value, lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
     const saveButton=document.getElementById('ef-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
@@ -274,7 +278,7 @@ function bindEquipmentTab(){
   };
   const s=document.getElementById('eq-search'); if(s) s.oninput=rerender;
   const st=document.getElementById('eq-status'); if(st) st.onchange=rerender;
-  document.getElementById('add-eq-btn').onclick=()=>openEquipmentForm();
+  document.getElementById('add-eq-btn').onclick=()=>openEquipmentForm(null,state.invTab==='supplies'?"Medical Supplies":"Medical Equipment");
   document.querySelectorAll('[data-eqpage]').forEach(b=> b.onclick=()=>{ state.eqPage += b.dataset.eqpage==='next'?1:-1; if(state.eqPage<1) state.eqPage=1; rerender(); });
   document.querySelectorAll('[data-edit-eq]').forEach(b=> b.onclick=()=>openEquipmentForm(EQUIPMENT.find(e=>e.id===b.dataset.editEq)));
   document.querySelectorAll('[data-del-eq]').forEach(b=>{
@@ -291,5 +295,5 @@ function bindEquipmentTab(){
 function renderInventoryTabBody(){
   const body=document.getElementById('inv-body');
   if(state.invTab==='medicines'){ body.innerHTML=renderMedicinesTab(); bindMedicinesTab(); }
-  else { body.innerHTML=renderEquipmentTab(); bindEquipmentTab(); }
+  else { body.innerHTML=renderEquipmentTab(state.invTab==='supplies'?"Medical Supplies":"Medical Equipment"); bindEquipmentTab(); }
 }

@@ -654,7 +654,7 @@ tbody tr{transition:background-color .14s ease;}
 .vital-signs-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
 .vital-signs-grid label{display:block;font-size:12px;font-weight:600;color:var(--navy-deep);}
 .vital-signs-grid input{margin-top:5px;}
-.visit-inventory-grid{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start;}
+.visit-inventory-grid{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;}
 .visit-inventory-card{min-width:0;padding:15px 16px 12px;border:1px solid var(--line);border-radius:13px;background:var(--panel);box-shadow:0 1px 3px rgba(13,30,54,.05);}
 .visit-inventory-heading{display:grid;gap:5px;}
 .visit-inventory-heading>label{font-size:12px;font-weight:700;color:var(--ink-soft);}

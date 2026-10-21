@@ -89,6 +89,7 @@ export const medicinesTable = pgTable("medicines", {
 export const equipmentTable = pgTable("equipment", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),
+	category: text("category").notNull().default("Medical Equipment"),
 	quantity: integer("quantity").notNull().default(0),
 	condition: text("condition").notNull().default("Good"),
 	lastMaintenanceDate: date("last_maintenance_date"),
@@ -98,6 +99,7 @@ export const equipmentTable = pgTable("equipment", {
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	check("equipment_condition_check", sql`${table.condition} in ('Good', 'Fair', 'Poor')`),
+	check("equipment_category_check", sql`${table.category} in ('Medical Equipment', 'Medical Supplies')`),
 	check("equipment_status_check", sql`${table.status} in ('Available', 'Under Maintenance', 'Damaged', 'Replacement Needed')`),
 	check("equipment_quantity_check", sql`${table.quantity} >= 0`),
 ]);

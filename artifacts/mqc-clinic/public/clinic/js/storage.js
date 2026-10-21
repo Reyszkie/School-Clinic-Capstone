@@ -41,6 +41,7 @@ function snapshotData(includeAuditLogs=true){
     purged: PURGED_RECORDS,
     users: [...state.users, ...DELETED_USERS],
     settings: state.settings,
+    inventoryCatalogVersion: INVENTORY_CATALOG_VERSION,
     savedAt: new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Manila' })).toISOString(),
   };
 }
@@ -273,17 +274,37 @@ function applyStoredData(data){
   if(Array.isArray(data.medicines)) MEDICINES = data.medicines;
   if(Array.isArray(data.equipment)) EQUIPMENT = data.equipment;
   INVENTORY_TRANSACTIONS=Array.isArray(data.inventoryTransactions)?data.inventoryTransactions:[];
-  const medicalToolNames=new Set([
-    "Cotton Swabs","Cotton Balls","Alcohol (70% Isopropyl)","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads",
-    "Medical Tape","Hand Sanitizer","Disposable Face Masks","Gloves (Nitrile, Medium)"
-  ]);
+  const medicalToolNames=new Set([...MEDICAL_SUPPLY_NAMES,...Object.keys(INVENTORY_ITEM_NAME_ALIASES)]);
   const movedTools=MEDICINES.filter(m=>medicalToolNames.has(m.name));
   let migratedInventory=false;
   if(movedTools.length){
     MEDICINES=MEDICINES.filter(m=>!medicalToolNames.has(m.name));
     const existingEquipmentNames=new Set(EQUIPMENT.map(e=>e.name));
     const equipmentCount=EQUIPMENT.length;
-    movedTools.forEach((m,index)=>{if(!existingEquipmentNames.has(m.name)){EQUIPMENT.push({id:`EQP-${String(equipmentCount+index+1).padStart(3,"0")}`,name:m.name,qty:m.qty,condition:"Good",lastMaint:"2026-07-01",status:"Available",deleted:m.deleted});migratedInventory=true;}});
+    movedTools.forEach((m,index)=>{const name=INVENTORY_ITEM_NAME_ALIASES[m.name]||m.name;if(!existingEquipmentNames.has(name)){EQUIPMENT.push({id:`EQP-${String(equipmentCount+index+1).padStart(3,"0")}`,name,category:"Medical Supplies",qty:m.qty,condition:"Good",lastMaint:"",status:"Available",deleted:m.deleted});migratedInventory=true;}});
+  }
+  const catalogMigrationRequired=data.inventoryCatalogVersion!==INVENTORY_CATALOG_VERSION;
+  if(catalogMigrationRequired){
+    const catalogNames=new Set([...MEDICAL_EQUIPMENT_NAMES,...MEDICAL_SUPPLY_NAMES]);
+    const activeNames=new Set();
+    EQUIPMENT.forEach(item=>{
+      const name=INVENTORY_ITEM_NAME_ALIASES[item.name]||item.name;
+      const category=MEDICAL_SUPPLY_NAMES.includes(name)?"Medical Supplies":"Medical Equipment";
+      if(!catalogNames.has(name)||!item.deleted&&activeNames.has(name)){
+        item.deleted=true;
+        item.deletedAt=item.deletedAt||new Date().toISOString();
+      }else if(!item.deleted){
+        activeNames.add(name);
+      }
+      item.name=name;
+      item.category=catalogNames.has(name)?category:item.category||"Medical Equipment";
+    });
+    [...MEDICAL_EQUIPMENT_NAMES.map(name=>({name,category:"Medical Equipment"})),...MEDICAL_SUPPLY_NAMES.map(name=>({name,category:"Medical Supplies"}))].forEach(({name,category})=>{
+      if(activeNames.has(name))return;
+      EQUIPMENT.push({id:uid("EQP"),name,category,qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false});
+      activeNames.add(name);
+    });
+    migratedInventory=true;
   }
   if(Array.isArray(data.consultations)) CONSULTATIONS = data.consultations;
   if(Array.isArray(data.auditLogs)) AUDIT_LOGS = data.auditLogs;
@@ -312,7 +333,7 @@ async function hydrateFromSharedStorage(){
       clinicDataChanged=!clinicDataLoaded||fingerprint!==clinicDataFingerprint;
       clinicDataFingerprint=fingerprint;
       sharedStorageNeedsBootstrap=Boolean(data.bootstrapRequired);
-      applyStoredData(data);
+      if(applyStoredData(data))sharedStorageNeedsBootstrap=true;
       setSyncStatus("Live", "saved");
       if(!Array.isArray(data.inventoryTransactions))sharedStorageNeedsBootstrap=true;
       return true;

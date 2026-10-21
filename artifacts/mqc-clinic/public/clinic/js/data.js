@@ -68,11 +68,18 @@ function seedStudents(){
 }
 const STUDENTS = seedStudents();
 
+const MEDICAL_EQUIPMENT_NAMES=["Digital Thermometer","Blood Pressure Monitor","Stethoscope","Pulse Oximeter","Scissors","Tweezers","Nebulizer"];
+const MEDICAL_SUPPLY_NAMES=["Cotton Swabs","Cotton Balls","Alcohol","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads","Medical Tape","Hand Sanitizer","Disposable Face Masks","Medical Gloves"];
+const INVENTORY_CATALOG_VERSION=2;
 let MEDICINES = [];
-let EQUIPMENT = [];
-
-const VISIT_SUPPLY_NAMES=["Cotton Swabs","Cotton Balls","Alcohol (70% Isopropyl)","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads","Medical Tape","Hand Sanitizer","Disposable Face Masks","Gloves (Nitrile, Medium)"];
-const VISIT_TOOL_NAMES=["Digital Thermometer","Blood Pressure Monitor (Digital)","Stethoscope","Pulse Oximeter","Scissors (Medical)","Tweezers","Nebulizer"];
+let EQUIPMENT = [...MEDICAL_EQUIPMENT_NAMES.map((name,index)=>({id:`EQP-DEFAULT-EQ-${String(index+1).padStart(2,"0")}`,name,category:"Medical Equipment"})),...MEDICAL_SUPPLY_NAMES.map((name,index)=>({id:`EQP-DEFAULT-SUP-${String(index+1).padStart(2,"0")}`,name,category:"Medical Supplies"}))].map(item=>({...item,qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false}));
+const VISIT_SUPPLY_NAMES=MEDICAL_SUPPLY_NAMES;
+const INVENTORY_ITEM_NAME_ALIASES={
+  "Alcohol (70% Isopropyl)":"Alcohol",
+  "Blood Pressure Monitor (Digital)":"Blood Pressure Monitor",
+  "Scissors (Medical)":"Scissors",
+  "Gloves (Nitrile, Medium)":"Medical Gloves",
+};
 
 const COMPLAINTS = ["Headache","Fever","Dizziness","Stomachache","Nausea/Vomiting","Injury","Cough/Cold","Difficulty Breathing","Menstrual Pain","Weakness/Fatigue"];
 const SYMPTOMS = ["Fever","Headache","Dizziness","Nausea","Vomiting","Stomach Pain","Cough","Sore Throat","Runny Nose","Difficulty Breathing","Chest Pain","Weakness","Fainting","Diarrhea","Asthma"];

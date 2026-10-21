@@ -146,6 +146,7 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
   return {
     id: row.id ?? null,
     name: row.name ?? "",
+    category: row.category ?? "Medical Equipment",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
     condition,
     last_maintenance_date: toDateValue(row.lastMaint ?? row.lastMaintenanceDate ?? row.last_maintenance_date),
@@ -343,6 +344,7 @@ function equipmentFromRow(row: Record<string, unknown>) {
   return {
     id: row.id,
     name: row.name,
+    category: row.category ?? "Medical Equipment",
     qty: row.quantity,
     condition: row.condition,
     lastMaint: row.last_maintenance_date,
