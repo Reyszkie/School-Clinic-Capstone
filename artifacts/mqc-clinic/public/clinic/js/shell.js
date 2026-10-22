@@ -35,8 +35,11 @@ function renderShell(){
     });
   });
   const lowStockThreshold = Number(state.settings.lowStockThreshold ?? 15);
-  const lowStockCount = MEDICINES.filter(m=>!m.deleted && m.qty>0 && m.qty<=lowStockThreshold).length + MEDICINES.filter(m=>!m.deleted && m.qty===0).length;
+  const lowStockCount = MEDICINES.filter(m=>!m.deleted && Number(m.qty)<=lowStockThreshold).length
+    + EQUIPMENT.filter(e=>!e.deleted && e.category==="Medical Supplies" && Number(e.qty)<=lowStockThreshold).length;
   const referralFlagCount = referralConcernList(REFERRAL_THRESHOLD).length;
+  const medicineAlerts = medicineAlertData();
+  const hasClinicAlerts = lowStockCount>0 || referralFlagCount>0 || medicineAlerts.expiring.length>0 || medicineAlerts.expired.length>0;
 
   return `
   <div class="shell">
@@ -63,7 +66,7 @@ function renderShell(){
         <div class="top-actions">
           <span class="sync-status" id="sync-status" data-state="saved" aria-live="polite">Saved</span>
            <div class="datetime-chip mono" id="clock" aria-label="Current date and time">${manilaDateTime()}</div>
-          <button class="icon-btn" id="alert-btn" title="Alerts" aria-label="Alerts">${ICONS.bell}${(lowStockCount>0||referralFlagCount>0)?'<span class="dot-alert"></span>':''}</button>
+          <button class="icon-btn" id="alert-btn" title="Alerts" aria-label="Alerts">${ICONS.bell}${hasClinicAlerts?'<span class="dot-alert"></span>':''}</button>
           <button class="icon-btn settings-btn" id="settings-btn" title="Settings" aria-label="Settings"><span class="settings-icon">${ICONS.settings}</span><span class="settings-label">Settings</span></button>
         </div>
       </div>
@@ -78,8 +81,8 @@ function pageSub(){
   return {
     dashboard:"Medicine alerts and quick student record search",
      consultation:"View patient profiles, clinical records, and visit history",
-    inventory:"Medicines and medical equipment tracking",
-    reports:"Generate and export simulated clinic reports",
+    inventory:"Medicines and medical supplies tracking",
+    reports:"Generate and export clinic reports",
     admin:"Users, audit logs, and deleted records",
     settings:"Preferences and system configuration",
   }[state.page]||"";

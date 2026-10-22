@@ -265,6 +265,7 @@ function bindOptionFreeText(group, initialValue=""){
   if(!checkbox||!field)return;
   const update=()=>{field.classList.toggle("hidden",!checkbox.checked);if(!checkbox.checked)field.value="";};
   checkbox.addEventListener("change",update);field.value=initialValue||"";update();
+  return update;
 }
 
 function visitInventoryCard({id,label,items,selected,quantityId,quantity,unitForItem,availableForItem}){
@@ -311,6 +312,7 @@ function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForIte
   });
   quantity.addEventListener("input",update);
   update();
+  return update;
 }
 
 function mergePatientAllergies(currentValue,newValue){
@@ -374,25 +376,38 @@ function openConsultationForm(student, existing=null){
   const complaintSelect=document.getElementById("cf-complaint");
   const reasonOtherWrap=document.getElementById("cf-reason-other-wrap");
   const reasonOtherInput=document.getElementById("cf-reason-other");
-  complaintSelect.addEventListener("change",()=>{
+  const syncComplaint=()=>{
     const isOther=complaintSelect.value==="Other";
     reasonOtherWrap.classList.toggle("hidden",!isOther);
     reasonOtherInput.required=isOther;
-    if(!isOther)reasonOtherInput.value="";
+  };
+  complaintSelect.addEventListener("change",()=>{
+    syncComplaint();
+    if(complaintSelect.value!=="Other")reasonOtherInput.value="";
   });
   const allergySelect=document.getElementById("cf-allergies"),allergyDetailInput=document.getElementById("cf-allergy-detail"),allergyDetailWrap=document.getElementById("cf-allergy-detail-wrap");
-  allergySelect.addEventListener("change",()=>{
+  const syncAllergy=()=>{
     const hasAllergies=allergySelect.value==="Yes";
     allergyDetailWrap.classList.toggle("hidden",!hasAllergies);
     allergyDetailInput.required=hasAllergies;
-    if(!hasAllergies)allergyDetailInput.value="";
-    if(hasAllergies)allergyDetailInput.focus();
+  };
+  allergySelect.addEventListener("change",()=>{
+    syncAllergy();
+    if(allergySelect.value!=="Yes")allergyDetailInput.value="";
+    if(allergySelect.value==="Yes")allergyDetailInput.focus();
   });
-  bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
-  bindVisitInventoryCard({id:"cf-medicine",quantityId:"cf-medqty",items:meds,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable});
-  bindVisitInventoryCard({id:"cf-supply",quantityId:"cf-supply-qty",items:supplies,unitForItem:()=>"items",availableForItem:equipmentAvailable});
+  const syncInterventionFreeText=bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
+  const updateMedicineCard=bindVisitInventoryCard({id:"cf-medicine",quantityId:"cf-medqty",items:meds,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable});
+  const updateSupplyCard=bindVisitInventoryCard({id:"cf-supply",quantityId:"cf-supply-qty",items:supplies,unitForItem:()=>"items",availableForItem:equipmentAvailable});
   let visitSaveInProgress=false;
-  document.getElementById("cf-clear").onclick=()=>document.getElementById("consult-form").reset();
+  document.getElementById("cf-clear").onclick=()=>{
+    document.getElementById("consult-form").reset();
+    syncComplaint();
+    syncAllergy();
+    syncInterventionFreeText?.();
+    updateMedicineCard?.();
+    updateSupplyCard?.();
+  };
   document.getElementById("cf-save").onclick=async()=>{
     if(visitSaveInProgress)return;
     const complaint=complaintSelect.value,reasonOther=reasonOtherInput.value.trim(),allergyAnswerValue=allergySelect.value,allergyDetail=allergyDetailInput.value.replace(/[\u0000-\u001f\u007f]/g,"").trim();if(!complaint){toast("Missing information","Please select a reason for the clinic visit.","err");return;}if(complaint==="Other"&&!reasonOther){reasonOtherInput.focus();toast("Missing information","Specify the custom reason for the clinic visit.","err");return;}if(!allergyAnswerValue){allergySelect.focus();toast("Missing information","Please answer the allergy question.","err");return;}if(allergyAnswerValue==="Yes"&&!allergyDetail){allergyDetailInput.focus();toast("Missing information","Specify the patient's allergies.","err");return;}
