@@ -275,37 +275,56 @@ function applyStoredData(data){
   if(Array.isArray(data.equipment)) EQUIPMENT = data.equipment;
   INVENTORY_TRANSACTIONS=Array.isArray(data.inventoryTransactions)?data.inventoryTransactions:[];
   const medicalToolNames=new Set([...MEDICAL_SUPPLY_NAMES,...Object.keys(INVENTORY_ITEM_NAME_ALIASES)]);
-  const movedTools=MEDICINES.filter(m=>medicalToolNames.has(m.name));
   let migratedInventory=false;
+  const movedTools=MEDICINES.filter(m=>medicalToolNames.has(m.name));
   if(movedTools.length){
     MEDICINES=MEDICINES.filter(m=>!medicalToolNames.has(m.name));
     const existingEquipmentNames=new Set(EQUIPMENT.map(e=>e.name));
     const equipmentCount=EQUIPMENT.length;
-    movedTools.forEach((m,index)=>{const name=INVENTORY_ITEM_NAME_ALIASES[m.name]||m.name;if(!existingEquipmentNames.has(name)){EQUIPMENT.push({id:`EQP-${String(equipmentCount+index+1).padStart(3,"0")}`,name,category:"Medical Supplies",qty:m.qty,condition:"Good",lastMaint:"",status:"Available",deleted:m.deleted});migratedInventory=true;}});
+    movedTools.forEach((m,index)=>{
+      const name=INVENTORY_ITEM_NAME_ALIASES[m.name]||m.name;
+      const category=HISTORIC_MEDICAL_EQUIPMENT_NAMES.includes(name)?"Medical Equipment":"Medical Supplies";
+      if(!existingEquipmentNames.has(name)){
+        EQUIPMENT.push({id:`EQP-${String(equipmentCount+index+1).padStart(3,"0")}`,name,category,qty:m.qty,condition:"Good",lastMaint:"",status:"Available",deleted:m.deleted});
+        migratedInventory=true;
+      }
+    });
   }
   const catalogMigrationRequired=data.inventoryCatalogVersion!==INVENTORY_CATALOG_VERSION;
-  if(catalogMigrationRequired){
-    const catalogNames=new Set([...MEDICAL_EQUIPMENT_NAMES,...MEDICAL_SUPPLY_NAMES]);
-    const activeNames=new Set();
-    EQUIPMENT.forEach(item=>{
-      const name=INVENTORY_ITEM_NAME_ALIASES[item.name]||item.name;
-      const category=MEDICAL_SUPPLY_NAMES.includes(name)?"Medical Supplies":"Medical Equipment";
-      if(!catalogNames.has(name)||!item.deleted&&activeNames.has(name)){
-        item.deleted=true;
-        item.deletedAt=item.deletedAt||new Date().toISOString();
-      }else if(!item.deleted){
-        activeNames.add(name);
-      }
-      item.name=name;
-      item.category=catalogNames.has(name)?category:item.category||"Medical Equipment";
-    });
-    [...MEDICAL_EQUIPMENT_NAMES.map(name=>({name,category:"Medical Equipment"})),...MEDICAL_SUPPLY_NAMES.map(name=>({name,category:"Medical Supplies"}))].forEach(({name,category})=>{
-      if(activeNames.has(name))return;
-      EQUIPMENT.push({id:uid("EQP"),name,category,qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false});
-      activeNames.add(name);
-    });
+  const medicineByName=name=>MEDICINES.find(item=>item.name.toLowerCase()===name.toLowerCase());
+  MEDICINE_CATALOG_NAMES.forEach(name=>{
+    const existing=medicineByName(name);
+    if(existing){
+      if(existing.deleted&&catalogMigrationRequired){existing.deleted=false;delete existing.deletedAt;migratedInventory=true;}
+      return;
+    }
+    let code;
+    do{code=uid("MED");}while(MEDICINES.some(item=>item.code===code));
+    MEDICINES.push({code,name,category:"General",qty:0,unit:"tablet",exp:"",deleted:false});
     migratedInventory=true;
-  }
+  });
+  const supplyByName=name=>EQUIPMENT.find(item=>(INVENTORY_ITEM_NAME_ALIASES[item.name]||item.name).toLowerCase()===name.toLowerCase());
+  EQUIPMENT.forEach(item=>{
+    item.name=INVENTORY_ITEM_NAME_ALIASES[item.name]||item.name;
+    if(MEDICAL_SUPPLY_NAMES.includes(item.name))item.category="Medical Supplies";
+    else if(HISTORIC_MEDICAL_EQUIPMENT_NAMES.includes(item.name))item.category="Medical Equipment";
+    if(REMOVED_MEDICAL_SUPPLY_NAMES.includes(item.name)&&!item.deleted){
+      item.deleted=true;
+      item.deletedAt=item.deletedAt||new Date().toISOString();
+      migratedInventory=true;
+    }
+  });
+  MEDICAL_SUPPLY_NAMES.forEach(name=>{
+    const existing=supplyByName(name);
+    if(existing){
+      if(existing.deleted&&catalogMigrationRequired){existing.deleted=false;delete existing.deletedAt;migratedInventory=true;}
+      if(existing.category!=="Medical Supplies"){existing.category="Medical Supplies";migratedInventory=true;}
+      return;
+    }
+    EQUIPMENT.push({id:uid("EQP"),name,category:"Medical Supplies",qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false});
+    migratedInventory=true;
+  });
+  if(catalogMigrationRequired)migratedInventory=true;
   if(Array.isArray(data.consultations)) CONSULTATIONS = data.consultations;
   if(Array.isArray(data.auditLogs)) AUDIT_LOGS = data.auditLogs;
   if(Array.isArray(data.deletedStudents)) DELETED_STUDENTS = data.deletedStudents;

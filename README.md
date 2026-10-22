@@ -2,7 +2,7 @@
 
 ## What This System Is
 
-MQC School Clinic Management System is a browser-based workspace for Mary the Queen College clinic. It supports staff sign-in, student and patient records, clinical visit documentation, medicine and equipment inventory, reports, user administration, audit history, deleted-record recovery, and local/shared data storage.
+MQC School Clinic Management System is a browser-based workspace for Mary the Queen College clinic. It supports staff sign-in, patient records, clinical visit documentation, medicine and medical supplies inventory, reports, user administration, audit history, deleted-record recovery, and local/shared data storage.
 
 The application is built with Next.js and deployed as one Vercel application. The clinic interface is the existing HTML, CSS, and JavaScript workspace in `artifacts/mqc-clinic/public/clinic`. Next.js provides the application shell and API route handlers. Those server-side routes read and write Supabase through its REST API using a server-only secret key. Drizzle schemas and commands are available for database tooling, but they are not the runtime data-access path for the clinic API.
 
@@ -34,7 +34,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 - Dashboard navigation.
 - Patients navigation.
-- Medicine and Equipment navigation.
+- Medicines and Supplies navigation.
 - Reports navigation.
 - Administration navigation.
 - Settings shortcut.
@@ -56,10 +56,10 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 ### Dashboard
 
-- Total students served metric.
+- Total patients served metric.
 - Clinic visits today metric.
 - Total visits this month metric.
-- Returning students metric.
+- Returning patients metric.
 - Frequent visitors metric.
 - Referral count metric.
 - Low-stock medicine alert.
@@ -68,16 +68,16 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Configurable low-stock threshold.
 - Configurable expiration alert window.
 - Clickable low-stock and expiring-medicine rows.
-- Quick patient search by student ID, name, course, or year/grade.
+- Quick patient search by name, course, or year/grade.
 - Search result limit for quick scanning.
 - View Records action from dashboard results.
-- Student clinical-record modal from dashboard search.
+- Patient clinical-record modal from dashboard search.
 
 ### Patients and Clinical Visits
 
 - Find a Patient tab.
 - Visit History tab.
-- Patient search by student ID, name, course, or year/grade.
+- Patient search by name, course, or year/grade.
 - Education-level filters for College, Senior High School, Junior High School, Elementary School, and Kindergarten.
 - Course, section, or strand filter.
 - Grouped college course options.
@@ -88,16 +88,18 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Add, select, edit, and delete patient actions.
 - Deleted patient recovery.
 - Patient initials avatar.
-- Student ID, name, course, year, sex, age, contact, guardian, allergies, and medical-condition display.
+- Name, course, year, sex, contact, guardian, allergies, medical conditions, and registration symptoms display.
 - Warning styling for known allergies and medical conditions.
-- Required student ID, last name, and given name validation.
-- Duplicate student ID validation.
+- Required last name and given name validation.
+- Automatic internal patient record identifiers.
+- Duplicate patient matching to reuse the existing profile and its Clinical Visit Records.
 - Middle initial field.
 - Year-level field.
 - Age field with minimum and maximum values.
 - Sex selection.
 - Contact number field.
 - Parent or guardian name and contact fields.
+- Symptom checklist with Other option on the patient registration form.
 - Patient save and update confirmations.
 - Patient audit entries for additions, updates, and deletions.
 - Clinical Visit Records section.
@@ -109,16 +111,13 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Nurse-on-duty field.
 - Reason selection with Other option.
 - Detailed description field.
-- Symptom start field.
-- Pain level and pain location fields.
-- Symptom checklist with Other option.
-- Medical history fields for conditions, allergies, medication, similar symptoms, and last meal.
+- Symptom start and pain level fields.
+- Medical history fields for conditions, allergies, and current medication.
 - Vital-sign fields for weight, height, temperature, blood pressure, heart rate, and oxygen saturation.
-- Nurse assessment checklist with Other option.
-- Nurse notes and assessment field.
+- Nurse notes field.
 - Treatment and intervention checklist with Other option.
 - Additional treatment details field.
-- Medication, dosage, and quantity-used fields.
+- Medication and quantity-used fields.
 - Clinic disposition selection.
 - Release or referral time field.
 - Remarks field.
@@ -143,7 +142,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Medicines tab.
 - Search by medicine name, item code, or category.
 - Status filters for Available, Low Stock, Out of Stock, Expiring Soon, and Expired.
-- Item code, name, category, quantity, unit, batch, expiration, and supplier fields.
+- Item code, name, category, quantity, unit, and expiration fields.
 - Add, edit, and delete medicine actions.
 - Required medicine-name validation.
 - Quantity and unit selection.
@@ -153,27 +152,28 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Deleted medicine recovery.
 - Permanent medicine deletion confirmation.
 - Medicine audit entries.
+- Catalog entries for Mefenamic, Cetirizine, Paracetamol, Symdex, Carbocisteine, Aluminum Magnesium Antacid, Ibuprofen, and Loperamide.
 
-### Equipment and Medical Tools
+### Medical Supplies
 
-- Equipment and Medical Tools tab.
-- Search by equipment name or ID.
-- Status filters for Available, Under Maintenance, Damaged, and Replacement Needed.
-- Equipment ID, name, quantity, condition, maintenance date, and status fields.
-- Add, edit, and delete equipment actions.
-- Required equipment-name validation.
+- Medical Supplies tab; the Medical Equipment tab is no longer shown.
+- Search by supply name or ID.
+- Supply ID, name, quantity, maintenance date, and status fields.
+- Add, edit, and delete supply actions.
+- Required supply-name validation.
 - Quantity entry.
-- Good, Fair, and Poor condition options.
-- Equipment status selection.
+- Supply status selection.
 - Pagination.
-- Deleted equipment recovery.
-- Permanent equipment deletion confirmation.
-- Equipment audit entries.
+- Deleted supply recovery.
+- Permanent supply deletion confirmation.
+- Supply audit entries.
+- Catalog includes Bandage, White Flower Oil, Mupirocin, and Eye Mo. Alcohol, Cotton Swabs, and Hand Sanitizer are retired from active supplies.
+- Historical Medical Equipment records remain stored but are hidden from the active inventory interface.
 
 ### Reports and Insights
 
 - Total clinic visits metric.
-- Unique students served metric.
+- Unique patients served metric.
 - Frequent clinic visitors metric.
 - Common reasons for visits metric.
 - Visits by grade level or section metric.
@@ -228,7 +228,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Deleted patient visits list.
 - Deleted patients list.
 - Deleted medicines list.
-- Deleted equipment list.
+- Deleted inventory items list.
 - Deleted users list.
 - Restore actions for every record category.
 - Permanent delete actions.
@@ -280,8 +280,8 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_users` for staff accounts and future Supabase Auth user links.
 - `patients` for student and patient profiles.
 - `clinical_visits` for consultation records, vital signs, assessments, treatments, outcomes, and visit revisions.
-- `medicines` for medicine stock, batches, expiration dates, suppliers, and soft deletion.
-- `equipment` for medical tools, quantities, maintenance dates, conditions, statuses, and soft deletion.
+- `medicines` for medicine stock, expiration dates, and soft deletion. Legacy batch and supplier columns are retained for existing records but are no longer used by the application.
+- `equipment` for medical supply quantities, maintenance dates, statuses, and soft deletion. Legacy equipment and condition data are retained for historical records.
 - `audit_logs` for user actions and module activity.
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.

@@ -35,6 +35,7 @@ create table if not exists public.patients (
   guardian_contact text,
   allergies text default 'Not Yet Assessed',
   medical_conditions text default 'None',
+  symptoms jsonb not null default '[]'::jsonb,
   deleted_at timestamptz,
   deleted_by text,
   created_at timestamptz not null default now(),
@@ -42,6 +43,8 @@ create table if not exists public.patients (
 );
 
 alter table public.patients alter column allergies set default 'Not Yet Assessed';
+alter table public.patients
+  add column if not exists symptoms jsonb not null default '[]'::jsonb;
 
 create table if not exists public.medicines (
   code text primary key,
@@ -49,6 +52,7 @@ create table if not exists public.medicines (
   category text not null default 'General',
   quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
+  -- Legacy fields remain nullable for existing rows; the clinic UI/API no longer use them.
   batch_number text,
   expiration_date date,
   supplier text,
@@ -60,8 +64,9 @@ create table if not exists public.medicines (
 create table if not exists public.equipment (
   id text primary key,
   name text not null,
-  category text not null default 'Medical Equipment' check (category in ('Medical Equipment', 'Medical Supplies')),
+  category text not null default 'Medical Supplies' check (category in ('Medical Equipment', 'Medical Supplies')),
   quantity integer not null default 0 check (quantity >= 0),
+  -- Retained for historical equipment data; the Medical Supplies UI does not expose condition.
   condition text not null default 'Good' check (condition in ('Good', 'Fair', 'Poor')),
   last_maintenance_date date,
   status text not null default 'Available' check (status in ('Available', 'Under Maintenance', 'Damaged', 'Replacement Needed')),
@@ -72,6 +77,8 @@ create table if not exists public.equipment (
 
 alter table public.equipment
   add column if not exists category text not null default 'Medical Equipment';
+alter table public.equipment
+  alter column category set default 'Medical Supplies';
 
 do $$
 begin

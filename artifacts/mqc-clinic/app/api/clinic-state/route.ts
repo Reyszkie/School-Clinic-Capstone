@@ -120,6 +120,7 @@ function normalizePatientRow(row: Record<string, unknown>) {
     guardian_contact: row.guardianContact ?? row.guardian_contact ?? null,
     allergies: row.allergies ?? "Not Yet Assessed",
     medical_conditions: row.conditions ?? row.medicalConditions ?? row.medical_conditions ?? "None",
+    symptoms: Array.isArray(row.symptoms) ? row.symptoms : [],
     deleted_at: normalizeDeletedAt(row),
     deleted_by: row.deletedBy ?? row.deleted_by ?? null,
     updated_at: new Date().toISOString(),
@@ -133,9 +134,7 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
     category: row.category ?? "General",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
     unit: row.unit ?? "piece",
-    batch_number: row.batch ?? row.batchNumber ?? row.batch_number ?? null,
     expiration_date: toDateValue(row.exp ?? row.expirationDate ?? row.expiration_date),
-    supplier: row.supplier ?? null,
     deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
   };
@@ -146,7 +145,7 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
   return {
     id: row.id ?? null,
     name: row.name ?? "",
-    category: row.category ?? "Medical Equipment",
+    category: row.category ?? "Medical Supplies",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
     condition,
     last_maintenance_date: toDateValue(row.lastMaint ?? row.lastMaintenanceDate ?? row.last_maintenance_date),
@@ -319,6 +318,7 @@ function patientFromRow(row: Record<string, unknown>) {
     guardianContact: row.guardian_contact,
     allergies: row.allergies,
     conditions: row.medical_conditions,
+    symptoms: Array.isArray(row.symptoms) ? row.symptoms : [],
     deleted: Boolean(row.deleted_at),
     deletedAt: row.deleted_at,
     deletedBy: row.deleted_by,
@@ -332,9 +332,7 @@ function medicineFromRow(row: Record<string, unknown>) {
     category: row.category,
     qty: row.quantity,
     unit: row.unit,
-    batch: row.batch_number,
     exp: row.expiration_date,
-    supplier: row.supplier,
     deleted: Boolean(row.deleted_at),
     deletedAt: row.deleted_at,
   };
@@ -344,7 +342,7 @@ function equipmentFromRow(row: Record<string, unknown>) {
   return {
     id: row.id,
     name: row.name,
-    category: row.category ?? "Medical Equipment",
+    category: row.category ?? "Medical Supplies",
     qty: row.quantity,
     condition: row.condition,
     lastMaint: row.last_maintenance_date,

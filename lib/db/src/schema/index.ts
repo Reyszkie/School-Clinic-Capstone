@@ -61,6 +61,7 @@ export const patientsTable = pgTable("patients", {
 	guardianContact: text("guardian_contact"),
 	allergies: text("allergies").default("Not Yet Assessed"),
 	medicalConditions: text("medical_conditions").default("None"),
+	symptoms: jsonb("symptoms").$type<string[]>().notNull().default([]),
 	deletedAt: timestamp("deleted_at", { withTimezone: true }),
 	deletedBy: text("deleted_by"),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -89,7 +90,7 @@ export const medicinesTable = pgTable("medicines", {
 export const equipmentTable = pgTable("equipment", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),
-	category: text("category").notNull().default("Medical Equipment"),
+	category: text("category").notNull().default("Medical Supplies"),
 	quantity: integer("quantity").notNull().default(0),
 	condition: text("condition").notNull().default("Good"),
 	lastMaintenanceDate: date("last_maintenance_date"),

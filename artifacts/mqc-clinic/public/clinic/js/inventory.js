@@ -28,10 +28,10 @@ function medStatus(m){
   return {label:"Available", chip:"chip-available"};
 }
 function renderInventory(){
+  if(!["medicines","supplies"].includes(state.invTab))state.invTab="medicines";
   return `
   <div class="subtabs">
     <button class="subtab ${state.invTab==='medicines'?'active':''}" data-itab="medicines">Medicines</button>
-    <button class="subtab ${state.invTab==='equipment'?'active':''}" data-itab="equipment">Medical Equipment</button>
     <button class="subtab ${state.invTab==='supplies'?'active':''}" data-itab="supplies">Medical Supplies</button>
   </div>
   <div id="inv-body"></div>`;
@@ -50,16 +50,14 @@ function renderMedicinesTab(){
   const totalPages=Math.max(1,Math.ceil(list.length/perPage));
   if(state.medPage>totalPages) state.medPage=totalPages;
   const pageItems=list.slice((state.medPage-1)*perPage, state.medPage*perPage);
-  const rows = pageItems.length===0? `<tr><td colspan="9">${emptyState("No medicines match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="7">${emptyState("No medicines match your filters.")}</td></tr>` :
     pageItems.map(m=>{ const st=medStatus(m); return `
     <tr>
       <td class="mono">${m.code}</td>
       <td>${escapeHtml(m.name)}</td>
       <td>${escapeHtml(m.category)}</td>
       <td class="mono">${m.qty} ${m.unit}</td>
-      <td class="mono">${m.batch}</td>
       <td>${fmtDate(m.exp)}</td>
-      <td>${escapeHtml(m.supplier)}</td>
       <td><span class="chip ${st.chip}">${st.label}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>
@@ -79,7 +77,7 @@ function renderMedicinesTab(){
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Quantity</th><th>Batch</th><th>Expiration</th><th>Supplier</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Quantity</th><th>Expiration</th><th>Status</th><th></th></tr></thead>
         <tbody id="med-tbody">${rows}</tbody>
       </table>
     </div>
@@ -93,7 +91,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
   const previousRecords=records.slice();
   const inventorySnapshot=captureInventoryState();
   const previousQuantity=existing?Number(existing.qty)||0:0;
-  const noun=itemType==="medicine"?"Medicine":"Equipment";
+  const noun=itemType==="medicine"?"Medicine":"Medical Supply";
   const saved=await commitClinicRecordMutation({
     apply:()=>{
       ensureInventoryLedger();
@@ -116,14 +114,14 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
     save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id),
     auditAction:existing?`Inventory Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`Inventory Item Added — ${record.name}`,
     detail:itemType==="medicine"?record.code:record.id,
-    module:itemType==="medicine"?"Medicines":"Equipment",successTitle:existing?`${noun} updated`:`${noun} added`,
+    module:itemType==="medicine"?"Medicines":"Medical Supplies",successTitle:existing?`${noun} updated`:`${noun} added`,
     successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh:()=>{if(state.page==="inventory")refresh();else render();},
   });
   return saved;
 }
 function openMedicineForm(existing=null){
   const isEdit=!!existing;
-  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", batch:"", exp:"", supplier:""};
+  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", exp:""};
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} Medicine</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
@@ -133,9 +131,7 @@ function openMedicineForm(existing=null){
       <div class="f-field"><label>Category</label><input type="text" id="mf-category" value="${escapeHtml(f.category)}" placeholder="e.g. Analgesic"></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="mf-qty" value="${f.qty}"></div>
       <div class="f-field"><label>Unit</label><select id="mf-unit">${["tablet","bottle","tube","piece","roll","sachet","box"].map(u=>`<option ${f.unit===u?'selected':''}>${u}</option>`).join("")}</select></div>
-      <div class="f-field"><label>Batch Number</label><input type="text" id="mf-batch" value="${f.batch}"></div>
       <div class="f-field"><label>Expiration Date</label><input type="date" id="mf-exp" value="${f.exp}"></div>
-      <div class="f-field full"><label>Supplier</label><input type="text" id="mf-supplier" value="${escapeHtml(f.supplier)}"></div>
     </form>
   </div>
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="mf-save">${ICONS.check} Save Medicine</button></div>`;
@@ -148,9 +144,7 @@ function openMedicineForm(existing=null){
       category: document.getElementById('mf-category').value || "General",
       qty: parseInt(document.getElementById('mf-qty').value)||0,
       unit: document.getElementById('mf-unit').value,
-      batch: document.getElementById('mf-batch').value || "N/A",
       exp: document.getElementById('mf-exp').value,
-      supplier: document.getElementById('mf-supplier').value || "N/A",
       deleted:false,
     };
     const saveButton=document.getElementById('mf-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
@@ -186,13 +180,12 @@ function bindMedicinesTab(){
     };
   });
 }
-function renderEquipmentTab(category){
-  const isSupplyCategory=category==="Medical Supplies";
+function renderEquipmentTab(){
   const perPage=8;
   const rawQ=document.getElementById('eq-search')?.value||"";
   const q=rawQ.toLowerCase();
   const statusF=document.getElementById('eq-status')?.value||"";
-  let list = EQUIPMENT.filter(e=>!e.deleted&&e.category===category).filter(e=>{
+  let list = EQUIPMENT.filter(e=>!e.deleted&&e.category==="Medical Supplies").filter(e=>{
     const matchQ=!q || e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q);
     const matchStatus = !statusF || e.status===statusF;
     return matchQ && matchStatus;
@@ -201,13 +194,12 @@ function renderEquipmentTab(category){
   if(state.eqPage>totalPages) state.eqPage=totalPages;
   const pageItems=list.slice((state.eqPage-1)*perPage, state.eqPage*perPage);
   const chipMap={"Available":"chip-available","Under Maintenance":"chip-maint","Damaged":"chip-damaged","Replacement Needed":"chip-out"};
-  const rows = pageItems.length===0? `<tr><td colspan="7">${emptyState(`No ${isSupplyCategory?"supplies":"equipment"} match your filters.`)}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="6">${emptyState("No supplies match your filters.")}</td></tr>` :
     pageItems.map(e=>`
     <tr>
       <td class="mono">${e.id}</td>
       <td>${escapeHtml(e.name)}</td>
       <td class="mono">${e.qty}</td>
-      <td>${e.condition}</td>
       <td>${fmtDate(e.lastMaint)}</td>
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
@@ -223,10 +215,10 @@ function renderEquipmentTab(category){
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Under Maintenance","Damaged","Replacement Needed"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
       </select>
-      <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add ${isSupplyCategory?"Supply":"Equipment"}</button>
+      <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Supply</button>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>ID</th><th>${isSupplyCategory?"Supply":"Equipment"}</th><th>Qty</th><th>Condition</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>ID</th><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
@@ -234,19 +226,17 @@ function renderEquipmentTab(category){
     </div>
   </div>`;
 }
-function openEquipmentForm(existing=null,category=state.invTab==='supplies'?"Medical Supplies":"Medical Equipment"){
+function openEquipmentForm(existing=null){
   const isEdit=!!existing;
-  const f=existing||{id:uid("EQP"), name:"", category, qty:1, condition:"Good", lastMaint:"", status:"Available"};
-  const itemLabel=f.category==="Medical Supplies"?"Supply":"Equipment";
+  const f=existing||{id:uid("EQP"), name:"", category:"Medical Supplies", qty:1, condition:"Good", lastMaint:"", status:"Available"};
+  const itemLabel="Supply";
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} ${itemLabel}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
     <form class="form-grid" id="eq-form">
       <div class="f-field"><label>Item ID</label><input type="text" id="ef-id" value="${f.id}" ${isEdit?'readonly style="background:#F7FAFD;"':''}></div>
       <div class="f-field full"><label>${itemLabel} Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
-      <div class="f-field"><label>Category</label><select id="ef-category">${["Medical Equipment","Medical Supplies"].map(value=>`<option ${f.category===value?'selected':''}>${value}</option>`).join("")}</select></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="ef-qty" value="${f.qty}"></div>
-      <div class="f-field"><label>Condition</label><select id="ef-condition">${["Good","Fair","Poor"].map(c=>`<option ${f.condition===c?'selected':''}>${c}</option>`).join("")}</select></div>
       <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
     </form>
@@ -256,8 +246,8 @@ function openEquipmentForm(existing=null,category=state.invTab==='supplies'?"Med
   document.getElementById('ef-save').onclick=async()=>{
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information',`${itemLabel} name is required.`,'err'); return; }
-    const rec={ id:document.getElementById('ef-id').value, name, category:document.getElementById('ef-category').value, qty:parseInt(document.getElementById('ef-qty').value)||0,
-      condition:document.getElementById('ef-condition').value, lastMaint:document.getElementById('ef-maint').value,
+    const rec={ id:document.getElementById('ef-id').value, name, category:"Medical Supplies", qty:parseInt(document.getElementById('ef-qty').value)||0,
+      condition:existing?.condition||"Good", lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
     const saveButton=document.getElementById('ef-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     try{const saved=await saveInventoryRecord({itemType:"equipment",records:EQUIPMENT,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
@@ -278,16 +268,16 @@ function bindEquipmentTab(){
   };
   const s=document.getElementById('eq-search'); if(s) s.oninput=rerender;
   const st=document.getElementById('eq-status'); if(st) st.onchange=rerender;
-  document.getElementById('add-eq-btn').onclick=()=>openEquipmentForm(null,state.invTab==='supplies'?"Medical Supplies":"Medical Equipment");
+  document.getElementById('add-eq-btn').onclick=()=>openEquipmentForm();
   document.querySelectorAll('[data-eqpage]').forEach(b=> b.onclick=()=>{ state.eqPage += b.dataset.eqpage==='next'?1:-1; if(state.eqPage<1) state.eqPage=1; rerender(); });
   document.querySelectorAll('[data-edit-eq]').forEach(b=> b.onclick=()=>openEquipmentForm(EQUIPMENT.find(e=>e.id===b.dataset.editEq)));
   document.querySelectorAll('[data-del-eq]').forEach(b=>{
     b.onclick=()=>{
       const rec=EQUIPMENT.find(e=>e.id===b.dataset.delEq);
       if(!rec)return;
-      confirmDialog({title:"Delete this equipment record?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
+      confirmDialog({title:"Delete this supply?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Equipment ${rec.name}`,module:"Equipment",status:"Warning",successTitle:"Equipment deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.id,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Medical Supply ${rec.name}`,module:"Medical Supplies",status:"Warning",successTitle:"Supply deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.id,refresh:rerender});
       }});
     };
   });
@@ -295,5 +285,5 @@ function bindEquipmentTab(){
 function renderInventoryTabBody(){
   const body=document.getElementById('inv-body');
   if(state.invTab==='medicines'){ body.innerHTML=renderMedicinesTab(); bindMedicinesTab(); }
-  else { body.innerHTML=renderEquipmentTab(state.invTab==='supplies'?"Medical Supplies":"Medical Equipment"); bindEquipmentTab(); }
+  else { state.invTab="supplies";body.innerHTML=renderEquipmentTab(); bindEquipmentTab(); }
 }

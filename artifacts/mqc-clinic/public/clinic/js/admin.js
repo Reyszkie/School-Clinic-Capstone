@@ -191,11 +191,11 @@ function renderDeletedTab(){
       ${rows.length===0?emptyState(empty):`<div class="table-wrap"><table>${rows}</table></div>`}
     </div>`;
   const consultRows = delConsults.length? `<thead><tr><th>Record</th><th>Patient</th><th>Date</th><th></th></tr></thead><tbody>${
-    delConsults.map(c=>`<tr><td class="mono">${escapeHtml(c.id)}</td><td>${escapeHtml(c.studentName||c.studentId||"Unknown patient")}</td><td>${fmtDate(c.date)}</td>
+    delConsults.map(c=>`<tr><td class="mono">${escapeHtml(c.id)}</td><td>${escapeHtml(c.studentName||"Unknown patient")}</td><td>${fmtDate(c.date)}</td>
     <td>${rowActions("restore-dc",c.id,"perm-dc")}</td></tr>`).join("")
   }</tbody>`:"";
-  const studentRows = delStudents.length? `<thead><tr><th>Student ID</th><th>Name</th><th>Course / Year</th><th>Deleted</th><th></th></tr></thead><tbody>${
-    delStudents.map(s=>`<tr><td class="mono">${escapeHtml(s.id)}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</td><td>${fmtDeletedDate(s.deletedAt)}</td>
+  const studentRows = delStudents.length? `<thead><tr><th>Name</th><th>Course / Year</th><th>Deleted</th><th></th></tr></thead><tbody>${
+    delStudents.map(s=>`<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</td><td>${fmtDeletedDate(s.deletedAt)}</td>
     <td>${rowActions("restore-dp",s.id,"perm-dp")}</td></tr>`).join("")
   }</tbody>`:"";
   const medRows = delMeds.length? `<thead><tr><th>Code</th><th>Name</th><th>Deleted</th><th></th></tr></thead><tbody>${
@@ -213,7 +213,7 @@ function renderDeletedTab(){
   return section("Deleted Patient Visits", consultRows, "No deleted patient visits.")
     + section("Deleted Patients", studentRows, "No deleted patients.")
     + section("Deleted Medicines", medRows, "No deleted medicines.")
-    + section("Deleted Equipment", eqRows, "No deleted equipment.")
+    + section("Deleted Inventory Items", eqRows, "No deleted inventory items.")
     + section("Deleted Users", userRows, "No deleted users.");
 }
 async function commitDeletedRecordChange({label,apply,rollback,purge,auditAction,auditActions,module,status="Success",successTitle,successMessage}){

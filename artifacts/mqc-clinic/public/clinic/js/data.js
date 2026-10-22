@@ -68,11 +68,13 @@ function seedStudents(){
 }
 const STUDENTS = seedStudents();
 
-const MEDICAL_EQUIPMENT_NAMES=["Digital Thermometer","Blood Pressure Monitor","Stethoscope","Pulse Oximeter","Scissors","Tweezers","Nebulizer"];
-const MEDICAL_SUPPLY_NAMES=["Cotton Swabs","Cotton Balls","Alcohol","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads","Medical Tape","Hand Sanitizer","Disposable Face Masks","Medical Gloves"];
-const INVENTORY_CATALOG_VERSION=2;
+const MEDICINE_CATALOG_NAMES=["Mefenamic","Cetirizine","Paracetamol","Symdex","Carbocisteine","Aluminum Magnesium Antacid","Ibuprofen","Loperamide"];
+const HISTORIC_MEDICAL_EQUIPMENT_NAMES=["Digital Thermometer","Blood Pressure Monitor","Stethoscope","Pulse Oximeter","Scissors","Tweezers","Nebulizer"];
+const MEDICAL_SUPPLY_NAMES=["Cotton Balls","Elastic Bandage","Adhesive Bandages (Band-Aids)","Gauze Pads","Medical Tape","Disposable Face Masks","Medical Gloves","Bandage","White Flower Oil","Mupirocin","Eye Mo"];
+const REMOVED_MEDICAL_SUPPLY_NAMES=["Alcohol","Cotton Swabs","Hand Sanitizer"];
+const INVENTORY_CATALOG_VERSION=3;
 let MEDICINES = [];
-let EQUIPMENT = [...MEDICAL_EQUIPMENT_NAMES.map((name,index)=>({id:`EQP-DEFAULT-EQ-${String(index+1).padStart(2,"0")}`,name,category:"Medical Equipment"})),...MEDICAL_SUPPLY_NAMES.map((name,index)=>({id:`EQP-DEFAULT-SUP-${String(index+1).padStart(2,"0")}`,name,category:"Medical Supplies"}))].map(item=>({...item,qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false}));
+let EQUIPMENT = MEDICAL_SUPPLY_NAMES.map((name,index)=>({id:`EQP-DEFAULT-SUP-${String(index+1).padStart(2,"0")}`,name,category:"Medical Supplies"})).map(item=>({...item,qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false}));
 const VISIT_SUPPLY_NAMES=MEDICAL_SUPPLY_NAMES;
 const INVENTORY_ITEM_NAME_ALIASES={
   "Alcohol (70% Isopropyl)":"Alcohol",

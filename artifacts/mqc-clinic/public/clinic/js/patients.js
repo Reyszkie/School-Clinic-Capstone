@@ -8,7 +8,7 @@ function renderConsultation(){
 
 function renderConsultSearchTab(){
   return `<div class="card"><div class="toolbar">
-    <div class="search-box"><span class="ic">${ICONS.search}</span><input id="stu-search" type="text" placeholder="Search by Student ID, name, course, or year/grade..."></div>
+    <div class="search-box"><span class="ic">${ICONS.search}</span><input id="stu-search" type="text" placeholder="Search by patient name, course, or year/grade..."></div>
     <select class="select-sm patient-level-filter" id="stu-department-filter" aria-label="Filter by education level">
       <option value="">All education levels</option>
       <option value="College" ${state.departmentFilter==="College"?"selected":""}>College</option>
@@ -19,13 +19,13 @@ function renderConsultSearchTab(){
     </select>
     <select class="select-sm hidden" id="stu-course-filter"><option value="">All Courses / Sections</option>${courseOptionsHtml("")}</select>
     <button class="btn btn-teal" id="add-student-btn">${ICONS.plus} Add New Patient</button>
-  </div><div class="table-wrap"><table><thead><tr><th>Student ID</th><th>Name</th><th>Course / Section / Strand</th><th>Year / Grade</th><th>Sex</th><th></th></tr></thead>
+  </div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Course / Section / Strand</th><th>Year / Grade</th><th>Sex</th><th></th></tr></thead>
     <tbody id="stu-tbody"></tbody></table></div></div>`;
 }
 
 function studentTableRows(list){
-  if(!list.length) return `<tr><td colspan="6">${emptyState("No patients found. Try a different search term.")}</td></tr>`;
-  return list.slice(0,12).map(s=>`<tr><td class="mono">${escapeHtml(s.id)}</td><td>${escapeHtml(s.name)}</td>
+  if(!list.length) return `<tr><td colspan="5">${emptyState("No patients found. Try a different search term.")}</td></tr>`;
+  return list.slice(0,12).map(s=>`<tr><td>${escapeHtml(s.name)}</td>
     <td>${escapeHtml(s.course||"—")}</td><td>${escapeHtml(s.year||"—")}</td><td>${escapeHtml(s.gender||s.sex||"—")}</td>
     <td><div class="row-actions"><button class="btn" style="padding:6px 12px;" data-select-stu="${escapeHtml(s.id)}">Select</button>
     <button class="mini-btn danger" data-del-stu="${escapeHtml(s.id)}" title="Delete">${ICONS.trash_sm}</button></div></td></tr>`).join("");
@@ -70,7 +70,7 @@ function renderStudentDetail(s, inModal=false){
   const allergyValue=allergy.status==="allergies"?allergy.detail:allergy.status==="none"?"No Known Allergies":"Not Yet Assessed";
   return `<div class="${inModal?"student-detail-content":"card"}" ${inModal?"":"style=\"margin-top:16px;\""}><div class="student-card">
     <div class="s-avatar">${escapeHtml(initials)}</div><div style="flex:1"><h3 style="font-size:19px">${escapeHtml(displayName)}</h3>
-      <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.id)} · ${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</div></div>
+      <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</div></div>
     <button class="btn" id="edit-student-btn">${ICONS.edit} Edit Profile</button>
     <button class="btn btn-teal" id="open-consult-form">${ICONS.plus} New Patient Visit</button>
     <button class="btn btn-outline-red" id="delete-student-btn">${ICONS.trash_sm} Delete Patient</button>
@@ -80,6 +80,7 @@ function renderStudentDetail(s, inModal=false){
     <div class="info-cell"><div class="lbl">Parent / Guardian</div><div class="val">${escapeHtml(s.guardianName||s.emergency||"—")}</div></div>
     <div class="info-cell"><div class="lbl">Guardian Contact</div><div class="val mono">${escapeHtml(s.guardianContact||"—")}</div></div>
     <div class="info-cell" style="grid-column:span 2"><div class="lbl">Course / Section / Strand</div><div class="val">${escapeHtml(s.course||"—")}</div></div>
+    <div class="info-cell" style="grid-column:span 2"><div class="lbl">Symptoms at Registration</div><div class="val">${escapeHtml((s.symptoms||[]).join(", ")||"None recorded")}</div></div>
   </div>${renderStudentClinicalRecords(s)}</div>`;
 }
 
@@ -88,7 +89,7 @@ function filterStudents(){
   const course=document.getElementById("stu-course-filter").value;
   const department=document.getElementById("stu-department-filter").value||"";
   return STUDENTS.filter(s=>!s.deleted).filter(s=>{
-    const searchable=[s.id,s.name,s.course,s.year,s.lastName,s.firstName].join(" ").toLowerCase();
+    const searchable=[s.name,s.course,s.year,s.lastName,s.firstName].join(" ").toLowerCase();
     return (!q||searchable.includes(q))&&(!course||s.course===course)&&(!department||educationGroupFor(s.course,s.year)===department);
   });
 }
@@ -109,23 +110,24 @@ function bindConsultSearch(){
 function openStudentForm(existing=null){
   let isEdit=!!existing;
   let editingStudent=existing;
-  const f=existing||{id:"",lastName:"",firstName:"",middleInitial:"",course:COLLEGE_COURSES[0],year:"1st Year",gender:"Male",guardianName:"",guardianContact:""};
+  const f=existing||{lastName:"",firstName:"",middleInitial:"",course:COLLEGE_COURSES[0],year:"1st Year",gender:"Male",guardianName:"",guardianContact:"",symptoms:[]};
   const parts=(f.name||"").split(",");
   const lastName=f.lastName||parts[0]||"";
   const firstName=f.firstName||(parts[1]||"").trim().split(" ")[0]||"";
   const html=`<div class="modal-head"><h3 id="student-form-title">${isEdit?"Edit":"Add New"} Patient</h3><button class="modal-close" onclick="closeModal()" aria-label="Close patient form">${ICONS.x}</button></div>
   <div class="modal-body"><form class="form-grid" id="stu-form">
-    <div class="f-field"><label>Student ID <span class="req">*</span></label><input id="sf-id" value="${escapeHtml(f.id)}" placeholder="e.g. 2026-10099" ${isEdit?"readonly style='background:#F7FAFD;'":""}></div>
-    <div class="f-field"><label>Last Name <span class="req">*</span></label><input id="sf-lastname" value="${escapeHtml(lastName)}"></div>
-    <div class="f-field"><label>Given Name <span class="req">*</span></label><input id="sf-firstname" value="${escapeHtml(firstName)}"></div>
+    <div class="f-field"><label>Last Name <span class="req">*</span></label><input id="sf-lastname" value="${escapeHtml(lastName)}" required></div>
+    <div class="f-field"><label>Given Name <span class="req">*</span></label><input id="sf-firstname" value="${escapeHtml(firstName)}" required></div>
     <div class="f-field"><label>Middle Initial</label><input id="sf-middle" maxlength="3" value="${escapeHtml(f.middleInitial||"")}" placeholder="M.I."></div>
     <div class="f-field"><label>Year Level <span class="req">*</span></label><select id="sf-year">${yearLevelOptionsHtml(f.year)}</select></div>
     <div class="f-field full"><label>Course / Section / Strand <span class="req">*</span></label><select id="sf-course">${courseOptionsForYearHtml(f.year,f.course)}</select></div>
     <div class="f-field"><label>Sex</label><select id="sf-gender">${["Male","Female"].map(g=>`<option ${f.gender===g?"selected":""}>${g}</option>`).join("")}</select></div>
     <div class="f-field"><label>Parent / Guardian Name</label><input id="sf-guardian" value="${escapeHtml(f.guardianName||f.emergency||"")}"></div>
     <div class="f-field full"><label for="sf-guardian-contact">Parent / Guardian Contact <span class="req">*</span></label><input id="sf-guardian-contact" type="text" inputmode="numeric" pattern="[0-9]{11}" minlength="11" autocomplete="tel-national" required aria-describedby="sf-guardian-contact-error" aria-invalid="false" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"><div class="field-error hidden" id="sf-guardian-contact-error" role="alert"></div></div>
+    <div class="f-field full"><label>Symptoms</label><div style="padding-top:5px">${optionListHtml(SYMPTOMS,f.symptoms||[],"patient-symptom")}<label class="option-check"><input type="checkbox" data-free-text-toggle="patient-symptom-other" ${(f.symptoms||[]).some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="patient-symptom-other" placeholder="Enter other symptoms" value="${escapeHtml((f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
   </form></div><div class="modal-foot"><span class="form-save-status" id="sf-status" aria-live="polite"></span><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Patient"}</button></div>`;
   openModal(html);
+  bindOptionFreeText("patient-symptom-other",(f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
   document.getElementById("sf-year").onchange=e=>{
     document.getElementById("sf-course").innerHTML=courseOptionsForYearHtml(e.target.value);
   };
@@ -149,13 +151,41 @@ function openStudentForm(existing=null){
   let patientSaveInProgress=false;
   document.getElementById("sf-save").onclick=async()=>{
     if(patientSaveInProgress)return;
-    const id=document.getElementById("sf-id").value.trim(), last=document.getElementById("sf-lastname").value.trim(), first=document.getElementById("sf-firstname").value.trim(), middle=document.getElementById("sf-middle").value.trim();
-    if(!id||!last||!first){toast("Missing information","Student ID, last name, and given name are required.","err");return;}
-    if(!isEdit&&STUDENTS.some(s=>s.id.toLowerCase()===id.toLowerCase())){toast("Duplicate Student ID",`A student with ID ${id} already exists.`,"err");return;}
+    const last=document.getElementById("sf-lastname").value.trim(), first=document.getElementById("sf-firstname").value.trim(), middle=document.getElementById("sf-middle").value.trim();
+    if(!last||!first){toast("Missing information","Last name and given name are required.","err");return;}
+    const symptoms=selectedChecks('[data-check-group="patient-symptom"]');
+    const symptomOther=document.querySelector('[data-free-text="patient-symptom-other"]')?.value.trim();
+    if(symptomOther)symptoms.push(`Other: ${symptomOther}`);
+    const course=document.getElementById("sf-course").value,year=document.getElementById("sf-year").value;
+    const guardianContactValue=guardianContact.value.trim();
+    const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
+    const matchingPatient=!isEdit&&STUDENTS.find(patient=>
+      patient.lastName?.trim().toLowerCase()===last.toLowerCase()&&
+      patient.firstName?.trim().toLowerCase()===first.toLowerCase()&&
+      String(patient.middleInitial||"").trim().replace(/\.$/,"").toLowerCase()===middle.replace(/\.$/,"").toLowerCase()&&
+      (patient.course===course&&patient.year===year||Boolean(guardianContactValue&&String(patient.guardianContact||"").replace(/\D/g,"")===guardianContactValue))
+    );
+    if(matchingPatient){
+      const previousSymptoms=matchingPatient.symptoms||[];
+      const mergedSymptoms=[...new Set([...previousSymptoms,...symptoms])];
+      const symptomsChanged=mergedSymptoms.length!==previousSymptoms.length||mergedSymptoms.some((symptom,index)=>symptom!==previousSymptoms[index]);
+      const saved=!symptomsChanged
+        ? true
+        : await commitClinicRecordMutation({
+          apply:()=>{matchingPatient.symptoms=mergedSymptoms;},
+          rollback:()=>{matchingPatient.symptoms=previousSymptoms;},
+          auditAction:`Patient Registration Symptoms Updated — ${matchingPatient.id}`,
+          module:"Patients",detail:matchingPatient.id,
+          successTitle:"Existing patient found",
+          successMessage:`Symptoms were added to ${matchingPatient.name}'s profile. Open the existing patient record to add a visit.`,
+          refresh:renderConsultTabBody,
+        });
+      if(saved){closeModal();openStudentDetailModal(matchingPatient);}
+      return;
+    }
     guardianContactTouched=true;
     if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
-    const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
-    const rec={id,name,lastName:last,firstName:first,middleInitial:middle,course:document.getElementById("sf-course").value,year:document.getElementById("sf-year").value,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None"};
+    const rec={id:isEdit?editingStudent.id:newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,year,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
@@ -170,6 +200,15 @@ function openStudentForm(existing=null){
     });}finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
     if(saved)closeModal();
   };
+}
+
+function newPatientRecordId(){
+  let id;
+  do{
+    const uniqueId=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    id=`PT-${uniqueId}`;
+  }while(STUDENTS.some(patient=>patient.id===id)||DELETED_STUDENTS.some(patient=>patient.id===id));
+  return id;
 }
 
 function bindSelectButtons(){
@@ -204,7 +243,7 @@ function bindStudentDetailActions(student,root=document){
 
 function deleteStudent(s){
   if(!s)return;
-  confirmDialog({title:"Delete this patient?",msg:`<b>${escapeHtml(s.name)}</b> (${s.id}) will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Patient",onConfirm:async()=>{
+  confirmDialog({title:"Delete this patient?",msg:`<b>${escapeHtml(s.name)}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Patient",onConfirm:async()=>{
     const index=STUDENTS.findIndex(x=>x.id===s.id);
     if(index<0)return;
     const deleted={...s,deleted:true,deletedAt:new Date().toISOString(),deletedBy:state.currentUser?.name||"System"};
@@ -303,14 +342,10 @@ function openConsultationForm(student, existing=null){
     <div class="f-field full"><label>Reason for Clinic Visit <span class="req">*</span></label><select id="cf-complaint" required><option value="">Select reason</option>${COMPLAINTS.map(c=>`<option ${f.complaint===c?"selected":""}>${c}</option>`).join("")}<option ${f.complaint==="Other"?"selected":""}>Other</option></select><div id="cf-reason-other-wrap" class="${f.complaint==="Other"?"":"hidden"}" style="margin-top:10px"><label for="cf-reason-other">Specify Other Reason <span class="req">*</span></label><input id="cf-reason-other" value="${escapeHtml(f.reasonOther||"")}" maxlength="300" ${f.complaint==="Other"?"required":""}></div></div>
     <div class="f-field"><label>When did symptoms start?</label><input id="cf-start" value="${escapeHtml(f.symptomStart||"")}" placeholder="e.g. this morning"></div>
     <div class="f-field"><label>Pain Level</label><select id="cf-pain">${["0 – No pain","1–3 – Mild","4–6 – Moderate","7–9 – Severe","10 – Worst possible pain"].map(x=>`<option ${f.painLevel===x?"selected":""}>${x}</option>`).join("")}</select></div>
-    <div class="f-field"><label>Location of Pain</label><input id="cf-location" value="${escapeHtml(f.painLocation||"")}"></div>
-    <div class="f-field full"><label>Symptoms</label><div style="padding-top:5px">${optionListHtml(SYMPTOMS,f.symptoms||[],"symptom")}<label class="option-check"><input type="checkbox" id="cf-symptom-other" data-free-text-toggle="symptom-other" ${f.symptoms?.some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="symptom-other" placeholder="Enter other symptoms" value="${escapeHtml((f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
     <div class="f-field full"><label>Medical History</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
       <label>Known Medical Conditions<select id="cf-conditions"><option>No</option><option ${f.knownConditions==="Yes"?"selected":""}>Yes</option></select></label>
       <div><label for="cf-allergies">Allergies</label><select id="cf-allergies" required><option value="">Select</option><option value="Yes" ${allergyAnswer==="Yes"?"selected":""}>Yes</option><option value="No" ${allergyAnswer==="No"?"selected":""}>No</option></select><div id="cf-allergy-detail-wrap" class="${allergyAnswer==="Yes"?"":"hidden"}" style="margin-top:8px"><label for="cf-allergy-detail">Specify Allergies <span class="req">*</span></label><input id="cf-allergy-detail" value="${escapeHtml(allergyDetail)}" maxlength="500" ${allergyAnswer==="Yes"?"required":""} autocomplete="off"></div></div>
       <label>Current Medication<select id="cf-current-med"><option>No</option><option ${f.currentMedication==="Yes"?"selected":""}>Yes</option></select></label>
-      <label>Previous Similar Symptoms<select id="cf-previous"><option>No</option><option ${f.previousSimilar==="Yes"?"selected":""}>Yes</option></select></label>
-      <label style="grid-column:span 2">Last Meal / Food Consumed<input id="cf-meal" value="${escapeHtml(f.lastMeal||"")}"></label>
     </div></div>
     <div class="f-field full"><label>Vital Signs</label><div class="vital-signs-grid">
       <label>Body Temperature (°C)<input type="number" min="25" max="50" step="0.1" id="cf-temp" value="${escapeHtml(f.temp||"")}" placeholder="e.g. 36.8"></label>
@@ -320,13 +355,11 @@ function openConsultationForm(student, existing=null){
       <label>Oxygen Saturation (SpO2, %)<input type="number" min="0" max="100" id="cf-spo2" value="${escapeHtml(f.spo2||"")}" placeholder="e.g. 98"></label>
       <input type="hidden" id="cf-weight" value="${escapeHtml(f.weight||"")}"><input type="hidden" id="cf-height" value="${escapeHtml(f.height||"")}">
     </div></div>
-    <div class="f-field full"><label>Nurse's Assessment</label><div style="padding-top:5px">${optionListHtml(["Stable","Weak","Alert","Drowsy","In Pain"],f.assessment?[f.assessment]:[],"assessment")}<label class="option-check"><input type="checkbox" id="cf-assess-other" data-free-text-toggle="assessment-other" ${f.assessmentOther?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="assessment-other" placeholder="Enter other assessment" value="${escapeHtml(f.assessmentOther||"")}"></div></div>
     <div class="f-field full"><label>Treatment / Intervention</label><div style="padding-top:5px">${optionListHtml(INTERVENTIONS,f.interventions||[],"intervention") }<label class="option-check"><input type="checkbox" id="cf-intervention-other" data-free-text-toggle="intervention-other" ${f.interventions?.some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="intervention-other" placeholder="Enter other intervention" value="${escapeHtml((f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
     <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
       ${visitInventoryCard({id:"cf-medicine",label:"Medicines",items:meds,selected:f.medicine,quantityId:"cf-medqty",quantity:f.medQty,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable})}
       ${visitInventoryCard({id:"cf-supply",label:"Medical Supplies",items:supplies,selected:existingSupply,quantityId:"cf-supply-qty",quantity:f.supplyQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
     </div></div>
-    <div class="f-field"><label>Dosage / Instructions</label><input id="cf-dosage" value="${escapeHtml(f.dosage||"")}" placeholder="e.g. 1 tablet"></div>
     <div class="f-field full"><label>Clinic Disposition — Outcome</label><select id="cf-outcome">${DISPOSITIONS.map(x=>`<option ${f.outcome===x?"selected":""}>${x}</option>`).join("")}<option ${f.outcome==="Other"?"selected":""}>Other</option></select></div>
     <div class="f-field full"><label>Remarks</label><textarea id="cf-remarks">${escapeHtml(f.remarks||"")}</textarea></div>
     <div class="f-field full"><label>Parent / Guardian Notification</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
@@ -355,8 +388,6 @@ function openConsultationForm(student, existing=null){
     if(!hasAllergies)allergyDetailInput.value="";
     if(hasAllergies)allergyDetailInput.focus();
   });
-  bindOptionFreeText("symptom-other",(f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
-  bindOptionFreeText("assessment-other",f.assessmentOther||"");
   bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
   bindVisitInventoryCard({id:"cf-medicine",quantityId:"cf-medqty",items:meds,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable});
   bindVisitInventoryCard({id:"cf-supply",quantityId:"cf-supply-qty",items:supplies,unitForItem:()=>"items",availableForItem:equipmentAvailable});
@@ -371,11 +402,8 @@ function openConsultationForm(student, existing=null){
     if(supplyName&&(!Number.isInteger(supplyQty)||supplyQty<1)){toast("Invalid quantity","Enter a whole-number supply quantity of at least 1.","err");return;}
     const previous=isEdit?CONSULTATIONS.find(c=>c.id===existing.id):null;
     ensureInventoryLedger();
-    const symptoms=selectedChecks('[data-check-group="symptom"]'); const symptomOther=document.querySelector('[data-free-text="symptom-other"]')?.value.trim(); if(symptomOther)symptoms.push(`Other: ${symptomOther}`);
-    const assessment=selectedChecks('[data-check-group="assessment"]')[0]||"";
-    const assessmentOther=document.querySelector('[data-free-text="assessment-other"]')?.value.trim()||"";
     const interventions=selectedChecks('[data-check-group="intervention"]'); const interventionOther=document.querySelector('[data-free-text="intervention-other"]')?.value.trim(); if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther:complaint==="Other"?reasonOther:"",description:isEdit?f.description||"":"",symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:document.getElementById("cf-location").value,symptoms,knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?`Yes: ${allergyDetail}`:"No",currentMedication:document.getElementById("cf-current-med").value,previousSimilar:document.getElementById("cf-previous").value,lastMeal:document.getElementById("cf-meal").value,weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment,assessmentOther,notes:isEdit?f.notes||"":"",interventions,treatmentGiven:isEdit?f.treatmentGiven||"":"",dosage:document.getElementById("cf-dosage").value,medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyQty,equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("cf-outcome").value,releasedAt:isEdit?f.releasedAt||"":"",remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
+    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther:complaint==="Other"?reasonOther:"",description:isEdit?f.description||"":"",symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:isEdit?f.painLocation||"":"",symptoms:isEdit?f.symptoms||[]:[],knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?`Yes: ${allergyDetail}`:"No",currentMedication:document.getElementById("cf-current-med").value,previousSimilar:isEdit?f.previousSimilar||"":"",lastMeal:isEdit?f.lastMeal||"":"",weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment:isEdit?f.assessment||"":"",assessmentOther:isEdit?f.assessmentOther||"":"",notes:isEdit?f.notes||"":"",interventions,treatmentGiven:isEdit?f.treatmentGiven||"":"",dosage:isEdit?f.dosage||"":"",medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyQty,equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("cf-outcome").value,releasedAt:isEdit?f.releasedAt||"":"",remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
     rec.respiratoryRate=document.getElementById("cf-respiratory-rate").value;
     rec.supplyUsed=supplyName||(isEdit&&!supplies.some(item=>item.name===existingSupply)?existingSupply:"");
     const saveButton=document.getElementById("cf-save");
@@ -434,7 +462,7 @@ function consultationRows(c){
   return [
     ["Record No.",c.id],
     ["Date / Time",`${fmtDate(c.date)} · ${c.time||"—"}`],
-    ["Student",`${c.studentName||"—"} (${c.studentId||"—"})`],
+    ["Patient",c.studentName||"—"],
     ["Course / Year",`${c.course||"—"} — ${c.year||"—"}`],
     ["Nurse on Duty",c.nurse||"—"],
     ["Reason for Clinic Visit",c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint||"—"],
@@ -485,9 +513,9 @@ function printConsultation(c){
 
 function renderConsultHistory(){
   const rawQ=document.getElementById("ch-search")?.value||"",q=rawQ.toLowerCase(),status=document.getElementById("ch-status")?.value||"";
-   let list=CONSULTATIONS.filter(c=>(!q||[c.studentName,c.studentId,c.complaint,c.id,c.nurse,c.diagnosis,c.outcome,c.versionOf,c.supersededBy].join(" ").toLowerCase().includes(q))&&(!status||(status==="Deleted"?c.deleted:!c.deleted&&(status==="Superseded"?c.status==="Superseded":c.status===status)))).sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1));
+   let list=CONSULTATIONS.filter(c=>(!q||[c.studentName,c.complaint,c.id,c.nurse,c.diagnosis,c.outcome,c.versionOf,c.supersededBy].join(" ").toLowerCase().includes(q))&&(!status||(status==="Deleted"?c.deleted:!c.deleted&&(status==="Superseded"?c.status==="Superseded":c.status===status)))).sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1));
   const totalPages=Math.max(1,Math.ceil(list.length/8));if(state.consultPage>totalPages)state.consultPage=totalPages;const items=list.slice((state.consultPage-1)*8,state.consultPage*8);
-    const rows=items.length?items.map(c=>`<tr><td class="mono">${c.id}</td><td>${fmtDate(c.date)}<br><span style="color:var(--ink-soft);font-size:11.5px">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.studentName)}<br><span style="color:var(--ink-soft);font-size:11.5px">${escapeHtml(c.studentId)}</span></td><td>${escapeHtml(c.complaint)}</td><td>${escapeHtml(c.nurse)}</td><td>${escapeHtml(c.outcome||"—")}</td><td>${c.deleted?'<span class="chip chip-void">Deleted</span>':c.status==="Superseded"?'<span class="chip chip-low">Superseded</span>':'<span class="chip chip-available">Active</span>'}</td><td><div class="row-actions"><button class="mini-btn" data-view-consult="${c.id}" title="View clinical record">${ICONS.search}</button><button class="mini-btn" data-print="${c.id}" title="Print">${ICONS.print}</button>${c.deleted?`<button class="mini-btn good" data-restore-consult="${c.id}">${ICONS.restore}</button>`:c.status==="Superseded"?"":`<button class="mini-btn" data-edit-consult="${c.id}" title="Edit visit record">${ICONS.edit}</button><button class="mini-btn danger" data-del-consult="${c.id}">${ICONS.trash_sm}</button>`}</div></td></tr>`).join(""):`<tr><td colspan="8">${emptyState("No patient visits match your filters.")}</td></tr>`;
+    const rows=items.length?items.map(c=>`<tr><td class="mono">${c.id}</td><td>${fmtDate(c.date)}<br><span style="color:var(--ink-soft);font-size:11.5px">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.studentName)}</td><td>${escapeHtml(c.complaint)}</td><td>${escapeHtml(c.nurse)}</td><td>${escapeHtml(c.outcome||"—")}</td><td>${c.deleted?'<span class="chip chip-void">Deleted</span>':c.status==="Superseded"?'<span class="chip chip-low">Superseded</span>':'<span class="chip chip-available">Active</span>'}</td><td><div class="row-actions"><button class="mini-btn" data-view-consult="${c.id}" title="View clinical record">${ICONS.search}</button><button class="mini-btn" data-print="${c.id}" title="Print">${ICONS.print}</button>${c.deleted?`<button class="mini-btn good" data-restore-consult="${c.id}">${ICONS.restore}</button>`:c.status==="Superseded"?"":`<button class="mini-btn" data-edit-consult="${c.id}" title="Edit visit record">${ICONS.edit}</button><button class="mini-btn danger" data-del-consult="${c.id}">${ICONS.trash_sm}</button>`}</div></td></tr>`).join(""):`<tr><td colspan="8">${emptyState("No patient visits match your filters.")}</td></tr>`;
    return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits, patient, reason, nurse, or record ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status==="Active"?"selected":""}>Active</option><option ${status==="Superseded"?"selected":""}>Superseded</option><option ${status==="Deleted"?"selected":""}>Deleted</option></select></div><div class="table-wrap"><table><thead><tr><th>Record</th><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button data-page="prev">${ICONS.chevleft}</button><button data-page="next">${ICONS.chevright}</button></div></div></div>`;
 }
 
