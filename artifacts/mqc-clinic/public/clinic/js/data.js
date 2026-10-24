@@ -28,14 +28,37 @@ const YEAR_LEVEL_GROUPS = [
   {label:"College", options:["1st Year","2nd Year","3rd Year","4th Year"]},
 ];
 
-/* Builds the grouped <optgroup> markup for a Course/Department <select>. */
+const PERSONNEL_TYPES=[
+  "Registrar Personel",
+  "Admission Personel",
+  "OJT (On-the-Job Training)",
+  "Security Guard",
+  "Accounting Personel",
+  "Janitor Staff",
+  "Canteen Staff",
+  "TESDA Personnel",
+];
+
+/* Builds the grouped <optgroup> markup for an Institutional Category <select>. */
 function courseOptionsHtml(selected){
   return COURSE_GROUPS.map(g=>`<optgroup label="${g.label}">${
     g.options.map(c=>`<option ${selected===c?'selected':''}>${c}</option>`).join("")
-  }</optgroup>`).join("");
+  }</optgroup>`).join("")+`<option ${selected==="Campus Personnel"?'selected':''}>Campus Personnel</option>`;
 }
 function yearLevelOptionsHtml(selected){
   return YEAR_LEVEL_GROUPS.map(group=>`<optgroup label="${group.label}">${group.options.map(year=>`<option ${selected===year?"selected":""}>${year}</option>`).join("")}</optgroup>`).join("");
+}
+function yearOptionsForCategoryHtml(category,selected=""){
+  if(category==="Campus Personnel")return PERSONNEL_TYPES.map(type=>`<option ${selected===type?"selected":""}>${type}</option>`).join("");
+  const groupName=COLLEGE_COURSES.includes(category)?"College":
+    ["HUMSS","GAS","ABM","STEM","ICT","HE"].includes(category)?"Senior High School":
+    category==="James"?"Junior High School":
+    category==="Job"?"Elementary":
+    category==="John"?"Kindergarten":"";
+  const group=YEAR_LEVEL_GROUPS.find(candidate=>candidate.label===groupName);
+  if(!group)return yearLevelOptionsHtml(selected);
+  const current=group.options.includes(selected)?selected:group.options[0];
+  return group.options.map(year=>`<option ${year===current?"selected":""}>${year}</option>`).join("");
 }
 function schoolLevelForYear(year){
   return YEAR_LEVEL_GROUPS.find(group=>group.options.includes(year))?.label||"College";
@@ -50,6 +73,7 @@ function courseOptionsForYearHtml(year, selected=""){
   return options.map(course=>`<option ${course===current?"selected":""}>${course}</option>`).join("");
 }
 function educationGroupFor(course, year=""){
+  if(course==="Campus Personnel")return "Campus Personnel";
   if(year) return schoolLevelForYear(year);
   if(COLLEGE_COURSES.includes(course)) return "College";
   if(["HUMSS","GAS","ABM","STEM","ICT","HE"].includes(course)) return "Senior High School";

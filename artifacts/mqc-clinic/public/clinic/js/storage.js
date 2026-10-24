@@ -212,9 +212,10 @@ function queueClinicStateSave(payload,throwOnError=false){
   return saveOperation;
 }
 
-function saveToClinicState(_resetAuditLogs=false,throwOnError=false,purgeRequests=[]){
+function saveToClinicState(_resetAuditLogs=false,throwOnError=false,purgeRequests=[],inventoryBootstrap=false){
   const payload=snapshotData(false);
   if(purgeRequests.length)payload.purgeRequests=purgeRequests;
+  if(inventoryBootstrap)payload.inventoryBootstrap=true;
   return queueClinicStateSave(payload,throwOnError);
 }
 
@@ -243,17 +244,23 @@ async function commitClinicRecordMutation({apply,rollback,save=()=>saveToClinicS
   return true;
 }
 
-function saveInventoryRecordToClinicState(itemType,itemId){
+function saveInventoryRecordToClinicState(itemType,itemId,previousQuantity=null){
   const item=itemType==="medicine"?MEDICINES.find(record=>record.code===itemId):EQUIPMENT.find(record=>record.id===itemId);
   if(!item)return Promise.reject(new Error("The inventory record for this save could not be found."));
   const payload={
-    inventoryMutation:{itemType,itemId},
+    inventoryMutation:{itemType,itemId,previousQuantity},
     medicines:itemType==="medicine"?[item]:[],
     equipment:itemType==="equipment"?[item]:[],
     inventoryTransactions:INVENTORY_TRANSACTIONS,
     savedAt:new Date().toISOString(),
   };
   return queueClinicStateSave(payload,true);
+}
+
+function saveInventoryItemStatusToClinicState(itemType,itemId,deleted){
+  return queueClinicStateSave({
+    inventoryStatusMutation:{itemType,itemId,deleted},
+  },true);
 }
 
 function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[]){
@@ -264,6 +271,12 @@ function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[]){
     medicineCodes:inventorySnapshot.medicineQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.code),
     equipmentIds:inventorySnapshot.equipmentQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.id),
   };
+  return queueClinicStateSave(payload,true);
+}
+
+function saveVisitInventoryStatusToClinicState(visitId,deleted,restorePatient=false){
+  const payload=snapshotData(false);
+  payload.visitStatusMutation={visitId,deleted,restorePatient};
   return queueClinicStateSave(payload,true);
 }
 

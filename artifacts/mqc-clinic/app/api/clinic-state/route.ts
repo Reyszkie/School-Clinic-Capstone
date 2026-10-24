@@ -112,6 +112,8 @@ function normalizePatientRow(row: Record<string, unknown>) {
     middle_initial: row.middleInitial ?? row.middle_initial ?? null,
     name: name || "Unknown Patient",
     course: row.course ?? "",
+    institutional_category: row.institutionalCategory ?? row.institutional_category ?? row.course ?? "",
+    personnel_type: row.personnelType ?? row.personnel_type ?? null,
     year_level: row.year ?? row.yearLevel ?? row.year_level ?? "",
     gender: row.gender ?? row.sex ?? null,
     age: toNumber(row.age),
@@ -200,6 +202,7 @@ function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = fa
     medicine_code: row.medicineCode ?? row.medicine_code ?? null,
     medicine_name: medicineName,
     medicine_quantity: medicineName ? medicineQuantity : null,
+    supply_item_id: row.supplyItemId ?? row.supply_item_id ?? null,
     equipment_used: Array.isArray(row.equipmentUsed ?? row.equipment_used) ? row.equipmentUsed ?? row.equipment_used : [],
     equipment_quantity: toNumber(row.equipmentQty ?? row.equipmentQuantity ?? row.equipment_quantity),
     supply_used: row.supplyUsed ?? row.supply_used ?? null,
@@ -220,6 +223,7 @@ function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = fa
     superseded_by: row.supersededBy ?? row.superseded_by ?? null,
     deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
+    created_at: row.createdAt ?? row.created_at ?? new Date().toISOString(),
   };
 }
 
@@ -309,7 +313,9 @@ function patientFromRow(row: Record<string, unknown>) {
     middleInitial: row.middle_initial ?? "",
     name: row.name,
     course: row.course,
-    year: row.year_level,
+    institutionalCategory: row.institutional_category ?? row.course,
+    personnelType: row.personnel_type ?? "",
+    year: row.personnel_type || row.year_level,
     gender: row.gender,
     sex: row.gender,
     age: row.age,
@@ -363,7 +369,9 @@ function visitFromRow(row: Record<string, unknown>, patients: Array<Record<strin
     studentId: row.patient_id,
     studentName: patient?.name ?? row.patient_id,
     course: patient?.course,
-    year: patient?.year_level,
+    institutionalCategory: patient?.institutional_category ?? patient?.course,
+    personnelType: patient?.personnel_type ?? "",
+    year: patient?.personnel_type || patient?.year_level,
     complaint: row.complaint,
     reasonOther: row.reason_other ?? "",
     description: row.description,
@@ -394,6 +402,7 @@ function visitFromRow(row: Record<string, unknown>, patients: Array<Record<strin
     equipmentUsed: row.equipment_used,
     equipmentQty: row.equipment_quantity,
     supplyUsed: row.supply_used,
+    supplyItemId: row.supply_item_id,
     supplyQty: row.supply_quantity,
     dosage: row.dosage,
     outcome: row.outcome,
@@ -673,11 +682,14 @@ export async function PUT(request: Request) {
     const persistedSnapshot = { ...snapshot };
     delete persistedSnapshot.auditLogs;
     delete persistedSnapshot.purgeRequests;
+    delete persistedSnapshot.inventoryBootstrap;
+    delete persistedSnapshot.visitStatusMutation;
+    delete persistedSnapshot.inventoryStatusMutation;
     const inventoryMutation = snapshot.inventoryMutation && typeof snapshot.inventoryMutation === "object"
       ? snapshot.inventoryMutation as Record<string, unknown>
       : null;
     if (inventoryMutation) {
-      if (snapshot.visitMutation || snapshot.purgeRequests) return Response.json({ message: "Inventory record saves cannot be combined with other mutations." }, { status: 400 });
+      if (snapshot.visitMutation || snapshot.visitStatusMutation || snapshot.inventoryStatusMutation || snapshot.purgeRequests) return Response.json({ message: "Inventory record saves cannot be combined with other mutations." }, { status: 400 });
       const itemType = inventoryMutation.itemType;
       const itemId = String(inventoryMutation.itemId ?? "");
       const table = itemType === "medicine" ? "medicines" : itemType === "equipment" ? "equipment" : null;
@@ -690,24 +702,85 @@ export async function PUT(request: Request) {
       const affected = rows.filter(row => String(row[key] ?? "") === itemId);
       if (!table || !itemId || affected.length !== 1) return Response.json({ message: "The inventory record for this save could not be found." }, { status: 400 });
 
-      const currentSnapshotResponse = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
-      if (!currentSnapshotResponse.ok) throw new Error(`clinic_state inventory snapshot read returned ${currentSnapshotResponse.status}`);
-      const currentSnapshots = await currentSnapshotResponse.json() as Array<{ state?: Record<string, unknown> }>;
-      const currentState = currentSnapshots[0]?.state ?? {};
-      const stateUpdate = {
-        ...currentState,
-        inventoryTransactions: Array.isArray(snapshot.inventoryTransactions) ? snapshot.inventoryTransactions : currentState.inventoryTransactions ?? [],
-        savedAt: snapshot.savedAt ?? new Date().toISOString(),
-      };
-      const [snapshotResponse] = await Promise.all([
-        supabaseRequest("clinic_state", {
+      const submitted = affected[0];
+      const previousQuantity = toNumber(inventoryMutation.previousQuantity);
+      if (previousQuantity !== null) {
+        const currentResponse = await supabaseRequest(`${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},quantity,updated_at`);
+        if (!currentResponse.ok) throw new Error(`${table} inventory check returned ${currentResponse.status}`);
+        const currentRows = await currentResponse.json() as Array<Record<string, unknown>>;
+        const current = currentRows[0];
+        if (currentRows.length !== 1 || !current?.updated_at) {
+          return Response.json({ message: "This inventory item changed or was removed. Refresh the inventory list and try again." }, { status: 409 });
+        }
+        const normalized = table === "medicines" ? normalizeMedicineRow(submitted) : normalizeEquipmentRow(submitted);
+        const submittedQuantity = toNumber(normalized.quantity) ?? 0;
+        const patch = { ...normalized } as Record<string, unknown>;
+        delete patch[key];
+        delete patch.updated_at;
+        delete patch.quantity;
+        if (submittedQuantity !== previousQuantity) patch.quantity = submittedQuantity;
+        const updateResponse = await supabaseRequest(`${table}?${key}=eq.${encodeURIComponent(itemId)}&updated_at=eq.${encodeURIComponent(String(current.updated_at))}&select=${key}`, {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify(patch),
+        });
+        if (!updateResponse.ok) {
+          const details = await updateResponse.text();
+          throw new Error(`${table} inventory update returned ${updateResponse.status}: ${details}`);
+        }
+        const updatedRows = await updateResponse.json() as Array<Record<string, unknown>>;
+        if (updatedRows.length !== 1) {
+          return Response.json({ message: "Inventory changed while this item was being edited. Refresh the list and try again." }, { status: 409 });
+        }
+      } else {
+        await upsertTableRows(table, key, [table === "medicines" ? normalizeMedicineRow(submitted) : normalizeEquipmentRow(submitted)]);
+      }
+      try {
+        const currentSnapshotResponse = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
+        if (!currentSnapshotResponse.ok) throw new Error(`clinic_state inventory snapshot read returned ${currentSnapshotResponse.status}`);
+        const currentSnapshots = await currentSnapshotResponse.json() as Array<{ state?: Record<string, unknown> }>;
+        const currentState = currentSnapshots[0]?.state ?? {};
+        const stateUpdate = {
+          ...currentState,
+          inventoryTransactions: Array.isArray(snapshot.inventoryTransactions) ? snapshot.inventoryTransactions : currentState.inventoryTransactions ?? [],
+          savedAt: snapshot.savedAt ?? new Date().toISOString(),
+        };
+        const snapshotResponse = await supabaseRequest("clinic_state", {
           method: "POST",
           headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
           body: JSON.stringify({ id: clinicStateId, state: stateUpdate }),
-        }),
-        upsertTableRows(table, key, [table === "medicines" ? normalizeMedicineRow(affected[0]) : normalizeEquipmentRow(affected[0])]),
-      ]);
-      if (!snapshotResponse.ok) throw new Error(`clinic_state inventory snapshot returned ${snapshotResponse.status}`);
+        });
+        if (!snapshotResponse.ok) console.warn(`Optional clinic_state inventory snapshot returned ${snapshotResponse.status}`);
+      } catch (error) {
+        console.warn("Unable to save optional clinic_state inventory snapshot", error);
+      }
+      return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
+    const inventoryStatusMutation = snapshot.inventoryStatusMutation && typeof snapshot.inventoryStatusMutation === "object"
+      ? snapshot.inventoryStatusMutation as Record<string, unknown>
+      : null;
+    if (inventoryStatusMutation) {
+      if (snapshot.visitMutation || snapshot.visitStatusMutation || snapshot.purgeRequests) {
+        return Response.json({ message: "Inventory status changes cannot be combined with other mutations." }, { status: 400 });
+      }
+      const itemType = inventoryStatusMutation.itemType;
+      const itemId = String(inventoryStatusMutation.itemId ?? "");
+      const table = itemType === "medicine" ? "medicines" : itemType === "equipment" ? "equipment" : null;
+      const key = itemType === "medicine" ? "code" : "id";
+      if (!table || !itemId || typeof inventoryStatusMutation.deleted !== "boolean") {
+        return Response.json({ message: "The inventory status change is invalid." }, { status: 400 });
+      }
+      const response = await supabaseRequest(`${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key}`, {
+        method: "PATCH",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ deleted_at: inventoryStatusMutation.deleted ? new Date().toISOString() : null }),
+      });
+      if (!response.ok) {
+        const details = await response.text();
+        throw new Error(`${table} status update returned ${response.status}: ${details}`);
+      }
+      const affected = await response.json() as Array<Record<string, unknown>>;
+      if (affected.length !== 1) return Response.json({ message: "The inventory record for this status change could not be found." }, { status: 404 });
       return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
     }
     const clinicUsersChanged = await hasClinicUserChanges(snapshot.users);
@@ -743,42 +816,111 @@ export async function PUT(request: Request) {
       : null;
 
     if (visitMutation) {
+      if (snapshot.visitStatusMutation || snapshot.inventoryStatusMutation || snapshot.inventoryMutation) {
+        return Response.json({ message: "Clinical visit saves cannot be combined with inventory status changes." }, { status: 400 });
+      }
       const visitIds = new Set(Array.isArray(visitMutation.visitIds) ? visitMutation.visitIds.map(String) : []);
       const patientIds = new Set(Array.isArray(visitMutation.patientIds) ? visitMutation.patientIds.map(String) : []);
-      const medicineCodes = new Set(Array.isArray(visitMutation.medicineCodes) ? visitMutation.medicineCodes.map(String) : []);
-      const equipmentIds = new Set(Array.isArray(visitMutation.equipmentIds) ? visitMutation.equipmentIds.map(String) : []);
       const visits = Array.isArray(snapshot.consultations) ? snapshot.consultations as Array<Record<string, unknown>> : [];
       const patients = Array.isArray(snapshot.students) ? snapshot.students as Array<Record<string, unknown>> : [];
-      const medicines = Array.isArray(snapshot.medicines) ? snapshot.medicines as Array<Record<string, unknown>> : [];
-      const equipment = Array.isArray(snapshot.equipment) ? snapshot.equipment as Array<Record<string, unknown>> : [];
       const affectedVisits = visits.filter(row => visitIds.has(String(row.id)));
       const affectedPatients = patients.filter(row => patientIds.has(String(row.id)));
-      const affectedMedicines = medicines.filter(row => medicineCodes.has(String(row.code)));
-      const affectedEquipment = equipment.filter(row => equipmentIds.has(String(row.id)));
+      const visitToSave = affectedVisits.find(row => row.status !== "Superseded");
 
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
       if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
-      if (affectedMedicines.length !== medicineCodes.size) throw new Error("A medicine inventory record for this save could not be found.");
-      if (affectedEquipment.length !== equipmentIds.size) throw new Error("An equipment inventory record for this save could not be found.");
+      if (!visitToSave) throw new Error("The new clinical visit for this save could not be found.");
       if (await hasInvalidGuardianContactChange(affectedPatients)) {
         return Response.json({ message: "Parent / Guardian Contact must contain exactly 11 digits." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
 
+      const normalizedVisit = normalizeVisitRow(visitToSave, visitToSave.status !== "Superseded");
+      const patient = affectedPatients.find(row => String(row.id) === String(normalizedVisit.patient_id));
+      const rpcResponse = await supabaseRequest("rpc/save_clinical_visit_with_inventory", {
+        method: "POST",
+        body: JSON.stringify({
+          p_visit: normalizedVisit,
+          p_patient_allergies: patient?.allergies ?? "Not Yet Assessed",
+        }),
+      });
+      if (!rpcResponse.ok) {
+        const details = await rpcResponse.text();
+        const message = (() => {
+          try {
+            const parsed = JSON.parse(details) as { message?: string; details?: string };
+            return parsed.message || parsed.details || "The visit could not be saved.";
+          } catch {
+            return "The visit could not be saved.";
+          }
+        })();
+        const insufficientStock = /available|stock|inventory/i.test(message);
+        return Response.json({ message }, { status: insufficientStock ? 409 : 400, headers: { "Cache-Control": "no-store" } });
+      }
+
       const { visitMutation: _visitMutation, ...clinicSnapshot } = persistedSnapshot;
-      const [snapshotResponse] = await Promise.all([
-        supabaseRequest("clinic_state", {
+      try {
+        const snapshotResponse = await supabaseRequest("clinic_state", {
           method: "POST",
           headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
           body: JSON.stringify({ id: clinicStateId, state: clinicSnapshot }),
-        }),
-        upsertTableRows("clinical_visits", "id", affectedVisits.map(row => normalizeVisitRow(row, row.status !== "Superseded"))),
-        upsertTableRows("patients", "id", affectedPatients.map(normalizePatientRow)),
-        upsertTableRows("medicines", "code", affectedMedicines.map(normalizeMedicineRow)),
-        upsertTableRows("equipment", "id", affectedEquipment.map(normalizeEquipmentRow)),
-      ]);
-      if (!snapshotResponse.ok) throw new Error(`clinic_state snapshot returned ${snapshotResponse.status}`);
+        });
+        if (!snapshotResponse.ok) console.warn(`Optional clinic_state visit snapshot returned ${snapshotResponse.status}`);
+      } catch (error) {
+        console.warn("Unable to save optional clinic_state visit snapshot", error);
+      }
       return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
     }
+
+    const visitStatusMutation = snapshot.visitStatusMutation && typeof snapshot.visitStatusMutation === "object"
+      ? snapshot.visitStatusMutation as Record<string, unknown>
+      : null;
+    if (visitStatusMutation) {
+      if (snapshot.inventoryMutation || snapshot.inventoryStatusMutation || snapshot.visitMutation || snapshot.purgeRequests) {
+        return Response.json({ message: "Visit status changes cannot be combined with other record mutations." }, { status: 400 });
+      }
+      const visitId = String(visitStatusMutation.visitId ?? "");
+      const deleted = visitStatusMutation.deleted === true;
+      const submittedVisits = Array.isArray(snapshot.consultations) ? snapshot.consultations as Array<Record<string, unknown>> : [];
+      const submittedVisit = submittedVisits.find(row => String(row.id) === visitId);
+      if (!visitId || !submittedVisit || Boolean(submittedVisit.deleted) !== deleted) {
+        return Response.json({ message: "The clinical visit status change is invalid." }, { status: 400 });
+      }
+      const rpcResponse = await supabaseRequest("rpc/set_clinical_visit_inventory_status", {
+        method: "POST",
+        body: JSON.stringify({
+          p_visit_id: visitId,
+          p_deleted: deleted,
+          p_restore_patient: !deleted && visitStatusMutation.restorePatient === true,
+        }),
+      });
+      if (!rpcResponse.ok) {
+        const details = await rpcResponse.text();
+        let message = "The clinical visit could not be updated.";
+        try {
+          const parsed = JSON.parse(details) as { message?: string; details?: string };
+          message = parsed.message || parsed.details || message;
+        } catch {
+          message = "The clinical visit could not be updated.";
+        }
+        return Response.json({ message }, { status: /inventory|stock|available/i.test(message) ? 409 : 400, headers: { "Cache-Control": "no-store" } });
+      }
+      try {
+        const snapshotResponse = await supabaseRequest("clinic_state", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify({ id: clinicStateId, state: persistedSnapshot }),
+        });
+        if (!snapshotResponse.ok) console.warn(`Optional clinic_state visit-status snapshot returned ${snapshotResponse.status}`);
+      } catch (error) {
+        console.warn("Unable to save optional clinic_state visit-status snapshot", error);
+      }
+      return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
+
+    const syncMeta = snapshot.inventoryBootstrap === true || Array.isArray(snapshot.consultations)
+      ? await readTable("clinic_sync_meta")
+      : [];
+    const normalizedReady = syncMeta[0]?.normalized_ready === true;
 
     if (Array.isArray(snapshot.students)) {
       const patients = snapshot.students as Array<Record<string, unknown>>;
@@ -787,13 +929,26 @@ export async function PUT(request: Request) {
       }
       await upsertTableRows("patients", "id", patients.map(normalizePatientRow));
     }
-    if (Array.isArray(snapshot.medicines)) {
-      await upsertTableRows("medicines", "code", snapshot.medicines.map((row) => normalizeMedicineRow(row as Record<string, unknown>)));
+    if (snapshot.inventoryBootstrap === true) {
+      const [existingMedicines, existingEquipment]: [Array<Record<string, unknown>>, Array<Record<string, unknown>>] = normalizedReady
+        ? await Promise.all([readTable("medicines"), readTable("equipment")])
+        : [[], []];
+      const knownMedicineCodes = new Set(existingMedicines.map(row => String(row.code)));
+      const knownEquipmentIds = new Set(existingEquipment.map(row => String(row.id)));
+      if (Array.isArray(snapshot.medicines)) {
+        const records = snapshot.medicines as Array<Record<string, unknown>>;
+        await upsertTableRows("medicines", "code", records
+          .filter(row => !normalizedReady || !knownMedicineCodes.has(String(row.code)))
+          .map(normalizeMedicineRow));
+      }
+      if (Array.isArray(snapshot.equipment)) {
+        const records = snapshot.equipment as Array<Record<string, unknown>>;
+        await upsertTableRows("equipment", "id", records
+          .filter(row => !normalizedReady || !knownEquipmentIds.has(String(row.id)))
+          .map(normalizeEquipmentRow));
+      }
     }
-    if (Array.isArray(snapshot.equipment)) {
-      await upsertTableRows("equipment", "id", snapshot.equipment.map((row) => normalizeEquipmentRow(row as Record<string, unknown>)));
-    }
-    if (Array.isArray(snapshot.consultations)) {
+    if (Array.isArray(snapshot.consultations) && !normalizedReady) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
     }
     if (Array.isArray(snapshot.users) && session.role === "Head Nurse & Administrator") {

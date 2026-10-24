@@ -115,7 +115,7 @@ function attachLoginFormEvents(){
     }
     const visibleUser=ensureVisibleClinicUser(found);
     if((!hydrated&&sharedStorageMissing)||sharedStorageNeedsBootstrap){
-      try{await saveToClinicState(false,true);}
+      try{await saveToClinicState(false,true,[],true);}
       catch(error){
         await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
         spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;

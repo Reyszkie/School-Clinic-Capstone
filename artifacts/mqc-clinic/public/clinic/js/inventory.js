@@ -111,7 +111,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
       if(itemType==="medicine")MEDICINES=previousRecords;
       else EQUIPMENT=previousRecords;
     },
-    save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id),
+    save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id,existing?previousQuantity:null),
     auditAction:existing?`Inventory Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`Inventory Item Added — ${record.name}`,
     detail:itemType==="medicine"?record.code:record.id,
     module:itemType==="medicine"?"Medicines":"Medical Supplies",successTitle:existing?`${noun} updated`:`${noun} added`,
@@ -175,7 +175,7 @@ function bindMedicinesTab(){
       if(!rec)return;
       confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Medicines",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.code,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("medicine",rec.code,true),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Medicines",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.code,refresh:rerender});
       }});
     };
   });
@@ -277,7 +277,7 @@ function bindEquipmentTab(){
       if(!rec)return;
       confirmDialog({title:"Delete this supply?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),auditAction:`Record Deleted — Medical Supply ${rec.name}`,module:"Medical Supplies",status:"Warning",successTitle:"Supply deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.id,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("equipment",rec.id,true),auditAction:`Record Deleted — Medical Supply ${rec.name}`,module:"Medical Supplies",status:"Warning",successTitle:"Supply deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.id,refresh:rerender});
       }});
     };
   });

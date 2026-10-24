@@ -271,6 +271,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Queued shared-state writes.
 - Shared-state availability warnings.
 - Automatic inventory migration for older saved data.
+- Atomic clinical-visit saves and inventory deductions with stock checks enforced in PostgreSQL.
 - Saved timestamp in clinic snapshots.
 
 ### Supabase Database Schema
@@ -279,14 +280,16 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 
 - `clinic_users` for staff accounts and future Supabase Auth user links.
 - `patients` for student and patient profiles.
+- `patients.institutional_category` and `patients.personnel_type` for student classifications and campus personnel records, while retaining legacy `course` and `year_level` columns.
 - `clinical_visits` for consultation records, vital signs, assessments, treatments, outcomes, and visit revisions.
+- `clinical_visit_inventory_deductions` for idempotent treatment stock deductions and reversals.
 - `medicines` for medicine stock, expiration dates, and soft deletion. Legacy batch and supplier columns are retained for existing records but are no longer used by the application.
 - `equipment` for medical supply quantities, maintenance dates, statuses, and soft deletion. Legacy equipment and condition data are retained for historical records.
 - `audit_logs` for user actions and module activity.
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields and the `save_clinical_visit_with_inventory` / `set_clinical_visit_inventory_status` database functions used to save treatments and prevent concurrent overselling. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
 The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled; the API uses its server-side secret key, so that key must never be exposed to browser code.
 

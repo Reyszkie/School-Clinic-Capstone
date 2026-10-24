@@ -28,6 +28,8 @@ create table if not exists public.patients (
   name text not null,
   course text not null,
   year_level text not null,
+  institutional_category text,
+  personnel_type text,
   gender text,
   age integer constraint patients_age_check check (age is null or age between 0 and 120),
   contact text,
@@ -45,6 +47,12 @@ create table if not exists public.patients (
 alter table public.patients alter column allergies set default 'Not Yet Assessed';
 alter table public.patients
   add column if not exists symptoms jsonb not null default '[]'::jsonb;
+alter table public.patients
+  add column if not exists institutional_category text,
+  add column if not exists personnel_type text;
+update public.patients
+set institutional_category = course
+where institutional_category is null;
 
 create table if not exists public.medicines (
   code text primary key,
@@ -124,6 +132,7 @@ create table if not exists public.clinical_visits (
   equipment_used jsonb not null default '[]'::jsonb,
   equipment_quantity integer check (equipment_quantity is null or equipment_quantity > 0),
   supply_used text,
+  supply_item_id text references public.equipment(id) on delete set null,
   supply_quantity integer check (supply_quantity is null or supply_quantity > 0),
   dosage text,
   outcome text not null,
@@ -150,6 +159,7 @@ alter table public.clinical_visits
   add column if not exists equipment_used jsonb not null default '[]'::jsonb,
   add column if not exists equipment_quantity integer,
   add column if not exists supply_used text,
+  add column if not exists supply_item_id text references public.equipment(id) on delete set null,
   add column if not exists supply_quantity integer;
 
 do $$
@@ -162,6 +172,399 @@ begin
   end if;
 end;
 $$;
+
+create table if not exists public.clinical_visit_inventory_deductions (
+  visit_id text not null references public.clinical_visits(id) on delete cascade,
+  item_type text not null check (item_type in ('medicine', 'equipment')),
+  item_id text not null,
+  quantity integer not null check (quantity > 0),
+  reversed_at timestamptz,
+  created_at timestamptz not null default now(),
+  primary key (visit_id, item_type, item_id)
+);
+
+alter table public.clinical_visit_inventory_deductions enable row level security;
+
+create or replace function public.save_clinical_visit_with_inventory(
+  p_visit jsonb,
+  p_patient_allergies text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_visit public.clinical_visits;
+  v_previous public.clinical_visits;
+  v_deduction record;
+  v_quantity integer;
+  v_stock integer;
+  v_item_id text;
+  v_item_name text;
+  v_has_deductions boolean;
+begin
+  v_visit := jsonb_populate_record(null::public.clinical_visits, p_visit);
+  if v_visit.id is null or v_visit.patient_id is null then
+    raise exception 'A visit ID and patient ID are required.';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(v_visit.id, 0));
+
+  if exists (select 1 from public.clinical_visits where id = v_visit.id) then
+    return;
+  end if;
+
+  if v_visit.medicine_name is not null and v_visit.medicine_code is null then
+    raise exception 'The selected medicine could not be matched to an inventory item.';
+  end if;
+
+  if not exists (select 1 from public.patients where id = v_visit.patient_id) then
+    raise exception 'The patient record for this visit could not be found.';
+  end if;
+
+  if v_visit.supersedes_id is not null then
+    select * into v_previous
+    from public.clinical_visits
+    where id = v_visit.supersedes_id
+    for update;
+
+    if found and v_previous.status = 'Active' then
+      select exists (
+        select 1
+        from public.clinical_visit_inventory_deductions
+        where visit_id = v_previous.id
+      ) into v_has_deductions;
+
+      if v_has_deductions then
+        for v_deduction in
+          select *
+          from public.clinical_visit_inventory_deductions
+          where visit_id = v_previous.id and reversed_at is null
+          for update
+        loop
+          if v_deduction.item_type = 'medicine' then
+            update public.medicines
+            set quantity = quantity + v_deduction.quantity
+            where code = v_deduction.item_id;
+          else
+            update public.equipment
+            set quantity = quantity + v_deduction.quantity
+            where id = v_deduction.item_id;
+          end if;
+          update public.clinical_visit_inventory_deductions
+          set reversed_at = now()
+          where visit_id = v_deduction.visit_id
+            and item_type = v_deduction.item_type
+            and item_id = v_deduction.item_id;
+        end loop;
+      else
+        if v_previous.medicine_code is not null and coalesce(v_previous.medicine_quantity, 0) > 0 then
+          update public.medicines
+          set quantity = quantity + v_previous.medicine_quantity
+          where code = v_previous.medicine_code;
+        end if;
+        v_item_id := v_previous.supply_item_id;
+        if v_item_id is null and v_previous.supply_used is not null then
+          select id into v_item_id
+          from public.equipment
+          where name = v_previous.supply_used
+          order by id
+          limit 1;
+        end if;
+        if v_item_id is not null and coalesce(v_previous.supply_quantity, 0) > 0 then
+          update public.equipment
+          set quantity = quantity + v_previous.supply_quantity
+          where id = v_item_id;
+        end if;
+        if jsonb_typeof(v_previous.equipment_used) = 'array' then
+          for v_item_name in select jsonb_array_elements_text(v_previous.equipment_used)
+          loop
+            update public.equipment
+            set quantity = quantity + greatest(coalesce(v_previous.equipment_quantity, 1), 1)
+            where id = (
+              select id from public.equipment where name = v_item_name order by id limit 1
+            );
+          end loop;
+        end if;
+      end if;
+
+      update public.clinical_visits
+      set status = 'Superseded', superseded_by = v_visit.id
+      where id = v_previous.id;
+    end if;
+  end if;
+
+  v_visit.supply_item_id := coalesce(v_visit.supply_item_id, (
+    select id from public.equipment where name = v_visit.supply_used order by id limit 1
+  ));
+  if v_visit.supply_used is not null and v_visit.supply_item_id is null then
+    raise exception 'The selected medical supply could not be matched to an inventory item.';
+  end if;
+  v_visit.created_at := coalesce(v_visit.created_at, now());
+  v_visit.updated_at := now();
+  insert into public.clinical_visits
+  select (v_visit).*;
+
+  if v_visit.medicine_code is not null then
+    v_quantity := v_visit.medicine_quantity;
+    if v_quantity is null or v_quantity <= 0 then
+      raise exception 'Medication quantity must be a positive whole number.';
+    end if;
+    update public.medicines
+    set quantity = quantity - v_quantity
+    where code = v_visit.medicine_code
+      and name = v_visit.medicine_name
+      and quantity >= v_quantity
+      and deleted_at is null
+      and (expiration_date is null or expiration_date >= current_date)
+    returning quantity + v_quantity into v_stock;
+    if not found then
+      select quantity into v_stock from public.medicines where code = v_visit.medicine_code;
+      raise exception 'Insufficient stock for %: % available, % requested.',
+        coalesce(v_visit.medicine_name, v_visit.medicine_code), coalesce(v_stock, 0), v_quantity
+        using errcode = 'P0001';
+    end if;
+    insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity)
+    values (v_visit.id, 'medicine', v_visit.medicine_code, v_quantity);
+  end if;
+
+  if v_visit.supply_item_id is not null then
+    v_quantity := v_visit.supply_quantity;
+    if v_quantity is null or v_quantity <= 0 then
+      raise exception 'Supply quantity must be a positive whole number.';
+    end if;
+    update public.equipment
+    set quantity = quantity - v_quantity
+    where id = v_visit.supply_item_id
+      and name = v_visit.supply_used
+      and quantity >= v_quantity
+      and status = 'Available'
+      and deleted_at is null
+    returning quantity + v_quantity into v_stock;
+    if not found then
+      select quantity into v_stock from public.equipment where id = v_visit.supply_item_id;
+      raise exception 'Insufficient stock for %: % available, % requested.',
+        coalesce(v_visit.supply_used, v_visit.supply_item_id), coalesce(v_stock, 0), v_quantity
+        using errcode = 'P0001';
+    end if;
+    insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity)
+    values (v_visit.id, 'equipment', v_visit.supply_item_id, v_quantity);
+  end if;
+
+  if jsonb_typeof(v_visit.equipment_used) = 'array' then
+    for v_item_name in select jsonb_array_elements_text(v_visit.equipment_used)
+    loop
+      select id into v_item_id
+      from public.equipment
+      where name = v_item_name and status = 'Available' and deleted_at is null
+      order by id
+      limit 1;
+      v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
+      if v_item_id is null then
+        raise exception 'Inventory item % is not available.', v_item_name using errcode = 'P0001';
+      end if;
+      update public.equipment
+      set quantity = quantity - v_quantity
+      where id = v_item_id and quantity >= v_quantity
+      returning quantity + v_quantity into v_stock;
+      if not found then
+        select quantity into v_stock from public.equipment where id = v_item_id;
+        raise exception 'Insufficient stock for %: % available, % requested.',
+          v_item_name, coalesce(v_stock, 0), v_quantity using errcode = 'P0001';
+      end if;
+      insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity)
+      values (v_visit.id, 'equipment', v_item_id, v_quantity);
+    end loop;
+  end if;
+
+  update public.patients
+  set allergies = coalesce(p_patient_allergies, allergies)
+  where id = v_visit.patient_id;
+end;
+$$;
+
+create or replace function public.set_clinical_visit_inventory_status(
+  p_visit_id text,
+  p_deleted boolean,
+  p_restore_patient boolean default false
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_visit public.clinical_visits;
+  v_deduction record;
+  v_item_id text;
+  v_item_name text;
+  v_quantity integer;
+  v_stock integer;
+  v_has_deductions boolean;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_visit_id, 0));
+  select * into v_visit
+  from public.clinical_visits
+  where id = p_visit_id
+  for update;
+  if not found then
+    raise exception 'The clinical visit could not be found.';
+  end if;
+
+  if p_deleted then
+    if v_visit.status = 'Deleted' then return; end if;
+    if v_visit.status <> 'Active' then
+      raise exception 'Only an active clinical visit can be deleted.';
+    end if;
+    select exists (
+      select 1 from public.clinical_visit_inventory_deductions where visit_id = v_visit.id
+    ) into v_has_deductions;
+    if v_has_deductions then
+      for v_deduction in
+        select *
+        from public.clinical_visit_inventory_deductions
+        where visit_id = v_visit.id and reversed_at is null
+        for update
+      loop
+        if v_deduction.item_type = 'medicine' then
+          update public.medicines set quantity = quantity + v_deduction.quantity where code = v_deduction.item_id;
+        else
+          update public.equipment set quantity = quantity + v_deduction.quantity where id = v_deduction.item_id;
+        end if;
+        update public.clinical_visit_inventory_deductions
+        set reversed_at = now()
+        where visit_id = v_deduction.visit_id and item_type = v_deduction.item_type and item_id = v_deduction.item_id;
+      end loop;
+    else
+      if v_visit.medicine_code is not null and coalesce(v_visit.medicine_quantity, 0) > 0 then
+        update public.medicines set quantity = quantity + v_visit.medicine_quantity where code = v_visit.medicine_code;
+        insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+        values (v_visit.id, 'medicine', v_visit.medicine_code, v_visit.medicine_quantity, now());
+      end if;
+      v_item_id := v_visit.supply_item_id;
+      if v_item_id is null and v_visit.supply_used is not null then
+        select id into v_item_id from public.equipment where name = v_visit.supply_used order by id limit 1;
+      end if;
+      if v_item_id is not null and coalesce(v_visit.supply_quantity, 0) > 0 then
+        update public.equipment set quantity = quantity + v_visit.supply_quantity where id = v_item_id;
+        insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+        values (v_visit.id, 'equipment', v_item_id, v_visit.supply_quantity, now());
+      end if;
+      if jsonb_typeof(v_visit.equipment_used) = 'array' then
+        for v_item_name in select jsonb_array_elements_text(v_visit.equipment_used)
+        loop
+          select id into v_item_id from public.equipment where name = v_item_name order by id limit 1;
+          if v_item_id is not null then
+            v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
+            update public.equipment set quantity = quantity + v_quantity where id = v_item_id;
+            insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+            values (v_visit.id, 'equipment', v_item_id, v_quantity, now());
+          end if;
+        end loop;
+      end if;
+    end if;
+    update public.clinical_visits set status = 'Deleted', deleted_at = now() where id = v_visit.id;
+  else
+    if v_visit.status <> 'Deleted' then return; end if;
+    select exists (
+      select 1 from public.clinical_visit_inventory_deductions where visit_id = v_visit.id
+    ) into v_has_deductions;
+    if v_has_deductions then
+      for v_deduction in
+        select *
+        from public.clinical_visit_inventory_deductions
+        where visit_id = v_visit.id and reversed_at is not null
+        for update
+      loop
+        if v_deduction.item_type = 'medicine' then
+          update public.medicines
+          set quantity = quantity - v_deduction.quantity
+          where code = v_deduction.item_id
+            and quantity >= v_deduction.quantity
+            and deleted_at is null
+            and (expiration_date is null or expiration_date >= current_date)
+          returning quantity + v_deduction.quantity into v_stock;
+        else
+          update public.equipment
+          set quantity = quantity - v_deduction.quantity
+          where id = v_deduction.item_id
+            and quantity >= v_deduction.quantity
+            and status = 'Available'
+            and deleted_at is null
+          returning quantity + v_deduction.quantity into v_stock;
+        end if;
+        if not found then
+          raise exception 'Insufficient inventory to restore visit %.', v_visit.id using errcode = 'P0001';
+        end if;
+        update public.clinical_visit_inventory_deductions
+        set reversed_at = null
+        where visit_id = v_deduction.visit_id and item_type = v_deduction.item_type and item_id = v_deduction.item_id;
+      end loop;
+    else
+      if v_visit.medicine_code is not null and coalesce(v_visit.medicine_quantity, 0) > 0 then
+        update public.medicines
+        set quantity = quantity - v_visit.medicine_quantity
+        where code = v_visit.medicine_code
+          and quantity >= v_visit.medicine_quantity
+          and deleted_at is null
+          and (expiration_date is null or expiration_date >= current_date)
+        returning quantity + v_visit.medicine_quantity into v_stock;
+        if not found then
+          raise exception 'Insufficient inventory to restore visit %.', v_visit.id using errcode = 'P0001';
+        end if;
+        insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity)
+        values (v_visit.id, 'medicine', v_visit.medicine_code, v_visit.medicine_quantity);
+      end if;
+      v_item_id := v_visit.supply_item_id;
+      if v_item_id is null and v_visit.supply_used is not null then
+        select id into v_item_id from public.equipment where name = v_visit.supply_used order by id limit 1;
+      end if;
+      if v_item_id is not null and coalesce(v_visit.supply_quantity, 0) > 0 then
+        update public.equipment
+        set quantity = quantity - v_visit.supply_quantity
+        where id = v_item_id
+          and quantity >= v_visit.supply_quantity
+          and status = 'Available'
+          and deleted_at is null
+        returning quantity + v_visit.supply_quantity into v_stock;
+        if not found then
+          raise exception 'Insufficient inventory to restore visit %.', v_visit.id using errcode = 'P0001';
+        end if;
+        insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity)
+        values (v_visit.id, 'equipment', v_item_id, v_visit.supply_quantity);
+      end if;
+      if jsonb_typeof(v_visit.equipment_used) = 'array' then
+        for v_item_name in select jsonb_array_elements_text(v_visit.equipment_used)
+        loop
+          select id into v_item_id from public.equipment where name = v_item_name order by id limit 1;
+          v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
+          update public.equipment
+          set quantity = quantity - v_quantity
+          where id = v_item_id
+            and quantity >= v_quantity
+            and status = 'Available'
+            and deleted_at is null
+          returning quantity + v_quantity into v_stock;
+          if not found then
+            raise exception 'Insufficient inventory to restore visit %.', v_visit.id using errcode = 'P0001';
+          end if;
+          insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity)
+          values (v_visit.id, 'equipment', v_item_id, v_quantity);
+        end loop;
+      end if;
+    end if;
+    update public.clinical_visits set status = 'Active', deleted_at = null where id = v_visit.id;
+    if p_restore_patient then
+      update public.patients set deleted_at = null, deleted_by = null where id = v_visit.patient_id;
+    end if;
+  end if;
+end;
+$$;
+
+revoke all on function public.save_clinical_visit_with_inventory(jsonb, text) from public;
+grant execute on function public.save_clinical_visit_with_inventory(jsonb, text) to service_role;
+revoke all on function public.set_clinical_visit_inventory_status(text, boolean, boolean) from public;
+grant execute on function public.set_clinical_visit_inventory_status(text, boolean, boolean) to service_role;
 
 -- Upgrade existing databases so deleting a patient also deletes that patient's visits.
 alter table public.clinical_visits

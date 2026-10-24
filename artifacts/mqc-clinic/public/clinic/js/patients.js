@@ -8,7 +8,7 @@ function renderConsultation(){
 
 function renderConsultSearchTab(){
   return `<div class="card"><div class="toolbar">
-    <div class="search-box"><span class="ic">${ICONS.search}</span><input id="stu-search" type="text" placeholder="Search by patient name, course, or year/grade..."></div>
+    <div class="search-box"><span class="ic">${ICONS.search}</span><input id="stu-search" type="text" placeholder="Search by patient name, institutional category, or year/grade..."></div>
     <select class="select-sm patient-level-filter" id="stu-department-filter" aria-label="Filter by education level">
       <option value="">All education levels</option>
       <option value="College" ${state.departmentFilter==="College"?"selected":""}>College</option>
@@ -16,17 +16,18 @@ function renderConsultSearchTab(){
       <option value="Junior High School" ${state.departmentFilter==="Junior High School"?"selected":""}>Junior High School</option>
       <option value="Elementary" ${state.departmentFilter==="Elementary"?"selected":""}>Elementary</option>
       <option value="Kindergarten" ${state.departmentFilter==="Kindergarten"?"selected":""}>Kindergarten</option>
+      <option value="Campus Personnel" ${state.departmentFilter==="Campus Personnel"?"selected":""}>Campus Personnel</option>
     </select>
-    <select class="select-sm hidden" id="stu-course-filter"><option value="">All Courses / Sections</option>${courseOptionsHtml("")}</select>
+    <select class="select-sm hidden" id="stu-course-filter"><option value="">All Institutional Categories</option>${courseOptionsHtml("")}</select>
     <button class="btn btn-teal" id="add-student-btn">${ICONS.plus} Add New Patient</button>
-  </div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Course / Section / Strand</th><th>Year / Grade</th><th>Sex</th><th></th></tr></thead>
+  </div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Institutional Category</th><th>Year / Personnel Type</th><th>Sex</th><th></th></tr></thead>
     <tbody id="stu-tbody"></tbody></table></div></div>`;
 }
 
 function studentTableRows(list){
   if(!list.length) return `<tr><td colspan="5">${emptyState("No patients found. Try a different search term.")}</td></tr>`;
   return list.slice(0,12).map(s=>`<tr><td>${escapeHtml(s.name)}</td>
-    <td>${escapeHtml(s.course||"—")}</td><td>${escapeHtml(s.year||"—")}</td><td>${escapeHtml(s.gender||s.sex||"—")}</td>
+    <td>${escapeHtml(s.institutionalCategory||s.course||"—")}</td><td>${escapeHtml(s.personnelType||s.year||"—")}</td><td>${escapeHtml(s.gender||s.sex||"—")}</td>
     <td><div class="row-actions"><button class="btn" style="padding:6px 12px;" data-select-stu="${escapeHtml(s.id)}">Select</button>
     <button class="mini-btn danger" data-del-stu="${escapeHtml(s.id)}" title="Delete">${ICONS.trash_sm}</button></div></td></tr>`).join("");
 }
@@ -70,7 +71,7 @@ function renderStudentDetail(s, inModal=false){
   const allergyValue=allergy.status==="allergies"?allergy.detail:allergy.status==="none"?"No Known Allergies":"Not Yet Assessed";
   return `<div class="${inModal?"student-detail-content":"card"}" ${inModal?"":"style=\"margin-top:16px;\""}><div class="student-card">
     <div class="s-avatar">${escapeHtml(initials)}</div><div style="flex:1"><h3 style="font-size:19px">${escapeHtml(displayName)}</h3>
-      <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.course||"—")} · ${escapeHtml(s.year||"—")}</div></div>
+      <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.institutionalCategory||s.course||"—")} · ${escapeHtml(s.personnelType||s.year||"—")}</div></div>
     <button class="btn" id="edit-student-btn">${ICONS.edit} Edit Profile</button>
     <button class="btn btn-teal" id="open-consult-form">${ICONS.plus} New Patient Visit</button>
     <button class="btn btn-outline-red" id="delete-student-btn">${ICONS.trash_sm} Delete Patient</button>
@@ -79,7 +80,8 @@ function renderStudentDetail(s, inModal=false){
     <div class="info-cell ${allergy.status==="allergies"?"warn":""}"><div class="lbl">${allergy.status==="allergies"?"Allergy Alert":"Allergies"}</div><div class="val">${escapeHtml(allergyValue)}</div></div>
     <div class="info-cell"><div class="lbl">Parent / Guardian</div><div class="val">${escapeHtml(s.guardianName||s.emergency||"—")}</div></div>
     <div class="info-cell"><div class="lbl">Guardian Contact</div><div class="val mono">${escapeHtml(s.guardianContact||"—")}</div></div>
-    <div class="info-cell" style="grid-column:span 2"><div class="lbl">Course / Section / Strand</div><div class="val">${escapeHtml(s.course||"—")}</div></div>
+    <div class="info-cell" style="grid-column:span 2"><div class="lbl">Institutional Category</div><div class="val">${escapeHtml(s.institutionalCategory||s.course||"—")}</div></div>
+    <div class="info-cell" style="grid-column:span 2"><div class="lbl">${(s.institutionalCategory||s.course)==="Campus Personnel"?"Personnel Type":"Year Level"}</div><div class="val">${escapeHtml(s.personnelType||s.year||"—")}</div></div>
     <div class="info-cell" style="grid-column:span 2"><div class="lbl">Symptoms at Registration</div><div class="val">${escapeHtml((s.symptoms||[]).join(", ")||"None recorded")}</div></div>
   </div>${renderStudentClinicalRecords(s)}</div>`;
 }
@@ -89,8 +91,9 @@ function filterStudents(){
   const course=document.getElementById("stu-course-filter").value;
   const department=document.getElementById("stu-department-filter").value||"";
   return STUDENTS.filter(s=>!s.deleted).filter(s=>{
-    const searchable=[s.name,s.course,s.year,s.lastName,s.firstName].join(" ").toLowerCase();
-    return (!q||searchable.includes(q))&&(!course||s.course===course)&&(!department||educationGroupFor(s.course,s.year)===department);
+    const category=s.institutionalCategory||s.course,year=s.personnelType||s.year;
+    const searchable=[s.name,category,year,s.lastName,s.firstName].join(" ").toLowerCase();
+    return (!q||searchable.includes(q))&&(!course||category===course)&&(!department||educationGroupFor(category,year)===department);
   });
 }
 
@@ -111,6 +114,7 @@ function openStudentForm(existing=null){
   let isEdit=!!existing;
   let editingStudent=existing;
   const f=existing||{lastName:"",firstName:"",middleInitial:"",course:COLLEGE_COURSES[0],year:"1st Year",gender:"Male",guardianName:"",guardianContact:"",symptoms:[]};
+  const selectedCategory=f.institutionalCategory||f.course||COLLEGE_COURSES[0];
   const parts=(f.name||"").split(",");
   const lastName=f.lastName||parts[0]||"";
   const firstName=f.firstName||(parts[1]||"").trim().split(" ")[0]||"";
@@ -119,8 +123,8 @@ function openStudentForm(existing=null){
     <div class="f-field"><label>Last Name <span class="req">*</span></label><input id="sf-lastname" value="${escapeHtml(lastName)}" required></div>
     <div class="f-field"><label>Given Name <span class="req">*</span></label><input id="sf-firstname" value="${escapeHtml(firstName)}" required></div>
     <div class="f-field"><label>Middle Initial</label><input id="sf-middle" maxlength="3" value="${escapeHtml(f.middleInitial||"")}" placeholder="M.I."></div>
-    <div class="f-field"><label>Year Level <span class="req">*</span></label><select id="sf-year">${yearLevelOptionsHtml(f.year)}</select></div>
-    <div class="f-field full"><label>Course / Section / Strand <span class="req">*</span></label><select id="sf-course">${courseOptionsForYearHtml(f.year,f.course)}</select></div>
+    <div class="f-field full"><label>Institutional Category <span class="req">*</span></label><select id="sf-category">${courseOptionsHtml(selectedCategory)}</select></div>
+    <div class="f-field"><label id="sf-year-label">${selectedCategory==="Campus Personnel"?"Personnel Type":"Year Level"} <span class="req">*</span></label><select id="sf-year">${yearOptionsForCategoryHtml(selectedCategory,f.personnelType||f.year)}</select></div>
     <div class="f-field"><label>Sex</label><select id="sf-gender">${["Male","Female"].map(g=>`<option ${f.gender===g?"selected":""}>${g}</option>`).join("")}</select></div>
     <div class="f-field"><label>Parent / Guardian Name</label><input id="sf-guardian" value="${escapeHtml(f.guardianName||f.emergency||"")}"></div>
     <div class="f-field full"><label for="sf-guardian-contact">Parent / Guardian Contact <span class="req">*</span></label><input id="sf-guardian-contact" type="text" inputmode="numeric" pattern="[0-9]{11}" minlength="11" autocomplete="tel-national" required aria-describedby="sf-guardian-contact-error" aria-invalid="false" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"><div class="field-error hidden" id="sf-guardian-contact-error" role="alert"></div></div>
@@ -128,9 +132,13 @@ function openStudentForm(existing=null){
   </form></div><div class="modal-foot"><span class="form-save-status" id="sf-status" aria-live="polite"></span><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Patient"}</button></div>`;
   openModal(html);
   bindOptionFreeText("patient-symptom-other",(f.symptoms||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
-  document.getElementById("sf-year").onchange=e=>{
-    document.getElementById("sf-course").innerHTML=courseOptionsForYearHtml(e.target.value);
+  const categorySelect=document.getElementById("sf-category"),yearSelect=document.getElementById("sf-year");
+  const syncCategoryFields=(resetYear=false)=>{
+    const personnel=categorySelect.value==="Campus Personnel";
+    document.getElementById("sf-year-label").innerHTML=`${personnel?"Personnel Type":"Year Level"} <span class="req">*</span>`;
+    yearSelect.innerHTML=yearOptionsForCategoryHtml(categorySelect.value,resetYear?"":yearSelect.value);
   };
+  categorySelect.addEventListener("change",()=>syncCategoryFields(true));
   const guardianContact=document.getElementById("sf-guardian-contact");
   const guardianContactError=document.getElementById("sf-guardian-contact-error");
   let guardianContactTouched=Boolean(guardianContact.value);
@@ -156,14 +164,14 @@ function openStudentForm(existing=null){
     const symptoms=selectedChecks('[data-check-group="patient-symptom"]');
     const symptomOther=document.querySelector('[data-free-text="patient-symptom-other"]')?.value.trim();
     if(symptomOther)symptoms.push(`Other: ${symptomOther}`);
-    const course=document.getElementById("sf-course").value,year=document.getElementById("sf-year").value;
+    const course=categorySelect.value,year=yearSelect.value;
     const guardianContactValue=guardianContact.value.trim();
     const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
     const matchingPatient=!isEdit&&STUDENTS.find(patient=>
       patient.lastName?.trim().toLowerCase()===last.toLowerCase()&&
       patient.firstName?.trim().toLowerCase()===first.toLowerCase()&&
       String(patient.middleInitial||"").trim().replace(/\.$/,"").toLowerCase()===middle.replace(/\.$/,"").toLowerCase()&&
-      (patient.course===course&&patient.year===year||Boolean(guardianContactValue&&String(patient.guardianContact||"").replace(/\D/g,"")===guardianContactValue))
+      ((patient.institutionalCategory||patient.course)===course&&(patient.personnelType||patient.year)===year||Boolean(guardianContactValue&&String(patient.guardianContact||"").replace(/\D/g,"")===guardianContactValue))
     );
     if(matchingPatient){
       const previousSymptoms=matchingPatient.symptoms||[];
@@ -185,7 +193,7 @@ function openStudentForm(existing=null){
     }
     guardianContactTouched=true;
     if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
-    const rec={id:isEdit?editingStudent.id:newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,year,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms};
+    const rec={id:isEdit?editingStudent.id:newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,institutionalCategory:course,year,personnelType:course==="Campus Personnel"?year:null,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
@@ -270,29 +278,34 @@ function bindOptionFreeText(group, initialValue=""){
 
 function visitInventoryCard({id,label,items,selected,quantityId,quantity,unitForItem,availableForItem}){
   const selectedItem=items.find(item=>item.name===selected);
-  const stockText=selectedItem?`Available stock: ${availableForItem(selectedItem)} ${unitForItem(selectedItem)}`:"Select an item to view available stock";
+  const stockText=selectedItem?`Available Stock: ${availableForItem(selectedItem)} ${unitForItem(selectedItem)}`:"Available Stock: Select an item";
   return `<section class="visit-inventory-card">
     <div class="visit-inventory-heading"><label for="${id}">${label}</label>
       <select id="${id}" aria-label="${label}"><option value="">None</option>${items.map(item=>`<option value="${escapeHtml(item.name)}" ${selected===item.name?"selected":""} ${availableForItem(item)<1&&selected!==item.name?"disabled":""}>${escapeHtml(item.name)}</option>`).join("")}</select>
       <span class="visit-inventory-stock" id="${id}-stock" aria-live="polite">${stockText}</span>
     </div>
-    <div class="visit-inventory-quantity"><span>Quantity</span><div class="visit-quantity-control">
+    <div class="visit-inventory-quantity"><label for="${quantityId}">Treatment Quantity</label><div class="visit-quantity-control">
       <button type="button" data-quantity-step="-1" data-quantity-target="${quantityId}" aria-label="Decrease quantity">−</button>
-      <input id="${quantityId}" type="number" min="1" step="1" value="${Math.max(1,Number(quantity)||1)}" inputmode="numeric" aria-label="${label} quantity">
+      <input id="${quantityId}" type="number" min="1" step="1" value="${Math.max(1,Number(quantity)||1)}" inputmode="numeric" aria-label="${label} treatment quantity">
       <button type="button" data-quantity-step="1" data-quantity-target="${quantityId}" aria-label="Increase quantity">+</button>
-    </div></div>
+    </div></div><div class="field-error hidden" id="${quantityId}-error" role="alert"></div>
   </section>`;
 }
 
 function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForItem}){
   const select=document.getElementById(id),quantity=document.getElementById(quantityId),stock=document.getElementById(`${id}-stock`);
   if(!select||!quantity||!stock)return;
+  const error=document.getElementById(`${quantityId}-error`);
   const update=()=>{
     const item=items.find(candidate=>candidate.name===select.value);
     const available=item?availableForItem(item):0;
-    stock.textContent=item?`Available stock: ${available} ${unitForItem(item)}`:"Select an item to view available stock";
+    stock.textContent=item?`Available Stock: ${available} ${unitForItem(item)}`:"Available Stock: Select an item";
     quantity.max=item?String(available):"";
     const current=Math.max(1,Number(quantity.value)||1);
+    const invalid=Boolean(item&&current>available);
+    quantity.setAttribute("aria-invalid",String(invalid));
+    error.textContent=invalid?`Only ${available} ${unitForItem(item)} available.`:"";
+    error.classList.toggle("hidden",!invalid);
     document.querySelectorAll(`[data-quantity-target="${quantityId}"]`).forEach(button=>{
       button.disabled=!item||(button.dataset.quantityStep==="-1"?current<=1:available<1||current>=available);
     });
@@ -400,6 +413,7 @@ function openConsultationForm(student, existing=null){
   const updateMedicineCard=bindVisitInventoryCard({id:"cf-medicine",quantityId:"cf-medqty",items:meds,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable});
   const updateSupplyCard=bindVisitInventoryCard({id:"cf-supply",quantityId:"cf-supply-qty",items:supplies,unitForItem:()=>"items",availableForItem:equipmentAvailable});
   let visitSaveInProgress=false;
+  let pendingVisitId="";
   document.getElementById("cf-clear").onclick=()=>{
     document.getElementById("consult-form").reset();
     syncComplaint();
@@ -418,7 +432,13 @@ function openConsultationForm(student, existing=null){
     const previous=isEdit?CONSULTATIONS.find(c=>c.id===existing.id):null;
     ensureInventoryLedger();
     const interventions=selectedChecks('[data-check-group="intervention"]'); const interventionOther=document.querySelector('[data-free-text="intervention-other"]')?.value.trim(); if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-    const rec={id:uid("CS"),date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther:complaint==="Other"?reasonOther:"",description:isEdit?f.description||"":"",symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:isEdit?f.painLocation||"":"",symptoms:isEdit?f.symptoms||[]:[],knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?`Yes: ${allergyDetail}`:"No",currentMedication:document.getElementById("cf-current-med").value,previousSimilar:isEdit?f.previousSimilar||"":"",lastMeal:isEdit?f.lastMeal||"":"",weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment:isEdit?f.assessment||"":"",assessmentOther:isEdit?f.assessmentOther||"":"",notes:isEdit?f.notes||"":"",interventions,treatmentGiven:isEdit?f.treatmentGiven||"":"",dosage:isEdit?f.dosage||"":"",medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyQty,equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("cf-outcome").value,releasedAt:isEdit?f.releasedAt||"":"",remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
+    const supplyItem=EQUIPMENT.find(item=>item.name===supplyName);
+    if(medName&&med&&medQty>medicineAvailable(med)||supplyName&&supplyItem&&supplyQty>equipmentAvailable(supplyItem)){
+      toast("Insufficient inventory","The requested treatment quantity exceeds the currently available stock. Review Available Stock before saving.","err");
+      return;
+    }
+    pendingVisitId=pendingVisitId||uid("CS");
+    const rec={id:pendingVisitId,date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther:complaint==="Other"?reasonOther:"",description:isEdit?f.description||"":"",symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:isEdit?f.painLocation||"":"",symptoms:isEdit?f.symptoms||[]:[],knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?`Yes: ${allergyDetail}`:"No",currentMedication:document.getElementById("cf-current-med").value,previousSimilar:isEdit?f.previousSimilar||"":"",lastMeal:isEdit?f.lastMeal||"":"",weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment:isEdit?f.assessment||"":"",assessmentOther:isEdit?f.assessmentOther||"":"",notes:isEdit?f.notes||"":"",interventions,treatmentGiven:isEdit?f.treatmentGiven||"":"",dosage:isEdit?f.dosage||"":"",medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyItemId:supplyItem?.id||null,supplyQty,equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("cf-outcome").value,releasedAt:isEdit?f.releasedAt||"":"",remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
     rec.respiratoryRate=document.getElementById("cf-respiratory-rate").value;
     rec.supplyUsed=supplyName||(isEdit&&!supplies.some(item=>item.name===existingSupply)?existingSupply:"");
     const saveButton=document.getElementById("cf-save");
@@ -447,6 +467,7 @@ function openConsultationForm(student, existing=null){
       student.allergies=allergyAnswerValue==="Yes"?mergePatientAllergies(student.allergies,allergyDetail):"No Known Allergies";
       CONSULTATIONS.unshift(rec);
       await saveVisitToClinicState([rec.id,previous?.id],inventorySnapshot,[student.id]);
+      pendingVisitId="";
       let auditSucceeded=true;
       try{
         const auditActions=[{action:`${isEdit?"Patient Visit Revised":"Patient Visit Created"} — ${rec.id}`,module:"Patient Visits",detail:rec.id},...clinicInventoryAuditActions(inventorySnapshot,`visit ${rec.id}`)];
@@ -478,7 +499,7 @@ function consultationRows(c){
     ["Record No.",c.id],
     ["Date / Time",`${fmtDate(c.date)} · ${c.time||"—"}`],
     ["Patient",c.studentName||"—"],
-    ["Course / Year",`${c.course||"—"} — ${c.year||"—"}`],
+    [(c.institutionalCategory||c.course)==="Campus Personnel"?"Institutional Category / Personnel Type":"Institutional Category / Year Level",`${c.institutionalCategory||c.course||"—"} — ${c.personnelType||c.year||"—"}`],
     ["Nurse on Duty",c.nurse||"—"],
     ["Reason for Clinic Visit",c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint||"—"],
     ["Detailed Description",c.description||"—"],
@@ -541,7 +562,7 @@ function bindConsultHistory(){
    document.querySelectorAll("[data-view-consult]").forEach(b=>b.onclick=()=>viewConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.viewConsult)));
   document.querySelectorAll("[data-print]").forEach(b=>b.onclick=()=>printConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.print)));
   document.querySelectorAll("[data-edit-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.editConsult);openConsultationForm(STUDENTS.find(s=>s.id===c.studentId)||{id:c.studentId,name:c.studentName},c);});
-  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);if(!c)return;confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:async()=>{const snapshot=captureInventoryState(),previous={deleted:c.deleted,deletedAt:c.deletedAt,status:c.status};const deletedAt=new Date().toISOString();await commitClinicRecordMutation({apply:()=>{reverseVisitInventoryUsage(c);c.deleted=true;c.deletedAt=deletedAt;c.status="Deleted";},rollback:()=>{restoreInventoryState(snapshot);Object.assign(c,previous);},auditActions:[{action:`Record Deleted — Patient Visit ${c.id}`,module:"Patient Visits",status:"Warning",detail:c.id},...clinicInventoryAuditActions(snapshot,`visit ${c.id} deleted`)],module:"Patient Visits",successTitle:"Visit deleted",successMessage:`Record ${c.id} moved to Deleted Records; used inventory was restored.`,refresh:rerender});}});});
+  document.querySelectorAll("[data-del-consult]").forEach(b=>b.onclick=()=>{const c=CONSULTATIONS.find(x=>x.id===b.dataset.delConsult);if(!c)return;confirmDialog({title:"Delete this patient visit?",msg:`Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,okLabel:"Delete Record",onConfirm:async()=>{const snapshot=captureInventoryState(),previous={deleted:c.deleted,deletedAt:c.deletedAt,status:c.status};const deletedAt=new Date().toISOString();await commitClinicRecordMutation({apply:()=>{reverseVisitInventoryUsage(c);c.deleted=true;c.deletedAt=deletedAt;c.status="Deleted";},rollback:()=>{restoreInventoryState(snapshot);Object.assign(c,previous);},save:()=>saveVisitInventoryStatusToClinicState(c.id,true),auditActions:[{action:`Record Deleted — Patient Visit ${c.id}`,module:"Patient Visits",status:"Warning",detail:c.id},...clinicInventoryAuditActions(snapshot,`visit ${c.id} deleted`)],module:"Patient Visits",successTitle:"Visit deleted",successMessage:`Record ${c.id} moved to Deleted Records; used inventory was restored.`,refresh:rerender});}});});
   document.querySelectorAll("[data-restore-consult]").forEach(b=>b.onclick=async()=>{
     const visit=CONSULTATIONS.find(record=>record.id===b.dataset.restoreConsult);if(!visit)return;
     const patient=DELETED_STUDENTS.find(record=>record.id===visit.studentId);
@@ -549,7 +570,7 @@ function bindConsultHistory(){
     if(restoredPatient){delete restoredPatient.deletedAt;delete restoredPatient.deletedBy;}
     const patientIndex=patient?DELETED_STUDENTS.indexOf(patient):-1;
     const snapshot=captureInventoryState(),previousVisit={deleted:visit.deleted,deletedAt:visit.deletedAt,status:visit.status};
-    await commitClinicRecordMutation({apply:()=>{if(patient&&STUDENTS.some(record=>record.id===patient.id))throw new Error("A patient with this ID is already active.");validateVisitInventoryUsage(visit);applyVisitInventoryUsage(visit);if(patient){DELETED_STUDENTS.splice(patientIndex,1);STUDENTS.unshift(restoredPatient);}visit.deleted=false;delete visit.deletedAt;if(visit.status==="Deleted")visit.status="Active";},rollback:()=>{restoreInventoryState(snapshot);Object.assign(visit,previousVisit);if(patient){const activeIndex=STUDENTS.findIndex(record=>record.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(patientIndex,DELETED_STUDENTS.length),0,patient);}},auditActions:[{action:`Record Restored — Patient Visit ${visit.id}`,module:"Patient Visits"},...(patient?[{action:`Record Restored — Patient ${patient.id}`,module:"Patients",detail:patient.id}]:[]),...clinicInventoryAuditActions(snapshot,`visit ${visit.id} restored`)],module:"Patient Visits",successTitle:"Visit restored",successMessage:`Record ${visit.id} returned to Patient Visits.`,refresh:rerender});
+    await commitClinicRecordMutation({apply:()=>{if(patient&&STUDENTS.some(record=>record.id===patient.id))throw new Error("A patient with this ID is already active.");validateVisitInventoryUsage(visit);applyVisitInventoryUsage(visit);if(patient){DELETED_STUDENTS.splice(patientIndex,1);STUDENTS.unshift(restoredPatient);}visit.deleted=false;delete visit.deletedAt;if(visit.status==="Deleted")visit.status="Active";},rollback:()=>{restoreInventoryState(snapshot);Object.assign(visit,previousVisit);if(patient){const activeIndex=STUDENTS.findIndex(record=>record.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(patientIndex,DELETED_STUDENTS.length),0,patient);}},save:()=>saveVisitInventoryStatusToClinicState(visit.id,false,Boolean(patient)),auditActions:[{action:`Record Restored — Patient Visit ${visit.id}`,module:"Patient Visits"},...(patient?[{action:`Record Restored — Patient ${patient.id}`,module:"Patients",detail:patient.id}]:[]),...clinicInventoryAuditActions(snapshot,`visit ${visit.id} restored`)],module:"Patient Visits",successTitle:"Visit restored",successMessage:`Record ${visit.id} returned to Patient Visits.`,refresh:rerender});
   });
 }
 

@@ -6,6 +6,7 @@ import {
 	index,
 	integer,
 	jsonb,
+	primaryKey,
 	pgTable,
 	pgSchema,
 	check,
@@ -54,6 +55,8 @@ export const patientsTable = pgTable("patients", {
 	name: text("name").notNull(),
 	course: text("course").notNull(),
 	yearLevel: text("year_level").notNull(),
+	institutionalCategory: text("institutional_category"),
+	personnelType: text("personnel_type"),
 	gender: text("gender"),
 	age: integer("age"),
 	contact: text("contact"),
@@ -141,6 +144,7 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	equipmentUsed: jsonb("equipment_used").$type<string[]>().notNull().default([]),
 	equipmentQuantity: integer("equipment_quantity"),
 	supplyUsed: text("supply_used"),
+	supplyItemId: text("supply_item_id").references(() => equipmentTable.id, { onDelete: "set null" }),
 	supplyQuantity: integer("supply_quantity"),
 	dosage: text("dosage"),
 	outcome: text("outcome").notNull(),
@@ -166,6 +170,19 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	check("clinical_visits_supply_quantity_check", sql`${table.supplyQuantity} is null or ${table.supplyQuantity} > 0`),
 	index("clinical_visits_patient_date_idx").on(table.patientId, table.visitDate.desc()),
 	index("clinical_visits_date_idx").on(table.visitDate.desc()),
+]);
+
+export const clinicalVisitInventoryDeductionsTable = pgTable("clinical_visit_inventory_deductions", {
+	visitId: text("visit_id").notNull().references(() => clinicalVisitsTable.id, { onDelete: "cascade" }),
+	itemType: text("item_type").$type<"medicine" | "equipment">().notNull(),
+	itemId: text("item_id").notNull(),
+	quantity: integer("quantity").notNull(),
+	reversedAt: timestamp("reversed_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.visitId, table.itemType, table.itemId] }),
+	check("clinical_visit_inventory_deductions_item_type_check", sql`${table.itemType} in ('medicine', 'equipment')`),
+	check("clinical_visit_inventory_deductions_quantity_check", sql`${table.quantity} > 0`),
 ]);
 
 export const auditLogsTable = pgTable("audit_logs", {
