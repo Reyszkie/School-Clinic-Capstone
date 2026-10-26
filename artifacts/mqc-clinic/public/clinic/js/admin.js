@@ -656,7 +656,8 @@ function bindAuditTab() {
         renderAdminTabBody();
       }),
   );
-  document.getElementById("reset-audit-logs")?.onclick = async () => {
+  const resetButton = document.getElementById("reset-audit-logs");
+  if (resetButton) resetButton.onclick = async () => {
     if (!canManageClinicAccounts()) return;
     confirmDialog({
       title: "Reset Audit Logs?",
