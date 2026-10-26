@@ -284,12 +284,16 @@ function normalizeVisitRow(
     );
   }
   const supplyName = row.supplyUsed ?? row.supply_used ?? null;
+  const supplyItemId = row.supplyItemId ?? row.supply_item_id ?? null;
   const supplyQuantity = toNumber(
     row.supplyQty ?? row.supplyQuantity ?? row.supply_quantity,
   );
+  const hasSupplySelection = Boolean(
+    (typeof supplyName === "string" && supplyName.trim()) || supplyItemId,
+  );
   if (
     requireOtherReason &&
-    supplyName &&
+    hasSupplySelection &&
     (!Number.isInteger(supplyQuantity) || Number(supplyQuantity) <= 0)
   ) {
     throw new Error(
@@ -331,7 +335,7 @@ function normalizeVisitRow(
     medicine_code: row.medicineCode ?? row.medicine_code ?? null,
     medicine_name: medicineName,
     medicine_quantity: medicineName ? medicineQuantity : null,
-    supply_item_id: row.supplyItemId ?? row.supply_item_id ?? null,
+    supply_item_id: supplyItemId,
     equipment_used: Array.isArray(row.equipmentUsed ?? row.equipment_used)
       ? (row.equipmentUsed ?? row.equipment_used)
       : [],
@@ -339,7 +343,7 @@ function normalizeVisitRow(
       row.equipmentQty ?? row.equipmentQuantity ?? row.equipment_quantity,
     ),
     supply_used: supplyName,
-    supply_quantity: supplyQuantity,
+    supply_quantity: hasSupplySelection ? supplyQuantity : null,
     dosage: row.dosage ?? null,
     outcome: outcome || null,
     released_at: row.releasedAt ?? row.released_at ?? null,
