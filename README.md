@@ -98,7 +98,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Sex selection.
 - Contact number field.
 - Parent or guardian name and contact fields.
-- Optional initial clinical visit fields on Add New Patient; the visit is saved separately and linked to the profile.
+- Add New Patient saves the patient profile only; clinical visits are created separately from the patient profile.
 - Patient save and update confirmations.
 - Patient audit entries for additions, updates, and deletions.
 - Clinical Visit Records section.
@@ -291,7 +291,7 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields, normalizes known legacy guardian-contact values, and installs the `save_clinical_visit_with_inventory`, `save_new_patient_with_initial_visit`, and `set_clinical_visit_inventory_status` database functions used to save linked patient/visit records and prevent concurrent overselling. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields, normalizes known legacy guardian-contact values, and installs the `save_clinical_visit_with_inventory`, `update_clinical_visit_with_inventory`, and `set_clinical_visit_inventory_status` database functions used for separate visit records and inventory updates. It also removes the obsolete function that created a patient and initial visit together. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
 `supabase/reset_patient_records.sql` is a destructive reset script. Verify the Supabase project before running it. By default it requires an external backup reference and explicit operator confirmation; proceeding without a backup requires explicitly setting `operator_confirmed_without_backup` and `operator_confirmed` to `true`. That option is irreversible without another backup. The script preserves user accounts and inventory rows and checks their data before committing.
 

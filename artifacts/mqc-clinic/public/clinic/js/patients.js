@@ -474,7 +474,7 @@ function openConsultationForm(student, existing=null){
         : patientAllergyStatus(student.allergies).status==="unassessed"?"No Known Allergies":student.allergies;
       if(isEdit)Object.assign(previous,rec);
       else CONSULTATIONS.unshift(rec);
-      await saveVisitToClinicState([rec.id],inventorySnapshot,[student.id],false,isEdit);
+      await saveVisitToClinicState([rec.id],inventorySnapshot,[student.id],isEdit);
       pendingVisitId="";
       let auditSucceeded=true;
       try{

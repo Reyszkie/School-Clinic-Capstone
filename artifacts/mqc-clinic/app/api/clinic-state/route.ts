@@ -923,30 +923,19 @@ export async function PUT(request: Request) {
       const createPatient = visitMutation.createPatient === true;
       const updateVisit = visitMutation.updateVisit === true;
 
+      if (createPatient) {
+        return Response.json({ message: "Save the patient profile first, then create a separate clinical visit." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
       if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
       if (!visitToSave) throw new Error("The new clinical visit for this save could not be found.");
-      if (createPatient && (patientIds.size !== 1 || visitIds.size !== 1)) {
-        return Response.json({ message: "Creating a patient with an initial visit requires exactly one new patient and one visit." }, { status: 400, headers: { "Cache-Control": "no-store" } });
-      }
-      if (updateVisit && (createPatient || visitIds.size !== 1 || patientIds.size !== 1)) {
+      if (updateVisit && (visitIds.size !== 1 || patientIds.size !== 1)) {
         return Response.json({ message: "Updating a clinical visit requires exactly one existing visit and its patient." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
       if (visitToSave.deleted || visitToSave.status === "Deleted") return Response.json({ message: "A new clinical visit cannot be saved as deleted." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       if (await hasInvalidGuardianContactChange(affectedPatients)) {
         return Response.json({ message: "Parent / Guardian Contact must contain exactly 11 digits." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
-      if (createPatient) {
-        const patientToCreate = affectedPatients[0];
-        const category = patientToCreate.institutionalCategory ?? patientToCreate.institutional_category ?? patientToCreate.course;
-        const year = patientToCreate.personnelType ?? patientToCreate.personnel_type ?? patientToCreate.year ?? patientToCreate.yearLevel ?? patientToCreate.year_level;
-        if (!String(patientToCreate.lastName ?? patientToCreate.last_name ?? "").trim()
-          || !String(patientToCreate.firstName ?? patientToCreate.first_name ?? "").trim()
-          || !String(category ?? "").trim() || !String(year ?? "").trim()) {
-          return Response.json({ message: "Name, institutional category, and year level or personnel type are required for a new patient." }, { status: 400, headers: { "Cache-Control": "no-store" } });
-        }
-      }
-
       let normalizedVisit: ReturnType<typeof normalizeVisitRow>;
       try {
         normalizedVisit = normalizeVisitRow(visitToSave, visitToSave.status !== "Superseded");
@@ -955,14 +944,10 @@ export async function PUT(request: Request) {
         return Response.json({ message }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
       const patient = affectedPatients.find(row => String(row.id) === String(normalizedVisit.patient_id));
-      if (createPatient && (!patient || String(patient.id) !== String(normalizedVisit.patient_id))) {
-        return Response.json({ message: "The initial visit must reference the new patient record." }, { status: 400, headers: { "Cache-Control": "no-store" } });
-      }
-      const rpcName=createPatient?"save_new_patient_with_initial_visit":updateVisit?"update_clinical_visit_with_inventory":"save_clinical_visit_with_inventory";
+      const rpcName=updateVisit?"update_clinical_visit_with_inventory":"save_clinical_visit_with_inventory";
       const rpcResponse = await supabaseRequest(`rpc/${rpcName}`, {
         method: "POST",
         body: JSON.stringify({
-          ...(createPatient && patient ? { p_patient: normalizePatientRow(patient) } : {}),
           p_visit: normalizedVisit,
           p_patient_allergies: patient?.allergies ?? "Not Yet Assessed",
         }),

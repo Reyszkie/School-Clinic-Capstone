@@ -74,7 +74,7 @@ Open <http://localhost:3000/>. Check the public health endpoint at <http://local
 ## 5. Quick test
 
 1. Sign in with the administrator account provisioned above.
-2. Add a test patient with an initial clinical visit; confirm the patient and visit appear as separate linked records and selected medicine or supplies are deducted.
+2. Add a test patient profile, then create a separate clinical visit from that patient's profile; confirm the linked records appear and selected medicine or supplies are deducted.
 3. Add another visit for the same patient; confirm the earlier visit remains in Visit History.
 4. Refresh and confirm the patient, both visits, and inventory changes remain.
 5. Open Reports and confirm the visits appear in the reason, grade, and disposition summaries.

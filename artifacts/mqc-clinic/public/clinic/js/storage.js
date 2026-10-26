@@ -266,12 +266,11 @@ function saveInventoryItemStatusToClinicState(itemType,itemId,deleted){
   },true);
 }
 
-function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[],createPatient=false,updateVisit=false){
+function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[],updateVisit=false){
   const payload=snapshotData(false);
   payload.visitMutation={
     visitIds:visitIds.filter(Boolean),
     patientIds:patientIds.filter(Boolean),
-    createPatient,
     updateVisit,
     medicineCodes:inventorySnapshot.medicineQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.code),
     equipmentIds:inventorySnapshot.equipmentQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.id),
