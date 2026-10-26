@@ -1,15 +1,13 @@
 /* ================= DASHBOARD ================= */
-function activePatients(){return STUDENTS.filter(student=>!student.deleted&&student.status!=="Deleted");}
-function activeVisits(){const patientIds=new Set(activePatients().map(student=>student.id));return CONSULTATIONS.filter(c=>!c.deleted&&c.status!=="Deleted"&&c.status!=="Superseded"&&patientIds.has(c.studentId));}
 const FREQUENT_VISIT_THRESHOLD=2;
 function dashboardMetrics(){
-  const visits=activeVisits(), today=todayDateString(), month=today.slice(0,7);
+  const visits=activeClinicVisits(), today=todayDateString(), month=today.slice(0,7);
   const monthVisits=visits.filter(c=>c.date?.slice(0,7)===month);
   const counts={};visits.forEach(c=>counts[c.studentId]=(counts[c.studentId]||0)+1);
   const returning=Object.values(counts).filter(n=>n>1).length;
   const frequent=Object.values(counts).filter(n=>n>=FREQUENT_VISIT_THRESHOLD).length;
   const referrals=visits.filter(visit=>/referred|referral/i.test(visit.outcome||"")).length;
-  return {students:activePatients().length,today:visits.filter(c=>c.date===today).length,month:monthVisits.length,returning,frequent,referrals};
+  return {students:activeClinicPatients().length,today:visits.filter(c=>c.date===today).length,month:monthVisits.length,returning,frequent,referrals};
 }
 function renderDashboard(){
   if(!clinicDataLoaded){
@@ -50,14 +48,14 @@ function dashSearchRows(list){
 }
 function openStudentRecordsModal(student){
   if(!student)return;
-  const records=activeVisits().filter(c=>c.studentId===student.id).sort((a,b)=>a.date+a.time<b.date+b.time?1:-1);
+  const records=activeClinicVisits().filter(c=>c.studentId===student.id);
   visitorRecordsModal({studentId:student.id,studentName:student.name,course:student.course,year:student.year,count:records.length,records});
 }
 function bindDashboard(){
   document.getElementById("dash-retry-load")?.addEventListener("click",async()=>{const loaded=await hydrateFromSharedStorage();if(loaded)render();});
   const input=document.getElementById("dash-search"),tbody=document.getElementById("dash-search-tbody");
   const bindRows=()=>document.querySelectorAll("[data-view-records]").forEach(b=>b.onclick=()=>openStudentRecordsModal(STUDENTS.find(s=>s.id===b.dataset.viewRecords)));
-  input?.addEventListener("input",()=>{const q=input.value.trim().toLowerCase();tbody.innerHTML=q?dashSearchRows(activePatients().filter(s=>[s.name,s.institutionalCategory||s.course,s.personnelType||s.year].join(" ").toLowerCase().includes(q))):`<tr><td colspan="4">${emptyState("Start typing a name, institutional category, or year to search.")}</td></tr>`;bindRows();});
+  input?.addEventListener("input",()=>{const q=input.value.trim().toLowerCase();tbody.innerHTML=q?dashSearchRows(activeClinicPatients().filter(s=>[s.name,s.institutionalCategory||s.course,s.personnelType||s.year].join(" ").toLowerCase().includes(q))):`<tr><td colspan="4">${emptyState("Start typing a name, institutional category, or year to search.")}</td></tr>`;bindRows();});
   document.querySelectorAll("[data-open-med5],[data-open-med6]").forEach(row=>{row.style.cursor="pointer";row.onclick=()=>{const med=MEDICINES.find(m=>m.code===(row.dataset.openMed5||row.dataset.openMed6));if(med)openMedicineForm(med);};});
   document.querySelectorAll("[data-open-eq]").forEach(row=>{row.style.cursor="pointer";row.onclick=()=>{const equipment=EQUIPMENT.find(e=>e.id===row.dataset.openEq);if(equipment)openEquipmentForm(equipment);};});
 }

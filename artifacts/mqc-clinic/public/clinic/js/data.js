@@ -125,6 +125,18 @@ function seedConsultations(){
 }
 let CONSULTATIONS = seedConsultations();
 
+function activeClinicPatients(){
+  return STUDENTS.filter(patient=>!patient.deleted&&patient.status!=="Deleted");
+}
+function activeClinicVisits(includeSuperseded=false){
+  const patientIds=new Set(activeClinicPatients().map(patient=>patient.id));
+  return CONSULTATIONS.filter(visit=>!visit.deleted&&visit.status!=="Deleted"&&(includeSuperseded||visit.status!=="Superseded")&&patientIds.has(visit.studentId));
+}
+function clinicPatientVisitHistory(patientId){
+  return CONSULTATIONS.filter(visit=>visit.studentId===patientId&&!visit.deleted&&visit.status!=="Deleted")
+    .sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1));
+}
+
 let AUDIT_LOGS = [];
 let INVENTORY_TRANSACTIONS = [];
 

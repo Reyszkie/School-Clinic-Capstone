@@ -33,8 +33,7 @@ function studentTableRows(list){
 }
 
 function studentClinicalVisits(student){
-  return CONSULTATIONS.filter(c=>c.studentId===student.id&&!c.deleted)
-    .sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1));
+  return clinicPatientVisitHistory(student.id);
 }
 
 function renderStudentClinicalRecords(student){
@@ -87,7 +86,7 @@ function filterStudents(){
   const q=(document.getElementById("stu-search").value||"").toLowerCase();
   const course=document.getElementById("stu-course-filter").value;
   const department=document.getElementById("stu-department-filter").value||"";
-  return STUDENTS.filter(s=>!s.deleted).filter(s=>{
+  return activeClinicPatients().filter(s=>{
     const category=s.institutionalCategory||s.course,year=s.personnelType||s.year;
     const searchable=[s.name,category,year,s.lastName,s.firstName].join(" ").toLowerCase();
     return (!q||searchable.includes(q))&&(!course||category===course)&&(!department||educationGroupFor(category,year)===department);
