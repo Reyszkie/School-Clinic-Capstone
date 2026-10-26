@@ -424,16 +424,10 @@ function queueClinicStateSave(payload, throwOnError = false) {
 }
 
 function saveToClinicState(
-  _resetAuditLogs = false,
   throwOnError = false,
   purgeRequests = [],
   inventoryBootstrap = false,
-  resetAuditLogs = false,
 ) {
-  if (resetAuditLogs) {
-    AUDIT_LOGS.splice(0, AUDIT_LOGS.length);
-    return queueClinicStateSave({ resetAuditLogs: true }, throwOnError);
-  }
   if (purgeRequests.length)
     return queueClinicStateSave(
       { purgeOnly: true, purgeRequests },
@@ -447,7 +441,7 @@ function saveToClinicState(
 async function commitClinicRecordMutation({
   apply,
   rollback,
-  save = () => saveToClinicState(false, true),
+  save = () => saveToClinicState(true),
   auditAction,
   auditActions,
   module,
@@ -527,6 +521,13 @@ function saveInventoryItemStatusToClinicState(itemType, itemId, deleted) {
     {
       inventoryStatusMutation: { itemType, itemId, deleted },
     },
+    true,
+  );
+}
+
+function saveDeletedRecordRestoreToClinicState(recordType, recordId) {
+  return queueClinicStateSave(
+    { recordRestoreMutation: { recordType, recordId } },
     true,
   );
 }

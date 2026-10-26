@@ -31,7 +31,7 @@ async function bootstrapClinicSession(){
     }
     const hydrated=await hydrateFromSharedStorage();
     if(sharedStorageMissing||sharedStorageNeedsBootstrap){
-      await saveToClinicState(false,true,[],true);
+      await saveToClinicState(true,[],true);
       clinicDataLoaded=true;
       clinicDataStatus="ready";
     }

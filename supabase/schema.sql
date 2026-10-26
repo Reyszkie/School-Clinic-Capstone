@@ -60,7 +60,7 @@ create table if not exists public.medicines (
   category text not null default 'General',
   quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
-  -- Legacy fields remain nullable for existing rows; the clinic UI/API no longer use them.
+  -- Batch and supplier are retained for legacy rows; expiration_date is used by the current inventory workflows.
   batch_number text,
   expiration_date date,
   supplier text,
@@ -738,7 +738,9 @@ begin
   end if;
 
   if p_deleted then
-    if v_visit.status = 'Deleted' then return; end if;
+    if v_visit.status = 'Deleted' then
+      raise exception 'The clinical visit is already deleted.';
+    end if;
     if v_visit.status <> 'Active' then
       raise exception 'Only an active clinical visit can be deleted.';
     end if;
@@ -791,7 +793,9 @@ begin
     end if;
     update public.clinical_visits set status = 'Deleted', deleted_at = now() where id = v_visit.id;
   else
-    if v_visit.status <> 'Deleted' then return; end if;
+    if v_visit.status <> 'Deleted' then
+      raise exception 'The clinical visit is no longer deleted.';
+    end if;
     select exists (
       select 1 from public.clinical_visit_inventory_deductions where visit_id = v_visit.id
     ) into v_has_deductions;

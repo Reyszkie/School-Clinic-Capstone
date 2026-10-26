@@ -367,7 +367,7 @@ function openStudentForm(existing = null, returnToDetails = false) {
             state.selectedStudent = null;
           }
         },
-        save: () => saveToClinicState(false, true),
+        save: () => saveToClinicState(true),
         auditAction: `${wasEdit ? "Patient Record Updated" : "Patient Added"} — ${rec.id}`,
         module: "Patients",
         detail: rec.id,

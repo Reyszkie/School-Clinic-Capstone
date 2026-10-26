@@ -833,7 +833,10 @@ async function validatePurgeRows(rows: unknown) {
         key: string;
         values: Array<string | number>;
       }>,
-      linkedAuthUsers: [] as string[],
+      linkedAuthUsers: [] as Array<{
+        authUserId: string;
+        profile: Record<string, unknown>;
+      }>,
     };
   if (!Array.isArray(rows))
     throw new Error("Permanent-delete requests must be an array.");
@@ -888,7 +891,7 @@ async function validatePurgeRows(rows: unknown) {
         .join(",");
       const selection =
         group.table === "clinic_users"
-          ? `${group.key},deleted_at,auth_user_id`
+          ? "*"
           : group.table === "clinical_visits"
             ? `${group.key},deleted_at,status`
             : `${group.key},deleted_at`;
@@ -916,8 +919,17 @@ async function validatePurgeRows(rows: unknown) {
   const linkedAuthUsers = validatedRecords.flatMap(({ group, records }) =>
     group.table === "clinic_users"
       ? records
-          .map((record) => record.auth_user_id)
-          .filter((id): id is string => typeof id === "string" && Boolean(id))
+          .filter(
+            (record): record is Record<string, unknown> & {
+              auth_user_id: string;
+            } =>
+              typeof record.auth_user_id === "string" &&
+              Boolean(record.auth_user_id),
+          )
+          .map((record) => ({
+            authUserId: record.auth_user_id,
+            profile: record,
+          }))
       : [],
   );
   return { requests, groups: validatedGroups, linkedAuthUsers };
@@ -926,6 +938,12 @@ async function validatePurgeRows(rows: unknown) {
 async function purgeRows(
   prepared: Awaited<ReturnType<typeof validatePurgeRows>>,
 ) {
+  if (
+    prepared.groups.length !== 1 ||
+    prepared.groups[0].values.length !== 1
+  ) {
+    throw new Error("Permanently delete one record at a time.");
+  }
   for (const group of prepared.groups) {
     const values = group.values
       .map(
@@ -933,28 +951,64 @@ async function purgeRows(
           `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`,
       )
       .join(",");
+    const deletedFilter =
+      group.table === "clinical_visits"
+        ? `&or=${encodeURIComponent("(deleted_at.not.is.null,status.eq.Deleted)")}`
+        : "&deleted_at=not.is.null";
     const response = await supabaseRequest(
-      `${group.table}?${group.key}=${encodeURIComponent(`in.(${values})`)}`,
-      { method: "DELETE" },
+      `${group.table}?${group.key}=${encodeURIComponent(`in.(${values})`)}${deletedFilter}&select=${group.key}`,
+      {
+        method: "DELETE",
+        headers: { Prefer: "return=representation" },
+      },
     );
-    if (!response.ok)
-      throw new Error(`${group.table} delete returned ${response.status}`);
+    if (!response.ok) {
+      const details = await response.text();
+      throw new Error(
+        `${group.table} delete returned ${response.status}: ${details}`,
+      );
+    }
+    const deleted = (await response.json()) as Array<Record<string, unknown>>;
+    const deletedIds = new Set(
+      deleted.map((record) => String(record[group.key] ?? "")),
+    );
+    if (
+      deletedIds.size !== group.values.length ||
+      group.values.some((value) => !deletedIds.has(String(value)))
+    ) {
+      throw new Error(
+        `One or more ${group.table} records changed before permanent deletion. Refresh Deleted Records and try again.`,
+      );
+    }
   }
   if (prepared.linkedAuthUsers.length) {
     const { url, key } = supabaseConfig();
     const results = await Promise.all(
-      prepared.linkedAuthUsers.map((id) =>
-        fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+      prepared.linkedAuthUsers.map(({ authUserId }) =>
+        fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(authUserId)}`, {
           method: "DELETE",
           headers: { apikey: key, Authorization: `Bearer ${key}` },
           cache: "no-store",
         }),
       ),
     );
-    if (results.some((response) => !response.ok && response.status !== 404))
+    if (results.some((response) => !response.ok && response.status !== 404)) {
+      const [user] = prepared.linkedAuthUsers;
+      const rollback = await supabaseRequest("clinic_users?on_conflict=id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(user.profile),
+      });
+      if (!rollback.ok) {
+        const details = await rollback.text();
+        throw new Error(
+          `Linked authentication-account deletion failed, and the deleted clinic profile could not be restored (${rollback.status}: ${details}).`,
+        );
+      }
       throw new Error(
-        "One or more linked authentication accounts could not be permanently deleted.",
+        "The linked authentication account could not be permanently deleted. The clinic profile was restored to Deleted Records; try again.",
       );
+    }
   }
 }
 
@@ -1177,6 +1231,103 @@ export async function PUT(request: Request) {
         { status: 401, headers: { "Cache-Control": "no-store" } },
       );
     const snapshot = state as Record<string, unknown>;
+    if (snapshot.recordRestoreMutation !== undefined) {
+      if (
+        Object.keys(snapshot).length !== 1 ||
+        !snapshot.recordRestoreMutation ||
+        typeof snapshot.recordRestoreMutation !== "object" ||
+        Array.isArray(snapshot.recordRestoreMutation)
+      ) {
+        return Response.json(
+          { message: "The record restoration request is invalid." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      if (!hasClinicAdminPrivileges(session.role)) {
+        return Response.json(
+          { message: "Only a Head Nurse or existing legacy administrator can restore records." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const mutation = snapshot.recordRestoreMutation as Record<
+        string,
+        unknown
+      >;
+      const recordType = mutation.recordType;
+      const recordId =
+        typeof mutation.recordId === "string" ? mutation.recordId.trim() : "";
+      const table =
+        recordType === "patient"
+          ? "patients"
+          : recordType === "user"
+            ? "clinic_users"
+            : null;
+      if (!table || !recordId || recordId.length > 200) {
+        return Response.json(
+          { message: "The selected record cannot be restored." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const lookup = await supabaseRequest(
+        `${table}?id=eq.${encodeURIComponent(recordId)}&deleted_at=not.is.null&select=id${table === "clinic_users" ? ",username" : ""}&limit=1`,
+      );
+      if (!lookup.ok)
+        throw new Error(`${table} restore lookup returned ${lookup.status}`);
+      const [record] = (await lookup.json()) as Array<{
+        id: string;
+        username?: string;
+      }>;
+      if (!record) {
+        return Response.json(
+          { message: "This record is no longer deleted or no longer exists. Refresh the list and try again." },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      if (table === "clinic_users") {
+        const existingUsers = await readTable("clinic_users");
+        if (
+          existingUsers.some(
+            (user) =>
+              String(user.id) !== recordId &&
+              !user.deleted_at &&
+              String(user.username ?? "").toLowerCase() ===
+                String(record.username ?? "").toLowerCase(),
+          )
+        ) {
+          return Response.json(
+            { message: "An active account already uses this username. Rename that account before restoring this user." },
+            { status: 409, headers: { "Cache-Control": "no-store" } },
+          );
+        }
+      }
+      const restoreResponse = await supabaseRequest(
+        `${table}?id=eq.${encodeURIComponent(recordId)}&deleted_at=not.is.null`,
+        {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify(
+            table === "patients"
+              ? { deleted_at: null, deleted_by: null }
+              : { deleted_at: null },
+          ),
+        },
+      );
+      if (!restoreResponse.ok)
+        throw new Error(`${table} restore returned ${restoreResponse.status}`);
+      const restored = (await restoreResponse.json()) as Array<{
+        id: string;
+      }>;
+      if (restored.length !== 1 || restored[0].id !== recordId) {
+        return Response.json(
+          { message: "The record changed before it could be restored. Refresh the list and try again." },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      return new Response(null, {
+        status: 204,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
     if (snapshot.purgeOnly === true) {
       if (
         Object.keys(snapshot).some(
@@ -1201,6 +1352,12 @@ export async function PUT(request: Request) {
         );
       }
       const purgeRequest = await validatePurgeRows(snapshot.purgeRequests);
+      if (purgeRequest.groups.length > 1) {
+        return Response.json(
+          { message: "Permanently delete one record type at a time." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (!purgeRequest.requests.length)
         return Response.json(
           {
@@ -1264,7 +1421,6 @@ export async function PUT(request: Request) {
     delete persistedSnapshot.inventoryBootstrap;
     delete persistedSnapshot.visitStatusMutation;
     delete persistedSnapshot.inventoryStatusMutation;
-    delete persistedSnapshot.resetAuditLogs;
     const inventoryMutation =
       snapshot.inventoryMutation &&
       typeof snapshot.inventoryMutation === "object"
@@ -1498,8 +1654,11 @@ export async function PUT(request: Request) {
           { status: 400 },
         );
       }
+      const expectedStatus = inventoryStatusMutation.deleted
+        ? "is.null"
+        : "not.is.null";
       const response = await supabaseRequest(
-        `${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key}`,
+        `${table}?${key}=eq.${encodeURIComponent(itemId)}&deleted_at=${expectedStatus}&select=${key}`,
         {
           method: "PATCH",
           headers: { Prefer: "return=representation" },
@@ -1519,13 +1678,16 @@ export async function PUT(request: Request) {
       const affected = (await response.json()) as Array<
         Record<string, unknown>
       >;
-      if (affected.length !== 1)
+      if (
+        affected.length !== 1 ||
+        String(affected[0]?.[key] ?? "") !== itemId
+      )
         return Response.json(
           {
             message:
-              "The inventory record for this status change could not be found.",
+              "The inventory record changed before this action completed. Refresh the list and try again.",
           },
-          { status: 404 },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
         );
       return new Response(null, {
         status: 204,
@@ -1617,30 +1779,6 @@ export async function PUT(request: Request) {
           { status: 409, headers: { "Cache-Control": "no-store" } },
         );
       }
-    }
-    if (snapshot.resetAuditLogs === true) {
-      if (!hasClinicAdminPrivileges(session.role)) {
-        return Response.json(
-          {
-            message:
-              "Only a Head Nurse or existing legacy administrator can reset audit logs.",
-          },
-          { status: 403, headers: { "Cache-Control": "no-store" } },
-        );
-      }
-      await supabaseRequest("audit_logs?select=id", { method: "DELETE" });
-      await supabaseRequest("clinic_state", {
-        method: "POST",
-        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-        body: JSON.stringify({
-          id: clinicStateId,
-          state: { ...persistedSnapshot, auditLogs: [] },
-        }),
-      });
-      return new Response(null, {
-        status: 204,
-        headers: { "Cache-Control": "no-store" },
-      });
     }
     const purgeRequest = await validatePurgeRows(snapshot.purgeRequests);
     if (

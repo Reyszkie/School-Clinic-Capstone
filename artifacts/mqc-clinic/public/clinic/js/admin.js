@@ -637,9 +637,6 @@ function renderAuditTab() {
     .join("");
   return `
   <div class="card">
-    <div class="toolbar" style="justify-content:flex-end;">
-      <button class="btn btn-outline-red" id="reset-audit-logs">${ICONS.trash_sm} Reset Audit Logs</button>
-    </div>
     <div class="table-wrap"><table><thead><tr><th>Date</th><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Module</th><th>Status</th></tr></thead>
     <tbody>${rows || `<tr><td colspan="7">${emptyState("No audit activity recorded yet.")}</td></tr>`}</tbody></table></div>
     <div class="pagination"><span>Page ${state.auditPage} of ${totalPages} · ${AUDIT_LOGS.length} entries</span>
@@ -656,21 +653,6 @@ function bindAuditTab() {
         renderAdminTabBody();
       }),
   );
-  const resetButton = document.getElementById("reset-audit-logs");
-  if (resetButton) resetButton.onclick = async () => {
-    if (!canManageClinicAccounts()) return;
-    confirmDialog({
-      title: "Reset Audit Logs?",
-      msg: "This will permanently remove <b>all</b> audit log entries from the clinic records. This action cannot be undone.",
-      okLabel: "Reset Audit Logs",
-      danger: true,
-      loadingLabel: "Resetting...",
-      onConfirm: async () => {
-        await saveToClinicState(false, true, [], false, true);
-        renderAdminTabBody();
-      },
-    });
-  };
 }
 function fmtDeletedDate(value) {
   if (!value) return "—";
@@ -771,7 +753,7 @@ async function commitDeletedRecordChange({
   apply,
   rollback,
   purge,
-  save = () => saveToClinicState(false, true, purge ? [purge] : []),
+  save = () => saveToClinicState(true, purge ? [purge] : []),
   auditAction,
   auditActions,
   module,
@@ -994,6 +976,7 @@ function bindDeletedTab() {
               patient,
             );
           },
+          save: () => saveDeletedRecordRestoreToClinicState("patient", patient.id),
           auditAction: `Record Restored — Patient ${patient.id}`,
           module: "Patients",
           auditActions: [
@@ -1104,6 +1087,7 @@ function bindDeletedTab() {
             state.users = state.users.filter((row) => row.id !== user.id);
             DELETED_USERS.unshift(user);
           },
+          save: () => saveDeletedRecordRestoreToClinicState("user", user.id),
           auditAction: `User Restored — ${user.name}`,
           module: "User Management",
           auditActions: [
