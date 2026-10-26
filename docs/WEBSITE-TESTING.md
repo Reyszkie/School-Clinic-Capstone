@@ -74,13 +74,18 @@ Open <http://localhost:3000/>. Check the public health endpoint at <http://local
 ## 5. Quick test
 
 1. Sign in with the administrator account provisioned above.
-2. Add a test patient and a clinic visit; confirm the chosen medicine or supplies are deducted.
-3. Refresh and confirm the patient, visit, and inventory changes remain.
-4. Open Reports and confirm the visit appears in the reason, grade, and disposition summaries.
-5. Confirm the report summary labels open matching visit records.
-6. Sign in as `testnurse` / `test12345` and confirm the account cannot create users or permanently delete records.
-7. Export a backup, then test restoring it only in a development/test Supabase project.
-8. Check “Remember me,” restart the browser, and verify the account is restored only while the server session remains active.
+2. Add a test patient with an initial clinical visit; confirm the patient and visit appear as separate linked records and selected medicine or supplies are deducted.
+3. Add another visit for the same patient; confirm the earlier visit remains in Visit History.
+4. Refresh and confirm the patient, both visits, and inventory changes remain.
+5. Open Reports and confirm the visits appear in the reason, grade, and disposition summaries.
+6. Confirm the report summary labels open matching visit records.
+7. As a Head Nurse, change another user's password and verify that both password fields must match.
+8. Sign in as `testnurse` / `test12345`; verify Staff Nurse password-change requests are rejected by the server and delete/restore actions remain unavailable.
+9. Confirm Patient Details omits Symptoms at Registration and Allergies, Visit History omits the Record column, and User Details/User Management omit user IDs.
+10. Export a backup, then test restoring it only in a development/test Supabase project.
+11. Check “Remember me,” restart the browser, and verify the account is restored only while the server session remains active.
+
+`supabase/reset_patient_records.sql` has not been run as part of local website testing. Before running it, verify the exact Supabase project and explicitly confirm the reset. The script requires an external backup reference by default; bypassing that guard requires explicitly enabling the no-backup confirmation in the SQL script.
 
 ## 6. Project checks
 

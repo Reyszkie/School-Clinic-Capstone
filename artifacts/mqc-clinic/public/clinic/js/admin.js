@@ -18,7 +18,6 @@ function renderUsersTab(){
   const canManageAccounts=canManageClinicAccounts();
   const rows = state.users.map(u=>`
     <tr>
-      <td class="mono">${u.id}</td>
       <td>${canManageAccounts?`<button class="user-detail-link" type="button" data-view-user="${escapeHtml(u.id)}">${escapeHtml(u.name)}</button>`:escapeHtml(u.name)}</td>
       <td>${u.role}</td>
       <td><span class="chip ${u.status==='Active'?'chip-available':'chip-void'}">${u.status}</span></td>
@@ -34,7 +33,7 @@ function renderUsersTab(){
       <button class="btn btn-coral" id="add-user-btn">${ICONS.plus} Add User</button>
      </div>`:""}
     <div class="table-wrap">
-       <table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Status</th>${canManageAccounts?"<th></th>":""}</tr></thead>
+       <table><thead><tr><th>Name</th><th>Role</th><th>Status</th>${canManageAccounts?"<th></th>":""}</tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
   </div>`;
@@ -42,6 +41,7 @@ function renderUsersTab(){
 function openUserForm(existing=null){
   const isEdit=!!existing;
   const f=existing||{id:uid("NRS"), lastName:"", firstName:"", middleInitial:"", name:"", role:"", username:"", password:"", status:"Active"};
+  const canChangeOtherPasswords=isEdit&&state.currentUser?.role==="Head Nurse"&&state.currentUser.id!==f.id;
   const parts=(f.name||"").split(",");
   const roles=[["Head Nurse","Head Nurse"],["Staff Nurse","Staff Nurse"]];
   if(isEdit&&f.role==="Head Nurse & Administrator")roles.unshift(["Head Nurse & Administrator","Legacy Administrator (unchanged)"]);
@@ -55,6 +55,10 @@ function openUserForm(existing=null){
       <div class="f-field"><label>Role <span class="req">*</span></label><select id="uf-role" required><option value="">Select Role</option>${roles.map(([value,label])=>`<option value="${value}" ${f.role===value?'selected':''} ${value==="Head Nurse & Administrator"?"disabled":""}>${label}</option>`).join("")}</select></div>
       <div class="f-field"><label>Username <span class="req">*</span></label><input type="text" id="uf-username" value="${escapeHtml(f.username||"")}" required></div>
       <div class="f-field"><label>Status</label><select id="uf-status">${["Active","Disabled"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
+      ${canChangeOtherPasswords?`<div class="f-field full"><h4>Change Password</h4><p class="field-hint">Use at least 8 characters. The password is updated through Supabase Auth and is not stored in clinic records.</p></div>
+      <div class="f-field"><label for="uf-change-password">New Password</label><div class="input-row"><input type="password" id="uf-change-password" autocomplete="new-password" minlength="8"><button type="button" class="toggle-pw" data-toggle-password="uf-change-password" aria-label="Show new password">${ICONS.eye}</button></div></div>
+      <div class="f-field"><label for="uf-confirm-change-password">Confirm New Password</label><div class="input-row"><input type="password" id="uf-confirm-change-password" autocomplete="new-password" minlength="8"><button type="button" class="toggle-pw" data-toggle-password="uf-confirm-change-password" aria-label="Show password confirmation">${ICONS.eye}</button></div></div>
+      <div class="f-field full"><button type="button" class="btn btn-dark" id="uf-password-save">${ICONS.check} Change Password</button></div>`:""}
       ${isEdit?"":`<div class="f-field"><label>Password <span class="req">*</span></label><div class="input-row"><input type="password" id="uf-password" value="" autocomplete="new-password" required><button type="button" class="toggle-pw" data-toggle-password="uf-password" aria-label="Show password">${ICONS.eye}</button></div></div>
       <div class="f-field"><label>Confirm Password <span class="req">*</span></label><div class="input-row"><input type="password" id="uf-confirm" value="" autocomplete="new-password" required><button type="button" class="toggle-pw" data-toggle-password="uf-confirm" aria-label="Show password confirmation">${ICONS.eye}</button></div></div>`}
     </form>
@@ -62,6 +66,29 @@ function openUserForm(existing=null){
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="uf-save">${ICONS.check} Save User</button></div>`;
   openModal(html);
   document.querySelectorAll("[data-toggle-password]").forEach(btn=>btn.onclick=()=>{const input=document.getElementById(btn.dataset.togglePassword); if(!input) return; const showing=input.type!=="password"; input.type=showing?"password":"text"; btn.innerHTML=showing?ICONS.eye:ICONS.eye_off; btn.setAttribute("aria-label", showing?"Show password":"Hide password"); });
+  let savingPassword=false;
+  document.getElementById("uf-password-save")?.addEventListener("click",async()=>{
+    if(savingPassword)return;
+    const passwordInput=document.getElementById("uf-change-password");
+    const confirmInput=document.getElementById("uf-confirm-change-password");
+    const password=passwordInput.value,confirmPassword=confirmInput.value;
+    if(password.length<8){toast("Password too short","Use at least 8 characters for the new password.","err");passwordInput.focus();return;}
+    if(password!==confirmPassword){toast("Passwords do not match","Enter the same password in both fields.","err");confirmInput.focus();return;}
+    const button=document.getElementById("uf-password-save"),label=button.innerHTML;
+    savingPassword=true;button.disabled=true;button.innerHTML='<span class="button-spinner"></span> Saving...';
+    try{
+      const response=await fetch(`/api/auth/users/${encodeURIComponent(f.id)}/password`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password,confirmPassword})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok){toast("Password update failed",result.message||"Unable to update the Supabase password.","err");return;}
+      passwordInput.value="";confirmInput.value="";
+      toast("Password changed",`The password for ${f.name} was updated.`,"ok");
+    }catch(error){
+      toast("Password update failed",error.message||"Unable to update the Supabase password.","err");
+    }finally{
+      savingPassword=false;
+      if(button.isConnected){button.disabled=false;button.innerHTML=label;}
+    }
+  });
   let savingUser=false;
   document.getElementById('uf-save').onclick=async()=>{
     if(savingUser)return;
@@ -149,8 +176,8 @@ function bindUsersTab(){
 }
 function openUserDetails(user){
   if(!user||!canManageClinicAccounts())return;
-  const details=[["Full Name",user.name],["User ID",user.id],["Username",user.username],["Role",user.role],["Account Status",user.status]];
-  openModal(`<div class="modal-head"><h3>User Details</h3><button class="modal-close" onclick="closeModal()" aria-label="Close user details">${ICONS.x}</button></div><div class="modal-body"><table class="record-detail-table"><tbody>${details.map(([label,value])=>`<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value||"—")}</td></tr>`).join("")}</tbody></table></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button></div>`,`sm`);
+  const details=[["Full Name",user.name],["Username",user.username],["Role",user.role],["Account Status",user.status]];
+  openModal(`<div class="modal-head"><h3>User Details</h3><button class="modal-close" onclick="closeModal()" aria-label="Close user details">${ICONS.x}</button></div><div class="modal-body"><table class="record-detail-table"><tbody>${details.map(([label,value])=>`<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value||"—")}</td></tr>`).join("")}</tbody></table></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button></div>`,`sm user-details-modal`);
   logAudit(`User Details Viewed — ${user.id}`,"User Management","Success",false,false,user.id);
 }
 function renderAuditTab(){

@@ -240,7 +240,7 @@ begin
     raise exception 'The selected medicine could not be matched to an inventory item.';
   end if;
 
-  if not exists (select 1 from public.patients where id = v_visit.patient_id and deleted_at is null) then
+  if not exists (select 1 from public.patients where id = v_visit.patient_id) then
     raise exception 'The patient record for this visit could not be found.';
   end if;
 
@@ -402,6 +402,61 @@ begin
   update public.patients
   set allergies = coalesce(p_patient_allergies, allergies)
   where id = v_visit.patient_id;
+end;
+$$;
+
+create or replace function public.save_new_patient_with_initial_visit(
+  p_patient jsonb,
+  p_visit jsonb,
+  p_patient_allergies text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_patient public.patients;
+  v_visit public.clinical_visits;
+begin
+  v_patient := jsonb_populate_record(null::public.patients, p_patient);
+  v_visit := jsonb_populate_record(null::public.clinical_visits, p_visit);
+  if v_patient.id is null or v_visit.id is null or v_visit.patient_id is null then
+    raise exception 'A patient ID and an initial visit linked to that patient are required.';
+  end if;
+  if v_patient.id <> v_visit.patient_id then
+    raise exception 'The initial visit must reference the patient being created.';
+  end if;
+  if nullif(btrim(v_patient.last_name), '') is null
+    or nullif(btrim(v_patient.first_name), '') is null
+    or nullif(btrim(coalesce(v_patient.institutional_category, v_patient.course)), '') is null
+    or nullif(btrim(coalesce(v_patient.personnel_type, v_patient.year_level)), '') is null then
+    raise exception 'Name, institutional category, and year level or personnel type are required.';
+  end if;
+  if v_patient.guardian_contact is null or v_patient.guardian_contact !~ '^[0-9]{11}$' then
+    raise exception 'Parent / Guardian Contact must contain exactly 11 digits.';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(v_patient.id, 0));
+  if exists (select 1 from public.patients where id = v_patient.id) then
+    if exists (
+      select 1
+      from public.clinical_visits
+      where id = v_visit.id and patient_id = v_patient.id
+    ) then
+      return;
+    end if;
+    raise exception 'A patient with this ID already exists.' using errcode = '23505';
+  end if;
+
+  v_patient.allergies := coalesce(nullif(p_patient_allergies, ''), v_patient.allergies, 'Not Yet Assessed');
+  v_patient.deleted_at := null;
+  v_patient.deleted_by := null;
+  v_patient.created_at := coalesce(v_patient.created_at, now());
+  v_patient.updated_at := now();
+  insert into public.patients select (v_patient).*;
+
+  perform public.save_clinical_visit_with_inventory(p_visit, p_patient_allergies);
 end;
 $$;
 
@@ -585,6 +640,8 @@ $$;
 
 revoke all on function public.save_clinical_visit_with_inventory(jsonb, text) from public;
 grant execute on function public.save_clinical_visit_with_inventory(jsonb, text) to service_role;
+revoke all on function public.save_new_patient_with_initial_visit(jsonb, jsonb, text) from public;
+grant execute on function public.save_new_patient_with_initial_visit(jsonb, jsonb, text) to service_role;
 revoke all on function public.set_clinical_visit_inventory_status(text, boolean, boolean) from public;
 grant execute on function public.set_clinical_visit_inventory_status(text, boolean, boolean) to service_role;
 

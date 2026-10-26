@@ -88,8 +88,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Add, select, edit, and delete patient actions.
 - Deleted patient recovery.
 - Patient initials avatar.
-- Name, course, year, sex, contact, guardian, allergies, medical conditions, and registration symptoms display.
-- Warning styling for known allergies and medical conditions.
+- Name, institutional category, year or personnel type, sex, and guardian contact display.
 - Required last name and given name validation.
 - Automatic internal patient record identifiers.
 - Duplicate patient matching to reuse the existing profile and its Clinical Visit Records.
@@ -99,7 +98,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Sex selection.
 - Contact number field.
 - Parent or guardian name and contact fields.
-- Symptom checklist with Other option on the patient registration form.
+- Optional initial clinical visit fields on Add New Patient; the visit is saved separately and linked to the profile.
 - Patient save and update confirmations.
 - Patient audit entries for additions, updates, and deletions.
 - Clinical Visit Records section.
@@ -107,6 +106,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - View full clinical record action.
 - Edit visit record action.
 - New Patient Visit action.
+- Distinct visit records remain linked to the patient; later visits do not overwrite earlier encounters.
 - Visit date and time fields.
 - Nurse-on-duty field.
 - Reason selection with Other option.
@@ -195,7 +195,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 ### User Management
 
 - User Management tab.
-- User ID, name, role, and status display.
+- Name, role, and status display; internal user IDs remain available to application operations.
 - Active and Disabled statuses.
 - Add, edit, enable, disable, and delete user actions.
 - Deleted user recovery.
@@ -208,7 +208,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Password show/hide controls.
 - Required name, username, and new-password validation.
 - Password confirmation validation.
-- Leave-blank password behavior when editing a user.
+- Head Nurses can change another user's password through Supabase Auth; Staff Nurses cannot use the interface or password API to do so.
+- Password changes require matching values and at least 8 characters; plaintext passwords are never written to clinic tables.
 - User audit entries.
 
 ### Audit Logs
@@ -290,7 +291,9 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields, normalizes known legacy guardian-contact values, and installs the `save_clinical_visit_with_inventory` / `set_clinical_visit_inventory_status` database functions used to save treatments and prevent concurrent overselling. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields, normalizes known legacy guardian-contact values, and installs the `save_clinical_visit_with_inventory`, `save_new_patient_with_initial_visit`, and `set_clinical_visit_inventory_status` database functions used to save linked patient/visit records and prevent concurrent overselling. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+
+`supabase/reset_patient_records.sql` is a destructive reset script. Verify the Supabase project before running it. By default it requires an external backup reference and explicit operator confirmation; proceeding without a backup requires explicitly setting `operator_confirmed_without_backup` and `operator_confirmed` to `true`. That option is irreversible without another backup. The script preserves user accounts and inventory rows and checks their data before committing.
 
 The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled without client policies; data access is restricted to the authenticated server API, which uses its server-side secret key. That key must never be exposed to browser code.
 

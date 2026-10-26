@@ -799,14 +799,22 @@ export async function PUT(request: Request) {
           return Response.json({ message: "Inventory changed while this item was being edited. Refresh the list and try again." }, { status: 409 });
         }
       } else {
-        const existingResponse = await supabaseRequest(`${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},deleted_at&limit=1`);
-        if (!existingResponse.ok) throw new Error(`${table} inventory status check returned ${existingResponse.status}`);
-        const [existing] = await existingResponse.json() as Array<Record<string, unknown>>;
         const normalized = table === "medicines" ? normalizeMedicineRow(submitted) : normalizeEquipmentRow(submitted);
-        if (session.role === "Staff Nurse" && (Boolean(existing?.deleted_at) || Boolean(normalized.deleted_at))) {
+        if (session.role === "Staff Nurse" && Boolean(normalized.deleted_at)) {
           return Response.json({ message: "Staff Nurses cannot delete or restore inventory records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
         }
-        await upsertTableRows(table, key, [table === "medicines" ? normalizeMedicineRow(submitted) : normalizeEquipmentRow(submitted)]);
+        const insertResponse = await supabaseRequest(table, {
+          method: "POST",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify(normalized),
+        });
+        if (!insertResponse.ok) {
+          if (insertResponse.status === 409 || insertResponse.status === 422) {
+            return Response.json({ message: "An inventory item with this ID already exists. Refresh the list and try again." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+          }
+          const details = await insertResponse.text();
+          throw new Error(`${table} inventory insert returned ${insertResponse.status}: ${details}`);
+        }
       }
       try {
         const currentSnapshotResponse = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
@@ -912,13 +920,27 @@ export async function PUT(request: Request) {
       const affectedVisits = visits.filter(row => visitIds.has(String(row.id)));
       const affectedPatients = patients.filter(row => patientIds.has(String(row.id)));
       const visitToSave = affectedVisits.find(row => row.status !== "Superseded");
+      const createPatient = visitMutation.createPatient === true;
 
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
       if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
       if (!visitToSave) throw new Error("The new clinical visit for this save could not be found.");
+      if (createPatient && (patientIds.size !== 1 || visitIds.size !== 1)) {
+        return Response.json({ message: "Creating a patient with an initial visit requires exactly one new patient and one visit." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
       if (visitToSave.deleted || visitToSave.status === "Deleted") return Response.json({ message: "A new clinical visit cannot be saved as deleted." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       if (await hasInvalidGuardianContactChange(affectedPatients)) {
         return Response.json({ message: "Parent / Guardian Contact must contain exactly 11 digits." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
+      if (createPatient) {
+        const patientToCreate = affectedPatients[0];
+        const category = patientToCreate.institutionalCategory ?? patientToCreate.institutional_category ?? patientToCreate.course;
+        const year = patientToCreate.personnelType ?? patientToCreate.personnel_type ?? patientToCreate.year ?? patientToCreate.yearLevel ?? patientToCreate.year_level;
+        if (!String(patientToCreate.lastName ?? patientToCreate.last_name ?? "").trim()
+          || !String(patientToCreate.firstName ?? patientToCreate.first_name ?? "").trim()
+          || !String(category ?? "").trim() || !String(year ?? "").trim()) {
+          return Response.json({ message: "Name, institutional category, and year level or personnel type are required for a new patient." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+        }
       }
 
       let normalizedVisit: ReturnType<typeof normalizeVisitRow>;
@@ -929,9 +951,13 @@ export async function PUT(request: Request) {
         return Response.json({ message }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
       const patient = affectedPatients.find(row => String(row.id) === String(normalizedVisit.patient_id));
-      const rpcResponse = await supabaseRequest("rpc/save_clinical_visit_with_inventory", {
+      if (createPatient && (!patient || String(patient.id) !== String(normalizedVisit.patient_id))) {
+        return Response.json({ message: "The initial visit must reference the new patient record." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
+      const rpcResponse = await supabaseRequest(`rpc/${createPatient?"save_new_patient_with_initial_visit":"save_clinical_visit_with_inventory"}`, {
         method: "POST",
         body: JSON.stringify({
+          ...(createPatient && patient ? { p_patient: normalizePatientRow(patient) } : {}),
           p_visit: normalizedVisit,
           p_patient_allergies: patient?.allergies ?? "Not Yet Assessed",
         }),

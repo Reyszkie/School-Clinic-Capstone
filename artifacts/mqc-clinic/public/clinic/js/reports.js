@@ -38,8 +38,8 @@ function reportSummaryVisits(kind,value){
   document.querySelectorAll("[data-report-visit-print]").forEach(button=>button.onclick=()=>{const visit=CONSULTATIONS.find(record=>record.id===button.dataset.reportVisitPrint);if(visit){closeModal();printConsultation(visit);}});
 }
 function visitorRecordsModal(v){
-  const rows=v.records.sort((a,b)=>a.date+a.time<b.date+b.time?1:-1).map(c=>`<tr><td class="mono">${c.id}</td><td>${fmtDate(c.date)}<br><span style="font-size:11px;color:var(--ink-soft)">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint)}</td><td>${escapeHtml(c.outcome||"—")}</td><td><button class="mini-btn" data-open-slip-btn="${c.id}">${ICONS.print}</button></td></tr>`).join("");
-  detailModal(`Visit History — ${escapeHtml(v.studentName)}`,`${escapeHtml(v.course||"—")} — ${escapeHtml(v.year||"—")} · ${v.count} visit(s)`, `<div class="table-wrap"><table><thead><tr><th>Record</th><th>Date</th><th>Reason</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
+  const rows=v.records.sort((a,b)=>a.date+a.time<b.date+b.time?1:-1).map(c=>`<tr><td>${fmtDate(c.date)}<br><span style="font-size:11px;color:var(--ink-soft)">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint)}</td><td>${escapeHtml(c.outcome||"—")}</td><td><button class="mini-btn" data-open-slip-btn="${c.id}">${ICONS.print}</button></td></tr>`).join("");
+  detailModal(`Visit History — ${escapeHtml(v.studentName)}`,`${escapeHtml(v.course||"—")} — ${escapeHtml(v.year||"—")} · ${v.count} visit(s)`, `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Reason</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
   document.querySelectorAll("[data-open-slip-btn]").forEach(b=>b.onclick=()=>{closeModal();printConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.openSlipBtn));});
 }
 function reportDetail(key){
