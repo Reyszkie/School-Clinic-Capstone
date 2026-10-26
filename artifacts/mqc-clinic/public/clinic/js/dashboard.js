@@ -1,13 +1,7 @@
 /* ================= DASHBOARD ================= */
-const FREQUENT_VISIT_THRESHOLD=2;
 function dashboardMetrics(){
-  const visits=activeClinicVisits(), today=todayDateString(), month=today.slice(0,7);
-  const monthVisits=visits.filter(c=>c.date?.slice(0,7)===month);
-  const counts={};visits.forEach(c=>counts[c.studentId]=(counts[c.studentId]||0)+1);
-  const returning=Object.values(counts).filter(n=>n>1).length;
-  const frequent=Object.values(counts).filter(n=>n>=FREQUENT_VISIT_THRESHOLD).length;
-  const referrals=visits.filter(visit=>/referred|referral/i.test(visit.outcome||"")).length;
-  return {students:activeClinicPatients().length,today:visits.filter(c=>c.date===today).length,month:monthVisits.length,returning,frequent,referrals};
+  const metrics=clinicMetrics();
+  return {students:metrics.patients.length,today:metrics.todayVisits.length,month:metrics.monthVisits.length,returning:metrics.returningPatients,frequent:metrics.frequentVisitors,referrals:metrics.referrals.length};
 }
 function renderDashboard(){
   if(!clinicDataLoaded){

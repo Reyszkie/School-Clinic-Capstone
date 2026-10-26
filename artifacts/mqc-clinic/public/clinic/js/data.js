@@ -126,15 +126,44 @@ function seedConsultations(){
 let CONSULTATIONS = seedConsultations();
 
 function activeClinicPatients(){
-  return STUDENTS.filter(patient=>!patient.deleted&&patient.status!=="Deleted");
+  const seen=new Set();
+  return STUDENTS.filter(patient=>{
+    if(!patient.id||patient.deleted||patient.status==="Deleted"||seen.has(patient.id))return false;
+    seen.add(patient.id);
+    return true;
+  });
 }
 function activeClinicVisits(includeSuperseded=false){
   const patientIds=new Set(activeClinicPatients().map(patient=>patient.id));
-  return CONSULTATIONS.filter(visit=>!visit.deleted&&visit.status!=="Deleted"&&(includeSuperseded||visit.status!=="Superseded")&&patientIds.has(visit.studentId));
+  const seen=new Set();
+  return CONSULTATIONS.filter(visit=>{
+    if(!visit.id||visit.deleted||visit.status==="Deleted"||(!includeSuperseded&&visit.status==="Superseded")||!patientIds.has(visit.studentId)||seen.has(visit.id))return false;
+    seen.add(visit.id);
+    return true;
+  });
 }
 function clinicPatientVisitHistory(patientId){
-  return CONSULTATIONS.filter(visit=>visit.studentId===patientId&&!visit.deleted&&visit.status!=="Deleted")
+  return activeClinicVisits(true).filter(visit=>visit.studentId===patientId)
     .sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1));
+}
+const CLINIC_FREQUENT_VISIT_THRESHOLD=2;
+function clinicReferralVisits(visits){
+  return visits.filter(visit=>/(?:referred|referral)/i.test(visit.outcome||""));
+}
+function clinicMetrics(asOfDate=todayDateString()){
+  const patients=activeClinicPatients(),visits=activeClinicVisits();
+  const visitCounts=new Map();
+  visits.forEach(visit=>visitCounts.set(visit.studentId,(visitCounts.get(visit.studentId)||0)+1));
+  const month=asOfDate.slice(0,7);
+  return {
+    patients,
+    visits,
+    todayVisits:visits.filter(visit=>visit.date===asOfDate),
+    monthVisits:visits.filter(visit=>visit.date?.slice(0,7)===month),
+    returningPatients:[...visitCounts.values()].filter(count=>count>1).length,
+    frequentVisitors:[...visitCounts.values()].filter(count=>count>=CLINIC_FREQUENT_VISIT_THRESHOLD).length,
+    referrals:clinicReferralVisits(visits),
+  };
 }
 
 let AUDIT_LOGS = [];
