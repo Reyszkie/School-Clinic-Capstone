@@ -94,7 +94,7 @@ function visitInventoryRequirements(visit){
     const medicine=MEDICINES.find(item=>item.code===visit.medicineCode||item.name===visit.medicine);
     if(medicine)add("medicine",medicine,Math.max(1,Number(visit.medQty)||1));
     else{
-      const equipment=EQUIPMENT.find(item=>item.name===visit.medicine);
+      const equipment=EQUIPMENT.find(item=>item.id===visit.medicine||item.name===visit.medicine);
       if(equipment)add("equipment",equipment,1);
     }
   }
@@ -104,7 +104,7 @@ function visitInventoryRequirements(visit){
   if(selectedSupply)add("equipment",selectedSupply,Math.max(1,Number(visit.supplyQty)||1));
   const toolNames=Array.isArray(visit.equipmentUsed)?visit.equipmentUsed:(visit.equipmentUsed?[visit.equipmentUsed]:[]);
   toolNames.forEach(name=>{
-    const item=EQUIPMENT.find(candidate=>candidate.name===name);
+    const item=EQUIPMENT.find(candidate=>candidate.id===name||candidate.name===name);
     if(item)add("equipment",item,Math.max(1,Number(visit.equipmentQty)||1));
   });
   return [...requirements.values()];

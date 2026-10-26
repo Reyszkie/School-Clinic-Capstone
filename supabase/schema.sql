@@ -304,7 +304,7 @@ begin
             update public.equipment
             set quantity = quantity + greatest(coalesce(v_previous.equipment_quantity, 1), 1)
             where id = (
-              select id from public.equipment where name = v_item_name order by id limit 1
+              select id from public.equipment where id = v_item_name or name = v_item_name order by id limit 1
             );
           end loop;
         end if;
@@ -378,7 +378,8 @@ begin
     loop
       select id into v_item_id
       from public.equipment
-      where name = v_item_name and status = 'Available' and deleted_at is null
+      where (id = v_item_name or name = v_item_name)
+        and category = 'Medical Equipment' and status = 'Available' and deleted_at is null
       order by id
       limit 1;
       v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
@@ -422,6 +423,10 @@ declare
   v_old_supply_id text;
   v_new_supply_id text;
   v_delta integer;
+  v_deduction record;
+  v_item_id text;
+  v_requested_ids text[];
+  v_selected_values text[];
 begin
   select * into v_previous
   from public.clinical_visits
@@ -464,6 +469,34 @@ begin
   if v_new_supply_id is not null and (v_visit.supply_quantity is null or v_visit.supply_quantity <= 0) then
     raise exception 'Supply quantity must be a positive whole number.';
   end if;
+  if jsonb_typeof(v_visit.equipment_used) <> 'array' then
+    raise exception 'Medical equipment selections must be an array of inventory IDs.';
+  end if;
+  if jsonb_array_length(v_visit.equipment_used) > 0
+    and (v_visit.equipment_quantity is null or v_visit.equipment_quantity <= 0) then
+    raise exception 'Equipment quantity must be a positive whole number.';
+  end if;
+  select coalesce(array_agg(distinct value), array[]::text[])
+    into v_selected_values
+  from jsonb_array_elements_text(v_visit.equipment_used) as selections(value);
+  if exists (
+    select 1 from unnest(v_selected_values) as requested(item_id)
+    where not exists (
+      select 1 from public.equipment
+      where (id = requested.item_id or name = requested.item_id)
+        and category = 'Medical Equipment'
+    ) and not exists (
+      select 1 from jsonb_array_elements_text(v_previous.equipment_used) as previous_values(value)
+      where previous_values.value = requested.item_id
+    )
+  ) then
+    raise exception 'A selected item is not a medical equipment inventory record.';
+  end if;
+  select coalesce(array_agg(distinct equipment.id), array[]::text[])
+    into v_requested_ids
+  from unnest(v_selected_values) as requested(item_id)
+  join public.equipment on (equipment.id = requested.item_id or equipment.name = requested.item_id)
+    and equipment.category = 'Medical Equipment';
 
   select coalesce(sum(quantity), 0)::integer into v_old_medicine_quantity
   from public.clinical_visit_inventory_deductions
@@ -532,6 +565,52 @@ begin
       if not found then raise exception 'The selected medical supply is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
     end if;
   end if;
+
+  for v_deduction in
+    select * from public.clinical_visit_inventory_deductions
+    where visit_id = v_previous.id and item_type = 'equipment'
+      and item_id <> coalesce(v_old_supply_id, '') and reversed_at is null
+    for update
+  loop
+    if v_deduction.item_id = any(v_requested_ids) then
+      v_delta := v_deduction.quantity - v_visit.equipment_quantity;
+      if v_delta > 0 then
+        update public.equipment set quantity = quantity + v_delta where id = v_deduction.item_id;
+      elsif v_delta < 0 then
+        update public.equipment set quantity = quantity + v_delta
+        where id = v_deduction.item_id and category = 'Medical Equipment'
+          and status = 'Available' and deleted_at is null and quantity >= -v_delta;
+        if not found then raise exception 'The selected medical equipment is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+      end if;
+      update public.clinical_visit_inventory_deductions
+      set quantity = v_visit.equipment_quantity
+      where visit_id = v_previous.id and item_type = 'equipment' and item_id = v_deduction.item_id;
+    else
+      update public.equipment set quantity = quantity + v_deduction.quantity where id = v_deduction.item_id;
+      update public.clinical_visit_inventory_deductions
+      set reversed_at = now()
+      where visit_id = v_previous.id and item_type = 'equipment' and item_id = v_deduction.item_id;
+    end if;
+  end loop;
+
+  foreach v_item_id in array v_requested_ids
+  loop
+    if not exists (
+      select 1 from public.clinical_visit_inventory_deductions
+      where visit_id = v_previous.id and item_type = 'equipment'
+        and item_id = v_item_id and reversed_at is null
+    ) then
+      update public.equipment set quantity = quantity - v_visit.equipment_quantity
+      where id = v_item_id and category = 'Medical Equipment'
+        and status = 'Available' and deleted_at is null
+        and quantity >= v_visit.equipment_quantity;
+      if not found then raise exception 'The selected medical equipment is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+      insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+      values (v_previous.id, 'equipment', v_item_id, v_visit.equipment_quantity, null)
+      on conflict (visit_id, item_type, item_id) do update
+      set quantity = excluded.quantity, reversed_at = null;
+    end if;
+  end loop;
 
   update public.clinical_visit_inventory_deductions
   set reversed_at = now()
@@ -709,7 +788,7 @@ begin
       if jsonb_typeof(v_visit.equipment_used) = 'array' then
         for v_item_name in select jsonb_array_elements_text(v_visit.equipment_used)
         loop
-          select id into v_item_id from public.equipment where name = v_item_name order by id limit 1;
+          select id into v_item_id from public.equipment where id = v_item_name or name = v_item_name order by id limit 1;
           if v_item_id is not null then
             v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
             update public.equipment set quantity = quantity + v_quantity where id = v_item_id;
@@ -792,7 +871,7 @@ begin
       if jsonb_typeof(v_visit.equipment_used) = 'array' then
         for v_item_name in select jsonb_array_elements_text(v_visit.equipment_used)
         loop
-          select id into v_item_id from public.equipment where name = v_item_name order by id limit 1;
+          select id into v_item_id from public.equipment where id = v_item_name or name = v_item_name order by id limit 1;
           v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
           update public.equipment
           set quantity = quantity - v_quantity

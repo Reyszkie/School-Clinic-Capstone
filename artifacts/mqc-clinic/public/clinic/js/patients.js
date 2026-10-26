@@ -46,8 +46,7 @@ function renderStudentClinicalRecords(student){
       <td><b>${escapeHtml(reason)}</b><br><span class="record-preview">${escapeHtml(note)}</span></td>
       <td>${escapeHtml(c.nurse||"—")}</td><td><span class="chip ${c.status==="Superseded"?"chip-low":"chip-available"}">${escapeHtml(c.status==="Superseded"?"Revised":c.outcome||"Active")}</span></td>
       <td><div class="row-actions"><button class="btn records-view-button" data-view-student-consult="${escapeHtml(c.id)}">View Records</button>
-      ${c.status==="Superseded"?"":`<button class="mini-btn" data-edit-student-consult="${escapeHtml(c.id)}" title="Edit Patient Visit">${ICONS.edit}</button>`}</div></td></tr>
-      <tr class="patient-visit-detail-row"><td colspan="5"><details class="patient-visit-details"><summary>Visit details</summary><table class="record-detail-table"><tbody>${consultationRows(c).map(([label,value])=>`<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value||"—")}</td></tr>`).join("")}</tbody></table></details></td></tr>`;
+      ${c.status==="Superseded"?"":`<button class="mini-btn" data-edit-student-consult="${escapeHtml(c.id)}" title="Edit Patient Visit">${ICONS.edit}</button>`}</div></td></tr>`;
   }).join(""):`<tr><td colspan="5"><div class="clinical-empty"><b>No clinical visits recorded yet.</b><span>Clinical visit records will appear here when available.</span></div></td></tr>`;
 
   return `<div class="student-records"><div class="student-records-head"><div><h4>Clinical Visit Records</h4>
@@ -137,8 +136,8 @@ function openStudentForm(existing=null){
   categorySelect.addEventListener("change",()=>syncCategoryFields(true));
   const initialAllergies=document.getElementById("iv-allergies");
   bindOptionFreeText("initial-intervention-other");
-  bindVisitInventoryCard({id:"iv-medicine",quantityId:"iv-medqty",items:MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)&&Number(item.qty)>0),unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0});
-  bindVisitInventoryCard({id:"iv-supply",quantityId:"iv-supply-qty",items:EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0),unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0});
+  bindVisitInventoryCard({id:"iv-medicine",quantityId:"iv-medqty",items:MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)&&Number(item.qty)>0),unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0,defaultQuantity:0});
+  bindVisitInventoryCard({id:"iv-supply",quantityId:"iv-supply-qty",items:EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0),unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0,defaultQuantity:0});
   const guardianContact=document.getElementById("sf-guardian-contact");
   const guardianContactError=document.getElementById("sf-guardian-contact-error");
   let guardianContactTouched=Boolean(guardianContact.value);
@@ -306,8 +305,8 @@ function initialPatientVisitSection(){
       </div></div>
       <div class="f-field full"><label>Treatment / Intervention</label>${optionListHtml(INTERVENTIONS,[],"initial-intervention")}<label class="option-check"><input type="checkbox" data-free-text-toggle="initial-intervention-other"><span>Other</span></label><input class="option-free-text hidden" data-free-text="initial-intervention-other" placeholder="Enter other intervention"></div>
       <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
-        ${visitInventoryCard({id:"iv-medicine",label:"Medicines",items:meds,selected:"",quantityId:"iv-medqty",quantity:1,unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0})}
-        ${visitInventoryCard({id:"iv-supply",label:"Medical Supplies",items:supplies,selected:"",quantityId:"iv-supply-qty",quantity:1,unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0})}
+        ${visitInventoryCard({id:"iv-medicine",label:"Medicines",items:meds,selected:"",quantityId:"iv-medqty",quantity:0,unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0})}
+        ${visitInventoryCard({id:"iv-supply",label:"Medical Supplies",items:supplies,selected:"",quantityId:"iv-supply-qty",quantity:0,unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0})}
       </div></div>
       <div class="f-field full"><label for="iv-outcome">Clinic Disposition — Outcome</label><select id="iv-outcome"><option value="">Select Outcome</option>${DISPOSITIONS.map(value=>`<option>${value}</option>`).join("")}<option>Other</option></select></div>
       <div class="f-field full"><label for="iv-remarks">Remarks</label><textarea id="iv-remarks"></textarea></div>
@@ -377,40 +376,43 @@ function bindOptionFreeText(group, initialValue=""){
   return update;
 }
 
-function visitInventoryCard({id,label,items,selected,quantityId,quantity,unitForItem,availableForItem}){
+function visitInventoryCard({id,label,items,selected,quantityId,quantity,unitForItem,availableForItem,multiple=false}){
   const itemKey=item=>item.code||item.id||item.name;
-  const selectedItem=items.find(item=>itemKey(item)===selected||item.name===selected);
-  const stockText=selectedItem?`Available Stock: ${availableForItem(selectedItem)} ${unitForItem(selectedItem)}`:"Available Stock: Select an item";
+  const selectedKeys=multiple?(Array.isArray(selected)?selected:[selected]):[selected];
+  const selectedItems=items.filter(item=>selectedKeys.includes(itemKey(item))||selectedKeys.includes(item.name));
+  const stockText=selectedItems.length?`Available Stock: ${selectedItems.map(item=>`${item.name} ${availableForItem(item)} ${unitForItem(item)}`).join("; ")}`:"Available Stock: Select an item";
   return `<section class="visit-inventory-card">
     <div class="visit-inventory-heading"><label for="${id}">${label}</label>
-      <select id="${id}" aria-label="${label}"><option value="">None</option>${items.map(item=>`<option value="${escapeHtml(itemKey(item))}" ${selected===itemKey(item)||selected===item.name?"selected":""} ${item.deleted||item.unavailable||availableForItem(item)<1&&selected!==itemKey(item)&&selected!==item.name?"disabled":""}>${escapeHtml(item.name)}${item.deleted||item.unavailable?" (Unavailable — historical record)":""}</option>`).join("")}</select>
+      <select id="${id}" aria-label="${label}" ${multiple?"multiple size=\"4\"":""}>${multiple?"":'<option value="">None</option>'}${items.map(item=>`<option value="${escapeHtml(itemKey(item))}" ${selectedKeys.includes(itemKey(item))||selectedKeys.includes(item.name)?"selected":""} ${item.deleted||item.unavailable||availableForItem(item)<1&&!selectedKeys.includes(itemKey(item))&&!selectedKeys.includes(item.name)?"disabled":""}>${escapeHtml(item.name)}${item.deleted||item.unavailable?" (Unavailable — historical record)":""}</option>`).join("")}</select>
       <span class="visit-inventory-stock" id="${id}-stock" aria-live="polite">${stockText}</span>
     </div>
     <div class="visit-inventory-quantity"><label for="${quantityId}">Treatment Quantity</label><div class="visit-quantity-control">
-      <input id="${quantityId}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" value="${Math.max(1,Number(quantity)||1)}" aria-label="${label} treatment quantity" autocomplete="off">
+      <input id="${quantityId}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" value="${Math.max(0,Number(quantity)||0)}" aria-label="${label} treatment quantity" autocomplete="off">
     </div></div><div class="field-error hidden" id="${quantityId}-error" role="alert"></div>
   </section>`;
 }
 
-function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForItem}){
+function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForItem,defaultQuantity=1,multiple=false}){
   const select=document.getElementById(id),quantity=document.getElementById(quantityId),stock=document.getElementById(`${id}-stock`);
   if(!select||!quantity||!stock)return;
   const error=document.getElementById(`${quantityId}-error`);
   const update=()=>{
-    const item=items.find(candidate=>(candidate.code||candidate.id||candidate.name)===select.value||candidate.name===select.value);
-    const available=item?availableForItem(item):0;
-    stock.textContent=item?`Available Stock: ${available} ${unitForItem(item)}`:"Available Stock: Select an item";
-    quantity.max=item?String(available):"";
-    quantity.required=Boolean(item);
+    const selectedItems=multiple
+      ?[...select.selectedOptions].map(option=>items.find(candidate=>(candidate.code||candidate.id||candidate.name)===option.value||candidate.name===option.value)).filter(Boolean)
+      :[items.find(candidate=>(candidate.code||candidate.id||candidate.name)===select.value||candidate.name===select.value)].filter(Boolean);
+    const available=selectedItems.length?Math.min(...selectedItems.map(availableForItem)):0;
+    stock.textContent=selectedItems.length?`Available Stock: ${selectedItems.map(item=>`${item.name} ${availableForItem(item)} ${unitForItem(item)}`).join("; ")}`:"Available Stock: Select an item";
+    quantity.max=selectedItems.length?String(available):"";
+    quantity.required=Boolean(selectedItems.length);
     const validQuantity=/^[1-9]\d*$/.test(quantity.value);
     const current=validQuantity?Number(quantity.value):0;
-    const invalid=Boolean(item&&(!validQuantity||current>available));
+    const invalid=Boolean(selectedItems.length&&(!validQuantity||selectedItems.some(item=>current>availableForItem(item))));
     quantity.setAttribute("aria-invalid",String(invalid));
-    quantity.setCustomValidity(invalid?(validQuantity?`Only ${available} ${unitForItem(item)} available.`:"Enter a positive whole-number quantity."):"");
-    error.textContent=invalid?(validQuantity?`Only ${available} ${unitForItem(item)} available.`:"Enter a positive whole-number quantity."):"";
+    quantity.setCustomValidity(invalid?(validQuantity?`Requested quantity exceeds available inventory stock.`:"Enter a positive whole-number quantity."):"");
+    error.textContent=invalid?(validQuantity?`Requested quantity exceeds available inventory stock.`:"Enter a positive whole-number quantity."):"";
     error.classList.toggle("hidden",!invalid);
   };
-  select.addEventListener("change",()=>{quantity.value="1";update();});
+  select.addEventListener("change",()=>{quantity.value=String(defaultQuantity);update();});
   quantity.addEventListener("input",()=>{quantity.value=quantity.value.replace(/\D/g,"");update();});
   update();
   return update;
@@ -438,10 +440,11 @@ function openConsultationForm(student, existing=null){
   const isEdit=!!existing, f=existing||{date:todayDateString(),time:currentTimeString(),nurse:state.currentUser.name,complaint:"",description:"",symptomStart:"",painLevel:"0 – No pain",painLocation:"",symptoms:[],knownConditions:"No",allergiesHistory:"",currentMedication:"No",previousSimilar:"No",lastMeal:"",weight:"",height:"",temp:"",bp:"",pulse:"",respiratoryRate:"",spo2:"",assessment:"Stable",assessmentOther:"",notes:"",interventions:[],supplyUsed:"",supplyQty:1,equipmentUsed:[],equipmentQty:1,treatmentGiven:"",dosage:"",outcome:"",releasedAt:"",remarks:"",guardianContacted:"Not Applicable",guardianMethod:"phone call",personContacted:"",staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",medicine:"",medQty:1};
   const allergyHistory=String(f.allergiesHistory||"");
   const allergyAnswer=/^yes\b/i.test(allergyHistory)?"Yes":/^no\b/i.test(allergyHistory)?"No":"";
-  const allergyDetail=allergyAnswer==="Yes"?allergyHistory.replace(/^yes\s*[:—-]?\s*/i,"").trim():"";
   const reasonInputValue=f.complaint==="Other"?(f.reasonOther||"Other"):(f.complaint||"");
   const contactedValue=normalizeGuardianContacted(f.guardianContacted);
-  const existingSupply=f.supplyUsed||(f.equipmentUsed||[]).find(name=>EQUIPMENT.some(item=>item.name===name&&item.category==="Medical Supplies"))||"";
+  const existingSupply=f.supplyUsed||(f.equipmentUsed||[]).find(name=>EQUIPMENT.some(item=>(item.id===name||item.name===name)&&item.category==="Medical Supplies"))||"";
+  const equipmentNames=Array.isArray(f.equipmentUsed)?f.equipmentUsed:(f.equipmentUsed?[f.equipmentUsed]:[]);
+  const existingEquipmentIds=equipmentNames.map(value=>EQUIPMENT.find(item=>(item.id===value||item.name===value)&&item.category==="Medical Equipment")?.id||value);
   const returnedInventory=isEdit?activeVisitInventoryTransactions(existing.id):[];
   const returnedQuantity=(itemType,itemId)=>returnedInventory.filter(entry=>entry.itemType===itemType&&entry.itemId===itemId).reduce((total,entry)=>total+Number(entry.quantity||0),0);
   const medicineAvailable=item=>(Number(item.qty)||0)+returnedQuantity("medicine",item.code);
@@ -449,10 +452,13 @@ function openConsultationForm(student, existing=null){
   const selectedMedicine=MEDICINES.find(item=>item.code===f.medicineCode||item.name===f.medicine)
     ||(isEdit&&f.medicineCode?{code:f.medicineCode,name:f.medicine||"Unavailable medicine",qty:0,deleted:true}:null);
   const selectedSupply=EQUIPMENT.find(item=>item.id===f.supplyItemId||item.name===existingSupply);
+  const selectedEquipment=EQUIPMENT.filter(item=>existingEquipmentIds.includes(item.id));
   const meds=MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)&&(Number(item.qty)>0||item.code===selectedMedicine?.code));
   if(selectedMedicine&&!meds.includes(selectedMedicine))meds.push({...selectedMedicine,unavailable:true});
   const supplies=EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||item.id===selectedSupply?.id));
   if(selectedSupply&&!supplies.includes(selectedSupply))supplies.push({...selectedSupply,unavailable:true});
+  const equipment=EQUIPMENT.filter(item=>item.category==="Medical Equipment"&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||selectedEquipment.some(selected=>selected.id===item.id)));
+  selectedEquipment.forEach(item=>{if(!equipment.includes(item))equipment.push({...item,unavailable:true});});
   const html=`<div class="modal-head"><h3>${isEdit?"Edit":"New"} Patient Visit — ${escapeHtml(student.name)}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body"><form id="consult-form" class="form-grid">
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
@@ -463,7 +469,7 @@ function openConsultationForm(student, existing=null){
     <div class="f-field"><label>Pain Level</label><select id="cf-pain">${["0 – No pain","1–3 – Mild","4–6 – Moderate","7–9 – Severe","10 – Worst possible pain"].map(x=>`<option ${f.painLevel===x?"selected":""}>${x}</option>`).join("")}</select></div>
     <div class="f-field full"><label>Medical History</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
       <label>Known Medical Conditions<select id="cf-conditions"><option>No</option><option ${f.knownConditions==="Yes"?"selected":""}>Yes</option></select></label>
-      <div><label for="cf-allergies">Allergies</label><select id="cf-allergies" required><option value="">Select</option><option value="Yes" ${allergyAnswer==="Yes"?"selected":""}>Yes</option><option value="No" ${allergyAnswer==="No"?"selected":""}>No</option></select><div id="cf-allergy-detail-wrap" style="margin-top:8px"><label for="cf-allergy-detail">Allergy Details <span class="req" id="cf-allergy-required">${allergyAnswer==="Yes"?"*":""}</span></label><input id="cf-allergy-detail" value="${escapeHtml(allergyDetail)}" maxlength="500" ${allergyAnswer==="Yes"?"required":""} autocomplete="off" placeholder="Enter details when Yes is selected"></div></div>
+      <label><span>Allergies</span><select id="cf-allergies" required><option value="">Select</option><option value="Yes" ${allergyAnswer==="Yes"?"selected":""}>Yes</option><option value="No" ${allergyAnswer==="No"?"selected":""}>No</option></select></label>
       <label>Current Medication<select id="cf-current-med"><option>No</option><option ${f.currentMedication==="Yes"?"selected":""}>Yes</option></select></label>
     </div></div>
     <div class="f-field full"><label>Vital Signs</label><div class="vital-signs-grid">
@@ -478,6 +484,7 @@ function openConsultationForm(student, existing=null){
     <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
       ${visitInventoryCard({id:"cf-medicine",label:"Medicines",items:meds,selected:selectedMedicine?.code||f.medicine,quantityId:"cf-medqty",quantity:f.medQty,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable})}
       ${visitInventoryCard({id:"cf-supply",label:"Medical Supplies",items:supplies,selected:selectedSupply?.id||existingSupply,quantityId:"cf-supply-qty",quantity:f.supplyQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
+      ${visitInventoryCard({id:"cf-equipment",label:"Medical Equipment",items:equipment,selected:selectedEquipment.map(item=>item.id),quantityId:"cf-equipment-qty",quantity:f.equipmentQty,unitForItem:()=>"items",availableForItem:equipmentAvailable,multiple:true})}
     </div></div>
     <div class="f-field full"><label>Clinic Disposition — Outcome <span class="req">*</span></label><select id="cf-outcome" required><option value="">Select Outcome</option>${DISPOSITIONS.map(x=>`<option ${f.outcome===x?"selected":""}>${x}</option>`).join("")}<option ${f.outcome==="Other"?"selected":""}>Other</option></select></div>
     <div class="f-field full"><label>Remarks</label><textarea id="cf-remarks">${escapeHtml(f.remarks||"")}</textarea></div>
@@ -491,45 +498,38 @@ function openConsultationForm(student, existing=null){
   </form></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" id="cf-clear">Clear Form</button><button class="btn btn-dark" id="cf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Visit"}</button></div>`;
   openModal(html);
   const complaintSelect=document.getElementById("cf-complaint");
-  const allergySelect=document.getElementById("cf-allergies"),allergyDetailInput=document.getElementById("cf-allergy-detail");
-  const syncAllergy=()=>{
-    const hasAllergies=allergySelect.value==="Yes";
-    allergyDetailInput.required=hasAllergies;
-    document.getElementById("cf-allergy-required").textContent=hasAllergies?"*":"";
-  };
-  allergySelect.addEventListener("change",()=>{
-    syncAllergy();
-    if(allergySelect.value!=="Yes")allergyDetailInput.value="";
-    if(allergySelect.value==="Yes")allergyDetailInput.focus();
-  });
+  const allergySelect=document.getElementById("cf-allergies");
   const syncInterventionFreeText=bindOptionFreeText("intervention-other",(f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"");
   const updateMedicineCard=bindVisitInventoryCard({id:"cf-medicine",quantityId:"cf-medqty",items:meds,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable});
   const updateSupplyCard=bindVisitInventoryCard({id:"cf-supply",quantityId:"cf-supply-qty",items:supplies,unitForItem:()=>"items",availableForItem:equipmentAvailable});
+  const updateEquipmentCard=bindVisitInventoryCard({id:"cf-equipment",quantityId:"cf-equipment-qty",items:equipment,unitForItem:()=>"items",availableForItem:equipmentAvailable,multiple:true});
   let visitSaveInProgress=false;
   let pendingVisitId="";
   document.getElementById("cf-clear").onclick=()=>{
     document.getElementById("consult-form").reset();
-    syncAllergy();
     syncInterventionFreeText?.();
     updateMedicineCard?.();
     updateSupplyCard?.();
+    updateEquipmentCard?.();
   };
   document.getElementById("cf-save").onclick=async()=>{
     if(visitSaveInProgress)return;
     if(!document.getElementById("consult-form").reportValidity())return;
-    const reasonValue=complaintSelect.value.trim(),isStandardReason=COMPLAINTS.includes(reasonValue),complaint=isStandardReason?reasonValue:"Other",reasonOther=complaint==="Other"&&reasonValue.toLowerCase()!=="other"?reasonValue:"",allergyAnswerValue=allergySelect.value,allergyDetail=allergyDetailInput.value.replace(/[\u0000-\u001f\u007f]/g,"").trim();if(!reasonValue){toast("Missing information","Please select or enter a reason for the clinic visit.","err");complaintSelect.focus();return;}if(complaint==="Other"&&!reasonOther){complaintSelect.focus();toast("Missing information","Enter the custom reason in the Reason for Clinic Visit field.","err");return;}if(!allergyAnswerValue){allergySelect.focus();toast("Missing information","Please answer the allergy question.","err");return;}if(allergyAnswerValue==="Yes"&&!allergyDetail){allergyDetailInput.focus();toast("Missing information","Specify the patient's allergies.","err");return;}
+    const reasonValue=complaintSelect.value.trim(),isStandardReason=COMPLAINTS.includes(reasonValue),complaint=isStandardReason?reasonValue:"Other",reasonOther=complaint==="Other"&&reasonValue.toLowerCase()!=="other"?reasonValue:"",allergyAnswerValue=allergySelect.value;if(!reasonValue){toast("Missing information","Please select or enter a reason for the clinic visit.","err");complaintSelect.focus();return;}if(complaint==="Other"&&!reasonOther){complaintSelect.focus();toast("Missing information","Enter the custom reason in the Reason for Clinic Visit field.","err");return;}if(!allergyAnswerValue){allergySelect.focus();toast("Missing information","Please answer the allergy question.","err");return;}
     const outcome=document.getElementById("cf-outcome").value;
     if(!outcome){document.getElementById("cf-outcome").focus();toast("Missing information","Please select a clinic disposition outcome.","err");return;}
     const medicineKey=document.getElementById("cf-medicine").value,medQty=Number(document.getElementById("cf-medqty").value),med=MEDICINES.find(item=>item.code===medicineKey||item.name===medicineKey)||(isEdit&&medicineKey===f.medicineCode?selectedMedicine:null);
     const supplyKey=document.getElementById("cf-supply").value,supplyQty=Number(document.getElementById("cf-supply-qty").value),supplyItem=EQUIPMENT.find(item=>item.id===supplyKey||item.name===supplyKey)||(isEdit&&supplyKey===f.supplyItemId?selectedSupply:null);
+    const equipmentKeys=[...document.getElementById("cf-equipment").selectedOptions].map(option=>option.value),equipmentQty=Number(document.getElementById("cf-equipment-qty").value),equipmentItems=equipmentKeys.map(key=>EQUIPMENT.find(item=>item.id===key||item.name===key)).filter(Boolean);
     const medName=med?.name||"",supplyName=supplyItem?.name||"";
     if(medName&&(!Number.isInteger(medQty)||medQty<1)){toast("Invalid quantity","Enter a whole-number medication quantity of at least 1.","err");return;}
     if(supplyName&&(!Number.isInteger(supplyQty)||supplyQty<1)){toast("Invalid quantity","Enter a whole-number supply quantity of at least 1.","err");return;}
+    if(equipmentItems.length&&(!Number.isInteger(equipmentQty)||equipmentQty<1)){toast("Invalid quantity","Enter a whole-number equipment quantity of at least 1.","err");return;}
     const previous=isEdit?CONSULTATIONS.find(c=>c.id===existing.id):null;
     if(isEdit&&(!previous||previous.studentId!==student.id||previous.deleted||previous.status==="Superseded")){toast("Visit unavailable","The selected visit could not be found for this patient.","err");return;}
     ensureInventoryLedger();
     const interventions=selectedChecks('[data-check-group="intervention"]'); const interventionOther=document.querySelector('[data-free-text="intervention-other"]')?.value.trim(); if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-    if(medName&&med&&medQty>medicineAvailable(med)||supplyName&&supplyItem&&supplyQty>equipmentAvailable(supplyItem)){
+    if(medName&&med&&medQty>medicineAvailable(med)||supplyName&&supplyItem&&supplyQty>equipmentAvailable(supplyItem)||equipmentItems.some(item=>equipmentQty>equipmentAvailable(item))){
       toast("Insufficient inventory","The requested treatment quantity exceeds the currently available stock. Review Available Stock before saving.","err");
       return;
     }
@@ -539,12 +539,12 @@ function openConsultationForm(student, existing=null){
       nurse:isEdit?f.nurse:state.currentUser.name,nurseId:isEdit?f.nurseId:state.currentUser.id,
       studentId:student.id,studentName:student.name,course:student.course,year:student.personnelType||student.year,
       complaint,reasonOther,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,
-      knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?`Yes: ${allergyDetail}`:"No",
+      knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?(allergyHistory||"Yes"):"No",
       currentMedication:document.getElementById("cf-current-med").value,temp:document.getElementById("cf-temp").value,
       bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,
       spo2:document.getElementById("cf-spo2").value,interventions,medicine:medName,medicineCode:med?.code||null,medQty,
-      supplyUsed:supplyName,supplyItemId:supplyItem?.id||null,supplyQty,equipmentUsed:isEdit?f.equipmentUsed||[]:[],
-      equipmentQty:isEdit?f.equipmentQty||1:1,outcome,remarks:document.getElementById("cf-remarks").value,
+      supplyUsed:supplyName,supplyItemId:supplyItem?.id||null,supplyQty,equipmentUsed:equipmentItems.map(item=>item.id),
+      equipmentQty:equipmentItems.length?equipmentQty:1,outcome,remarks:document.getElementById("cf-remarks").value,
       guardianContacted:document.getElementById("cf-guardian-contacted").value,
       guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,
       staffRecord:isEdit?f.staffRecord:state.currentUser.name,position:isEdit?f.position:state.currentUser.role||"Staff Nurse",
@@ -553,6 +553,7 @@ function openConsultationForm(student, existing=null){
     };
     rec.respiratoryRate=document.getElementById("cf-respiratory-rate").value;
     rec.supplyUsed=supplyName||(isEdit&&!supplies.some(item=>item.name===existingSupply)?existingSupply:"");
+    rec.equipmentUsed=equipmentItems.length?equipmentItems.map(item=>item.id):(isEdit&&equipmentNames.length&&!equipment.length?equipmentNames:[]);
     const saveButton=document.getElementById("cf-save");
     const saveLabel=saveButton.innerHTML;
     let inventorySnapshot=null,visitsSnapshot=null,previousSnapshot=null,previousAllergies=null;
@@ -568,7 +569,7 @@ function openConsultationForm(student, existing=null){
       if(isEdit)reverseVisitInventoryUsage(previous);
       applyVisitInventoryUsage(rec,previous);
       student.allergies=allergyAnswerValue==="Yes"
-        ? mergePatientAllergies(student.allergies,allergyDetail)
+        ? patientAllergyStatus(student.allergies).status==="unassessed"?"Allergies reported":student.allergies
         : patientAllergyStatus(student.allergies).status==="unassessed"?"No Known Allergies":student.allergies;
       if(isEdit)Object.assign(previous,rec);
       else CONSULTATIONS.unshift(rec);
@@ -621,7 +622,7 @@ function consultationRows(c){
     ["Nurse's Notes",c.notes||"—"],
     ["Treatment / Intervention",(c.interventions||[]).join(", ")||c.treatment||"—"],
     ["Medical Supplies",c.supplyUsed?`${c.supplyUsed} × ${c.supplyQty||1}`:"—"],
-    ["Medical Tools",(c.equipmentUsed||[]).map(name=>`${name} × ${c.equipmentQty||1}`).join(", ")||"—"],
+    ["Medical Equipment",(c.equipmentUsed||[]).map(value=>`${EQUIPMENT.find(item=>item.id===value||item.name===value)?.name||value} × ${c.equipmentQty||1}`).join(", ")||"—"],
     ["Additional Treatment Details",c.treatmentGiven||"—"],
     ["Medicines",c.medicine?`${c.medicine} × ${c.medQty||1} · ${c.dosage||""}`:"—"],
     ["Outcome",c.outcome||"—"],
