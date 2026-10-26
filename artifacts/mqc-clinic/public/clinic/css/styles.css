@@ -1009,11 +1009,10 @@ tbody tr:hover{background:#F7FBFB;}
   .initial-visit-grid,.initial-visit-subgrid{grid-template-columns:1fr;}
 }
 .modal.patient-form-modal{width:min(760px,100%);max-height:calc(100dvh - 48px);}
-.modal.patient-form-modal .modal-foot{display:grid;grid-template-columns:minmax(0,1fr) minmax(112px,auto) minmax(140px,auto);align-items:center;}
-.modal.patient-form-modal .form-save-status{min-width:0;}
+.modal.patient-form-modal .modal-foot{display:grid;grid-template-columns:repeat(2,minmax(140px,160px));justify-content:center;align-items:center;}
+.modal.patient-form-modal .form-save-status{grid-column:1/-1;min-width:0;text-align:center;}
 .modal.patient-form-modal .modal-foot .btn{min-width:0;justify-content:center;white-space:nowrap;}
 @media(max-width:760px){
   .modal.patient-form-modal{max-height:calc(100dvh - 20px);}
-  .modal.patient-form-modal .modal-foot{grid-template-columns:repeat(2,minmax(0,1fr));}
-  .modal.patient-form-modal .form-save-status{grid-column:1/-1;}
+  .modal.patient-form-modal .modal-foot{grid-template-columns:repeat(2,minmax(0,1fr));width:100%;max-width:380px;margin-inline:auto;}
 }
