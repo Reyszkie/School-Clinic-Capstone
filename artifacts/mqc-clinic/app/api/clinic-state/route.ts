@@ -601,8 +601,7 @@ async function validatePurgeRows(rows: unknown) {
     groups.set(groupKey, group);
   }
   const validatedGroups = [...groups.values()];
-  const linkedAuthUsers: string[] = [];
-  for (const group of validatedGroups) {
+  const validatedRecords = await Promise.all(validatedGroups.map(async group => {
     const values = group.values.map(value => `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`).join(",");
     const selection = group.table === "clinic_users" ? `${group.key},deleted_at,auth_user_id` : group.table === "clinical_visits" ? `${group.key},deleted_at,status` : `${group.key},deleted_at`;
     const lookup = await supabaseRequest(`${group.table}?${group.key}=${encodeURIComponent(`in.(${values})`)}&select=${selection}`);
@@ -611,8 +610,11 @@ async function validatePurgeRows(rows: unknown) {
     if (records.length !== group.values.length || records.some(record => !(record.deleted_at || record.status === "Deleted"))) {
       throw new Error("Only records already in Deleted Records can be permanently removed.");
     }
-    if (group.table === "clinic_users") linkedAuthUsers.push(...records.map(record => record.auth_user_id).filter((id): id is string => typeof id === "string" && Boolean(id)));
-  }
+    return { group, records };
+  }));
+  const linkedAuthUsers = validatedRecords.flatMap(({ group, records }) => group.table === "clinic_users"
+    ? records.map(record => record.auth_user_id).filter((id): id is string => typeof id === "string" && Boolean(id))
+    : []);
   return { requests, groups: validatedGroups, linkedAuthUsers };
 }
 
@@ -630,6 +632,31 @@ async function purgeRows(prepared: Awaited<ReturnType<typeof validatePurgeRows>>
       cache: "no-store",
     })));
     if (results.some(response => !response.ok && response.status !== 404)) throw new Error("One or more linked authentication accounts could not be permanently deleted.");
+  }
+}
+
+async function savePurgeHistory(requests: Array<{ table: string; key: string; value: string | number }>) {
+  try {
+    const snapshotResponse = await supabaseRequest(`clinic_state?id=eq.${clinicStateId}&select=state`);
+    if (!snapshotResponse.ok) throw new Error(`clinic_state purge history lookup returned ${snapshotResponse.status}`);
+    const snapshots = await snapshotResponse.json() as Array<{ state?: Record<string, unknown> }>;
+    const clinicSnapshot = snapshots[0]?.state ?? {};
+    const history = Array.isArray(clinicSnapshot.purged) ? clinicSnapshot.purged as Array<Record<string, unknown>> : [];
+    const keys = new Set(history.map(record => `${record.table}:${record.key}:${String(record.value)}`));
+    clinicSnapshot.purged = [...history, ...requests.filter(record => {
+      const key = `${record.table}:${record.key}:${String(record.value)}`;
+      if (keys.has(key)) return false;
+      keys.add(key);
+      return true;
+    })];
+    const saveResponse = await supabaseRequest(`clinic_state?on_conflict=id`, {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id: clinicStateId, state: clinicSnapshot }),
+    });
+    if (!saveResponse.ok) console.warn(`Optional clinic_state purge history returned ${saveResponse.status}`);
+  } catch (error) {
+    console.warn("Unable to save optional clinic_state purge history", error);
   }
 }
 
@@ -727,6 +754,22 @@ export async function PUT(request: Request) {
     const session = await readActiveClinicSession(request);
     if (!session) return Response.json({ message: "Sign in to update clinic records." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const snapshot = state as Record<string, unknown>;
+    if (snapshot.purgeOnly === true) {
+      if (Object.keys(snapshot).some(key => key !== "purgeOnly" && key !== "purgeRequests")) {
+        return Response.json({ message: "Permanent deletion cannot be combined with other clinic changes." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
+      if (!hasClinicAdminPrivileges(session.role)) {
+        return Response.json({ message: "Only a Head Nurse or existing legacy administrator can permanently delete clinic records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+      }
+      const purgeRequest = await validatePurgeRows(snapshot.purgeRequests);
+      if (!purgeRequest.requests.length) return Response.json({ message: "Select at least one deleted record to permanently remove." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      if (purgeRequest.requests.some(record => record.table === "clinic_users" && String(record.value) === session.userId)) {
+        return Response.json({ message: "You cannot permanently delete your signed-in account." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
+      await purgeRows(purgeRequest);
+      await savePurgeHistory(purgeRequest.requests);
+      return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
     if (session.role === "Staff Nurse") {
       const transitions = await Promise.all([
         hasStaffDeleteRestoreTransition("patients", "id", snapshot.students),

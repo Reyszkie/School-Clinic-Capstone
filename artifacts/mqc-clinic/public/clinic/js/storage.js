@@ -216,8 +216,8 @@ function queueClinicStateSave(payload,throwOnError=false){
 }
 
 function saveToClinicState(_resetAuditLogs=false,throwOnError=false,purgeRequests=[],inventoryBootstrap=false){
+  if(purgeRequests.length)return queueClinicStateSave({purgeOnly:true,purgeRequests},throwOnError);
   const payload=snapshotData(false);
-  if(purgeRequests.length)payload.purgeRequests=purgeRequests;
   if(inventoryBootstrap)payload.inventoryBootstrap=true;
   return queueClinicStateSave(payload,throwOnError);
 }

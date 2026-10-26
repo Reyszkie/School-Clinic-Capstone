@@ -280,7 +280,7 @@ async function commitDeletedRecordChange({label,apply,rollback,purge,save=()=>sa
   }
   const events=auditActions||[{action:auditAction,module,status}];
   try{
-    for(const event of events)await logAudit(event.action,event.module||module,event.status||status,false,true,event.detail||"");
+    await Promise.all(events.map(event=>logAudit(event.action,event.module||module,event.status||status,false,true,event.detail||"")));
   }catch{
     toast("Record changed; audit sync failed","The record change was saved, but its audit entry could not be recorded.","err");
     renderAdminTabBody();
