@@ -96,6 +96,24 @@ begin
 end;
 $$;
 
+update public.equipment
+set category = 'Medical Supplies'
+where lower(btrim(name)) = any(array[
+  'cotton balls',
+  'elastic bandage',
+  'adhesive bandages (band-aids)',
+  'gauze pads',
+  'medical tape',
+  'disposable face masks',
+  'medical gloves',
+  'bandage',
+  'white flower oil',
+  'mupirocin',
+  'eye mo',
+  'alcohol',
+  'alcohol (70% isopropyl)'
+]);
+
 create table if not exists public.clinical_visits (
   id text primary key,
   patient_id text not null references public.patients(id) on delete cascade,
@@ -161,6 +179,15 @@ alter table public.clinical_visits
   add column if not exists supply_used text,
   add column if not exists supply_item_id text references public.equipment(id) on delete set null,
   add column if not exists supply_quantity integer;
+
+update public.equipment as inventory
+set category = 'Medical Supplies'
+where inventory.category = 'Medical Equipment'
+  and exists (
+    select 1 from public.clinical_visits as visits
+    where visits.supply_item_id = inventory.id
+      or lower(btrim(visits.supply_used)) = lower(btrim(inventory.name))
+  );
 
 update public.clinical_visits
 set guardian_contacted = case lower(btrim(guardian_contacted))
@@ -454,13 +481,24 @@ begin
   v_old_supply_id := v_previous.supply_item_id;
   if v_old_supply_id is null and v_previous.supply_used is not null then
     select id into v_old_supply_id from public.equipment
-    where name = v_previous.supply_used order by id limit 1;
+    where category = 'Medical Supplies'
+      and (id = v_previous.supply_used or lower(btrim(name)) = lower(btrim(v_previous.supply_used)))
+    order by (id = v_previous.supply_used) desc, id limit 1;
   end if;
   v_new_supply_id := v_visit.supply_item_id;
-  if v_new_supply_id is null and v_visit.supply_used is not null then
-    select id into v_new_supply_id from public.equipment
-    where name = v_visit.supply_used and category = 'Medical Supplies'
-    order by id limit 1;
+  if v_new_supply_id is not null then
+    select id, name into v_new_supply_id, v_visit.supply_used
+    from public.equipment
+    where id = v_new_supply_id and category = 'Medical Supplies';
+    if not found then
+      raise exception 'The selected inventory record could not be matched to a medical supplies item.';
+    end if;
+  elsif v_visit.supply_used is not null then
+    select id, name into v_new_supply_id, v_visit.supply_used
+    from public.equipment
+    where category = 'Medical Supplies'
+      and (id = v_visit.supply_used or lower(btrim(name)) = lower(btrim(v_visit.supply_used)))
+    order by (id = v_visit.supply_used) desc, id limit 1;
   end if;
   if v_visit.supply_used is not null and v_new_supply_id is null then
     raise exception 'The selected medical supply could not be matched to inventory.';
