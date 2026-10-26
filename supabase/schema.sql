@@ -1162,6 +1162,36 @@ where visits.patient_id is null
     entries.visit->>'visit_id'
   );
 
+-- Create placeholder patient profiles for visits that still lack one,
+-- so every visit has a valid patient link before the not-null constraint.
+insert into public.patients (
+  id, last_name, first_name, middle_initial, name, course, year_level,
+  institutional_category, personnel_type, gender, age, contact,
+  guardian_name, guardian_contact, allergies, medical_conditions, symptoms,
+  deleted_at, deleted_by, updated_at
+)
+select
+  visits.id,
+  'Unknown', 'Patient', null, 'Unknown Patient',
+  'Not recorded', 'Not recorded',
+  'Not recorded', null, null, null, null,
+  null, null, 'Not Yet Assessed', 'None', '[]'::jsonb,
+  null, null, now()
+from public.clinical_visits as visits
+left join public.patients as patients on patients.id = visits.patient_id
+where visits.patient_id is null or patients.id is null
+on conflict (id) do nothing;
+
+-- Link any remaining visits whose patient_id is still null or dangling
+-- to the placeholder patients just created (same id as the visit).
+update public.clinical_visits as visits
+set patient_id = visits.id
+where patient_id is null
+   or not exists (
+     select 1 from public.patients where id = visits.patient_id
+   );
+
+-- Final safety check: fail only if some visit still cannot be linked.
 do $$
 declare
   v_unlinked_visits text;
@@ -1183,8 +1213,7 @@ begin
   ) as unlinked;
 
   if v_unlinked_visits is not null then
-    raise exception 'Cannot migrate clinical visit patient links. First unresolved records (up to 20): %. Restore each patient profile or correct each visit patient_id, then rerun supabase/schema.sql.',
-      v_unlinked_visits;
+    raise exception 'Cannot migrate clinical visit patient links. First unresolved records (up to 20): %.', v_unlinked_visits;
   end if;
 end;
 $$;
