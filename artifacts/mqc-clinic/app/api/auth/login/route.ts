@@ -25,6 +25,9 @@ export async function POST(request: Request) {
   if (typeof username !== "string" || typeof password !== "string" || !username || !password) {
     return Response.json({ message: "Username and password are required." }, { status: 400 });
   }
+  if (/\s/.test(username)) return Response.json({ message: "Username cannot contain spaces." }, { status: 400 });
+  if (!/^[A-Za-z0-9._-]{3,50}$/.test(username)) return Response.json({ message: "Username must be 3-50 letters, numbers, dots, underscores, or hyphens." }, { status: 400 });
+  if (/\s/.test(password)) return Response.json({ message: "Password cannot contain spaces." }, { status: 400 });
 
   try {
     const url = process.env.SUPABASE_URL;

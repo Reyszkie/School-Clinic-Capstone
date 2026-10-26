@@ -73,6 +73,7 @@ function openUserForm(existing=null){
     const confirmInput=document.getElementById("uf-confirm-change-password");
     const password=passwordInput.value,confirmPassword=confirmInput.value;
     if(password.length<8){toast("Password too short","Use at least 8 characters for the new password.","err");passwordInput.focus();return;}
+    if(/\s/.test(password)){toast("Invalid password","Passwords cannot contain spaces.","err");passwordInput.focus();return;}
     if(password!==confirmPassword){toast("Passwords do not match","Enter the same password in both fields.","err");confirmInput.focus();return;}
     const button=document.getElementById("uf-password-save"),label=button.innerHTML;
     savingPassword=true;button.disabled=true;button.innerHTML='<span class="button-spinner"></span> Saving...';
@@ -98,14 +99,17 @@ function openUserForm(existing=null){
     const last=document.getElementById('uf-lastname').value.trim();
     const first=document.getElementById('uf-firstname').value.trim();
     const middle=document.getElementById('uf-middle').value.trim();
-    const username=document.getElementById('uf-username').value.trim();
+    const username=document.getElementById('uf-username').value;
     const role=document.getElementById('uf-role').value;
     const password=document.getElementById('uf-password')?.value||"";
     const confirm=document.getElementById('uf-confirm')?.value||"";
     if(!document.getElementById("user-form").reportValidity())return;
     if(!last || !first || !username){ toast('Missing information','Last name, first name, and username are required.','err'); return; }
+    if(!/^[A-Za-z0-9._-]{3,50}$/.test(username)){toast("Invalid username","Use 3-50 letters, numbers, dots, underscores, or hyphens without spaces.","err");document.getElementById("uf-username").focus();return;}
     if(!role){toast("Role required","Select a role for this user.","err");return;}
     if(!isEdit&&!password){ toast('Password required','Create a password for this user.','err'); return; }
+    if(password&&/\s/.test(password)){toast("Invalid password","Passwords cannot contain spaces.","err");document.getElementById(isEdit?"uf-change-password":"uf-password").focus();return;}
+    if(!isEdit&&(password.length<8||password.length>128)){toast("Invalid password","Use a password between 8 and 128 characters.","err");document.getElementById("uf-password").focus();return;}
     if(password!==confirm){ toast('Passwords do not match','Enter the same password in both fields.','err'); return; }
     const name=`${last}, ${first}${middle?' '+middle.replace(/\.$/,'')+'.':''}`;
     const rec={...f,id:f.id,name,lastName:last,firstName:first,middleInitial:middle,role,username,status:document.getElementById('uf-status').value};

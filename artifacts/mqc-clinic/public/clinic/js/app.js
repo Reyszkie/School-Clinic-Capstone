@@ -1,23 +1,50 @@
 /* ================= RENDER ROOT ================= */
-function bindLeaveWarning(){
-  if(window.__mqcLeaveWarningBound) return;
-  window.__mqcLeaveWarningBound = true;
-
-  window.addEventListener('beforeunload', (event)=>{
-    if(!state.loggedIn) return;
-    event.preventDefault();
-    event.returnValue = '';
-  });
-}
+let authRestoreStatus="loading";
 
 function render(){
   const app=document.getElementById('app');
   applyClinicTheme();
-  bindLeaveWarning();
+  if(!state.loggedIn&&authRestoreStatus==="loading"){
+    app.innerHTML='<main class="session-restore" role="status">Restoring your clinic session…</main>';
+    return;
+  }
+  if(!state.loggedIn&&authRestoreStatus==="error"){
+    app.innerHTML='<main class="session-restore"><p>Unable to verify your clinic session. Your saved session has not been cleared.</p><button class="btn btn-dark" id="retry-session-restore">Try Again</button></main>';
+    document.getElementById("retry-session-restore").onclick=()=>{serverHydrationPromise=bootstrapClinicSession();};
+    return;
+  }
   if(!state.loggedIn){ app.innerHTML = renderLogin(); attachLoginEvents(); return; }
   app.innerHTML = renderShell();
   attachShellEvents();
   renderPage();
+}
+
+async function bootstrapClinicSession(){
+  authRestoreStatus="loading";
+  render();
+  try{
+    const restored=await restoreAuthSession();
+    if(!restored){
+      authRestoreStatus="ready";
+      render();
+      return false;
+    }
+    const hydrated=await hydrateFromSharedStorage();
+    if(sharedStorageMissing||sharedStorageNeedsBootstrap){
+      await saveToClinicState(false,true,[],true);
+      clinicDataLoaded=true;
+      clinicDataStatus="ready";
+    }
+    authRestoreStatus="ready";
+    render();
+    startClinicRefresh();
+    return hydrated;
+  }catch(error){
+    console.error("MQC Clinic: session restoration failed.",error);
+    authRestoreStatus="error";
+    render();
+    return false;
+  }
 }
 
 /* ================= AFTER RENDER BINDINGS ================= */
@@ -41,12 +68,4 @@ function afterPageRender(){
 
 /* ================= INIT ================= */
 render();
-serverHydrationPromise=restoreAuthSession().then(async restored=>{
-  if(!restored)return false;
-  const hydrated=await hydrateFromSharedStorage();
-  if(hydrated&&(sharedStorageNeedsBootstrap||sharedStorageMissing)){await saveToClinicState(false,true,[],true);clinicDataLoaded=true;clinicDataStatus="ready";}
-  else if(!hydrated&&(sharedStorageMissing||sharedStorageNeedsBootstrap)){await saveToClinicState(false,true,[],true);clinicDataLoaded=true;clinicDataStatus="ready";}
-  render();
-  startClinicRefresh();
-  return hydrated;
-});
+serverHydrationPromise=bootstrapClinicSession();

@@ -135,12 +135,6 @@ function openStudentForm(existing=null){
   };
   categorySelect.addEventListener("change",()=>syncCategoryFields(true));
   const initialAllergies=document.getElementById("iv-allergies");
-  const initialAllergyDetail=document.getElementById("iv-allergy-detail");
-  initialAllergies?.addEventListener("change",()=>{
-    initialAllergyDetail.required=initialAllergies.value==="Yes";
-    if(initialAllergies.value!=="Yes")initialAllergyDetail.value="";
-    if(initialAllergies.value==="Yes")initialAllergyDetail.focus();
-  });
   bindOptionFreeText("initial-intervention-other");
   bindVisitInventoryCard({id:"iv-medicine",quantityId:"iv-medqty",items:MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)),unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0});
   bindVisitInventoryCard({id:"iv-supply",quantityId:"iv-supply-qty",items:EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0),unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0});
@@ -171,7 +165,6 @@ function openStudentForm(existing=null){
     const initialVisitEntered=!isEdit&&initialPatientVisitHasDetails();
     if(initialVisitEntered){
       ["iv-date","iv-time","iv-reason","iv-outcome","iv-allergies"].forEach(id=>{document.getElementById(id).required=true;});
-      initialAllergyDetail.required=initialAllergies.value==="Yes";
     }
     if(!document.getElementById("stu-form").reportValidity())return;
     const course=categorySelect.value,year=yearSelect.value;
@@ -189,9 +182,8 @@ function openStudentForm(existing=null){
     }
     if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
     const allergyAnswer=initialVisitEntered?initialAllergies.value:"";
-    const allergyDetail=initialAllergyDetail?.value.replace(/[\u0000-\u001f\u007f]/g,"").trim()||"";
     const targetStudent=matchingPatient||editingStudent;
-    const rec={id:isEdit?editingStudent.id:matchingPatient?.id||newPatientRecordId(),name:matchingPatient?.name||name,lastName:matchingPatient?.lastName||last,firstName:matchingPatient?.firstName||first,middleInitial:matchingPatient?.middleInitial??middle,course:matchingPatient?.course||course,institutionalCategory:matchingPatient?.institutionalCategory||course,year:matchingPatient?.year||year,personnelType:matchingPatient?.personnelType||(course==="Campus Personnel"?year:null),gender:matchingPatient?.gender||document.getElementById("sf-gender").value,sex:matchingPatient?.gender||document.getElementById("sf-gender").value,guardianName:matchingPatient?.guardianName||document.getElementById("sf-guardian").value,guardianContact:matchingPatient?.guardianContact||guardianContact.value,emergency:matchingPatient?.emergency||document.getElementById("sf-guardian").value,allergies:allergyAnswer==="Yes"?mergePatientAllergies(matchingPatient?.allergies||"Not Yet Assessed",allergyDetail):allergyAnswer==="No"?(matchingPatient?.allergies&&patientAllergyStatus(matchingPatient.allergies).status!=="unassessed"?matchingPatient.allergies:"No Known Allergies"):f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms:Array.isArray(f.symptoms)?f.symptoms:[]};
+    const rec={id:isEdit?editingStudent.id:matchingPatient?.id||newPatientRecordId(),name:matchingPatient?.name||name,lastName:matchingPatient?.lastName||last,firstName:matchingPatient?.firstName||first,middleInitial:matchingPatient?.middleInitial??middle,course:matchingPatient?.course||course,institutionalCategory:matchingPatient?.institutionalCategory||course,year:matchingPatient?.year||year,personnelType:matchingPatient?.personnelType||(course==="Campus Personnel"?year:null),gender:matchingPatient?.gender||document.getElementById("sf-gender").value,sex:matchingPatient?.gender||document.getElementById("sf-gender").value,guardianName:matchingPatient?.guardianName||document.getElementById("sf-guardian").value,guardianContact:matchingPatient?.guardianContact||guardianContact.value,emergency:matchingPatient?.emergency||document.getElementById("sf-guardian").value,allergies:allergyAnswer==="Yes"?mergePatientAllergies(matchingPatient?.allergies||"Not Yet Assessed","Allergies reported"):allergyAnswer==="No"?(matchingPatient?.allergies&&patientAllergyStatus(matchingPatient.allergies).status!=="unassessed"?matchingPatient.allergies:"No Known Allergies"):f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms:Array.isArray(f.symptoms)?f.symptoms:[]};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const newPatient=!wasEdit&&!matchingPatient;
@@ -200,7 +192,6 @@ function openStudentForm(existing=null){
       const reasonValue=document.getElementById("iv-reason").value.trim();
       if(!reasonValue){document.getElementById("iv-reason").focus();toast("Missing information","Please enter a reason for the clinic visit.","err");return;}
       if(reasonValue.toLowerCase()==="other"){document.getElementById("iv-reason").focus();toast("Missing information","Enter the custom reason instead of selecting Other.","err");return;}
-      if(allergyAnswer==="Yes"&&!allergyDetail){initialAllergyDetail.focus();toast("Missing information","Specify the patient's allergies.","err");return;}
       const complaint=COMPLAINTS.includes(reasonValue)?reasonValue:"Other";
       const medicineName=document.getElementById("iv-medicine").value,medicine=MEDICINES.find(item=>item.name===medicineName);
       const supplyName=document.getElementById("iv-supply").value,supply=EQUIPMENT.find(item=>item.name===supplyName);
@@ -213,7 +204,7 @@ function openStudentForm(existing=null){
         complaint,reasonOther:complaint==="Other"?reasonValue:"",description:"",
         symptomStart:document.getElementById("iv-start").value,painLevel:document.getElementById("iv-pain").value,
         knownConditions:document.getElementById("iv-conditions").value||"No",
-        allergiesHistory:allergyAnswer==="Yes"?`Yes: ${allergyDetail}`:"No",currentMedication:document.getElementById("iv-current-med").value||"No",
+        allergiesHistory:allergyAnswer,currentMedication:document.getElementById("iv-current-med").value||"No",
         weight:"",height:"",temp:document.getElementById("iv-temp").value,bp:document.getElementById("iv-bp").value,pulse:document.getElementById("iv-pulse").value,
         respiratoryRate:document.getElementById("iv-respiratory-rate").value,spo2:document.getElementById("iv-spo2").value,
         interventions,
@@ -222,7 +213,7 @@ function openStudentForm(existing=null){
         equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("iv-outcome").value,
         remarks:document.getElementById("iv-remarks").value,guardianContacted:document.getElementById("iv-guardian-contacted").value,
         guardianMethod:document.getElementById("iv-guardian-method").value,personContacted:document.getElementById("iv-person").value,
-        staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,revision:1,createdAt:new Date().toISOString(),
+        staffRecord:document.getElementById("iv-nurse").value,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,revision:1,createdAt:new Date().toISOString(),
       };
       if(!initialVisit.outcome){document.getElementById("iv-outcome").focus();toast("Missing information","Please select a clinic disposition outcome.","err");return;}
       ensureInventoryLedger();
@@ -282,7 +273,7 @@ function bindSelectButtons(){
 }
 
 function initialPatientVisitHasDetails(){
-  const textFields=["iv-reason","iv-start","iv-allergy-detail","iv-temp","iv-pulse","iv-respiratory-rate","iv-bp","iv-spo2","iv-remarks","iv-person"];
+  const textFields=["iv-reason","iv-start","iv-temp","iv-pulse","iv-respiratory-rate","iv-bp","iv-spo2","iv-remarks","iv-person"];
   const selectFields=["iv-pain","iv-conditions","iv-allergies","iv-current-med","iv-medicine","iv-supply"];
   return textFields.some(id=>Boolean(document.getElementById(id)?.value.trim()))
     ||selectFields.some(id=>Boolean(document.getElementById(id)?.value))
@@ -297,13 +288,12 @@ function initialPatientVisitSection(){
   return `<div class="form-grid full initial-visit-grid">
       <div class="f-field"><label for="iv-date">Visit Date</label><input type="date" id="iv-date" value="${todayDateString()}"></div>
       <div class="f-field"><label for="iv-time">Visit Time</label><input id="iv-time" value="${escapeHtml(currentTimeString())}"></div>
-      <div class="f-field"><label for="iv-nurse">Nurse on Duty</label><input id="iv-nurse" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
       <div class="f-field full"><label for="iv-reason">Reason for Clinic Visit</label><input id="iv-reason" list="iv-reasons" maxlength="300" placeholder="Select or enter a reason"><datalist id="iv-reasons">${COMPLAINTS.map(reason=>`<option value="${escapeHtml(reason)}">`).join("")}<option value="Other"></datalist></div>
       <div class="f-field"><label for="iv-start">When Did Symptoms Start?</label><input id="iv-start" placeholder="e.g. this morning"></div>
       <div class="f-field"><label for="iv-pain">Pain Level</label><select id="iv-pain"><option value="">Select Pain Level</option>${["0 – No pain","1–3 – Mild","4–6 – Moderate","7–9 – Severe","10 – Worst possible pain"].map(value=>`<option>${value}</option>`).join("")}</select></div>
       <div class="f-field full"><label>Medical History</label><div class="initial-visit-subgrid">
         <label>Known Medical Conditions<select id="iv-conditions"><option value="">Select</option><option>No</option><option>Yes</option></select></label>
-        <div><label for="iv-allergies">Allergies</label><select id="iv-allergies"><option value="">Select</option><option>Yes</option><option>No</option></select><label for="iv-allergy-detail">Allergy Details</label><input id="iv-allergy-detail" maxlength="500" autocomplete="off" placeholder="Required when Yes is selected"></div>
+        <label>Allergies<select id="iv-allergies"><option value="">Select</option><option>Yes</option><option>No</option></select></label>
         <label>Current Medication<select id="iv-current-med"><option value="">Select</option><option>No</option><option>Yes</option></select></label>
       </div></div>
       <div class="f-field full"><label>Vital Signs</label><div class="vital-signs-grid">
@@ -325,7 +315,7 @@ function initialPatientVisitSection(){
         <label>Method<select id="iv-guardian-method">${[["not applicable","Not Applicable"],["phone call","Phone Call"],["sms/text","SMS/Text"],["messenger","Messenger"],["in person","In Person"]].map(([value,label])=>`<option value="${value}">${label}</option>`).join("")}</select></label>
         <label>Person Contacted<input id="iv-person"></label>
       </div></div>
-      <div class="f-field"><label>Clinic Staff Record</label><input id="iv-staff" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
+      <div class="f-field"><label for="iv-nurse">Nurse on Duty</label><input id="iv-nurse" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
       <div class="f-field"><label>Position</label><input id="iv-position" value="${escapeHtml(state.currentUser.role||"Staff Nurse")}" readonly aria-readonly="true"></div>
     </div>`;
 }

@@ -46,7 +46,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const lastName = typeof input.lastName === "string" ? input.lastName.trim() : "";
     const firstName = typeof input.firstName === "string" ? input.firstName.trim() : "";
     const middleInitial = typeof input.middleInitial === "string" ? input.middleInitial.trim() : "";
-    const username = typeof input.username === "string" ? input.username.trim() : "";
+    const username = typeof input.username === "string" ? input.username : "";
     const role = typeof input.role === "string" ? input.role : "";
     const status = input.status === "Disabled" ? "Disabled" : input.status === "Active" ? "Active" : "";
     if (!lastName || !firstName || !username || !status) return Response.json({ message: "Name, username, and status are required." }, { status: 400 });

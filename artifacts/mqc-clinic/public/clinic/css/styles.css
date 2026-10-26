@@ -1009,11 +1009,12 @@ tbody tr:hover{background:#F7FBFB;}
   .initial-visit-grid,.initial-visit-subgrid{grid-template-columns:1fr;}
 }
 .modal.patient-form-modal{width:min(760px,100%);max-height:calc(100dvh - 48px);}
-.modal.patient-form-modal .modal-foot{box-sizing:border-box;align-self:stretch;width:100%;min-width:0;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;}
-.modal.patient-form-modal .form-save-status{flex:0 0 100%;min-width:0;text-align:center;}
+.modal.patient-form-modal .modal-foot{box-sizing:border-box;align-self:stretch;width:100%;min-width:0;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;}
+.modal.patient-form-modal .form-save-status{flex:1 1 100%;min-width:0;text-align:right;}
 .modal.patient-form-modal .form-save-status:empty{display:none;}
 .modal.patient-form-modal .modal-foot .btn{flex:0 1 160px;min-width:0;justify-content:center;white-space:nowrap;}
 @media(max-width:760px){
   .modal.patient-form-modal{max-height:calc(100dvh - 20px);}
   .modal.patient-form-modal .modal-foot .btn{flex-basis:140px;}
 }
+.session-restore{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;color:var(--navy-deep);font-weight:600;}

@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     return Response.json({ message: "Invalid account details." }, { status: 400 });
   }
   const input = body as Record<string, unknown>;
-  const username = typeof input.username === "string" ? input.username.trim() : "";
+  const username = typeof input.username === "string" ? input.username : "";
   const password = typeof input.password === "string" ? input.password : "";
   const lastName = typeof input.lastName === "string" ? input.lastName.trim() : "";
   const firstName = typeof input.firstName === "string" ? input.firstName.trim() : "";
@@ -63,9 +63,10 @@ export async function POST(request: Request) {
   if (!/^[A-Za-z0-9._-]{3,50}$/.test(username)) {
     return Response.json({ message: "Username must be 3-50 letters, numbers, dots, underscores, or hyphens." }, { status: 400 });
   }
-  if (password.length < 8) {
-    return Response.json({ message: "Password must be at least 8 characters." }, { status: 400 });
+  if (password.length < 8 || password.length > 128) {
+    return Response.json({ message: "Password must be between 8 and 128 characters." }, { status: 400 });
   }
+  if (/\s/.test(password)) return Response.json({ message: "Password cannot contain spaces." }, { status: 400 });
   if (!["Head Nurse", "Staff Nurse"].includes(role)) {
     return Response.json({ message: "Invalid clinic role." }, { status: 400 });
   }

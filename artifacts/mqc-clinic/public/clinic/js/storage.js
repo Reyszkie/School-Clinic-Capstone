@@ -415,20 +415,24 @@ async function restoreAuthSession(){
   try{
     const rememberedRaw=window.localStorage.getItem(AUTH_SESSION_KEY);
     const raw=rememberedRaw||window.sessionStorage.getItem(AUTH_SESSION_KEY);
-    if(!raw) return false;
-    const saved=JSON.parse(raw);
-    if(rememberedRaw&&saved.rememberMe!==true){window.localStorage.removeItem(AUTH_SESSION_KEY);return false;}
+    let saved=null;
+    if(raw){
+      try{saved=JSON.parse(raw);}
+      catch{clearAuthSession();}
+    }
+    if(rememberedRaw&&saved?.rememberMe!==true){window.localStorage.removeItem(AUTH_SESSION_KEY);}
     const response=await fetch("/api/auth/session",{cache:"no-store"});
-    if(!response.ok){window.localStorage.removeItem(AUTH_SESSION_KEY);window.sessionStorage.removeItem(AUTH_SESSION_KEY);return false;}
+    if(response.status===401){clearAuthSession();return false;}
+    if(!response.ok)throw new Error(`Clinic session validation returned ${response.status}.`);
     const user=await response.json();
-    if(!user?.id||user.username!==saved.username||user.status!=="Active"){window.localStorage.removeItem(AUTH_SESSION_KEY);window.sessionStorage.removeItem(AUTH_SESSION_KEY);return false;}
+    if(!user?.id||user.status!=="Active"||(saved?.username&&user.username!==saved.username)){clearAuthSession();return false;}
     ensureVisibleClinicUser(user);
     state.currentUser=user;
     state.loggedIn=true;
     return true;
   }catch(err){
     console.warn("MQC Clinic: couldn't restore the login session.",err);
-    return false;
+    throw err;
   }
 }
 

@@ -38,6 +38,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const password = typeof input.password === "string" ? input.password : "";
     const confirmPassword = typeof input.confirmPassword === "string" ? input.confirmPassword : "";
     if (password.length < 8 || password.length > 128) return Response.json({ message: "Password must be between 8 and 128 characters." }, { status: 400 });
+    if (/\s/.test(password)) return Response.json({ message: "Password cannot contain spaces." }, { status: 400 });
     if (password !== confirmPassword) return Response.json({ message: "Passwords do not match." }, { status: 400 });
 
     const profileResponse = await supabaseRequest(`clinic_users?id=eq.${encodeURIComponent(id)}&select=auth_user_id,deleted_at&limit=1`);
