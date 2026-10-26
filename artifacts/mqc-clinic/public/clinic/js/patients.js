@@ -71,7 +71,8 @@ function renderStudentDetail(s, inModal=false){
   return `<div class="${inModal?"student-detail-content":"card"}" ${inModal?"":"style=\"margin-top:16px;\""}><div class="student-card">
     <div class="s-avatar">${escapeHtml(initials)}</div><div style="flex:1"><h3 style="font-size:19px">${escapeHtml(displayName)}</h3>
       <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.institutionalCategory||s.course||"—")}</div></div>
-    <button class="btn" id="edit-student-visit-btn" ${latestVisit?"":"disabled"}>${ICONS.edit} Edit Patient Visit</button>
+    <button class="btn" id="edit-student-profile-btn">${ICONS.edit} Edit Profile</button>
+    <button class="btn btn-teal" id="new-student-visit-btn">${ICONS.plus} New Patient Visit</button>
     ${canDeleteClinicRecords()?`    ${canDeleteClinicRecords()?`<button class="btn btn-outline-red" id="delete-student-btn">${ICONS.trash_sm} Delete Patient</button>`:""}`:""}
   </div><div class="info-grid">
     <div class="info-cell"><div class="lbl">Sex</div><div class="val">${escapeHtml(s.gender||s.sex||"—")}</div></div>
@@ -106,7 +107,7 @@ function bindConsultSearch(){
   run();
 }
 
-function openStudentForm(existing=null){
+function openStudentForm(existing=null,returnToDetails=false){
   let isEdit=!!existing;
   let editingStudent=existing;
   const f=existing||{lastName:"",firstName:"",middleInitial:"",course:"",year:"",gender:"",guardianName:"",guardianContact:"",symptoms:[]};
@@ -114,7 +115,7 @@ function openStudentForm(existing=null){
   const parts=(f.name||"").split(",");
   const lastName=f.lastName||parts[0]||"";
   const firstName=f.firstName||(parts[1]||"").trim().split(" ")[0]||"";
-  const html=`<div class="modal-head"><h3 id="student-form-title">${isEdit?"Edit":"Add New"} Patient</h3><button class="modal-close" onclick="closeModal()" aria-label="Close patient form">${ICONS.x}</button></div>
+  const html=`<div class="modal-head"><h3 id="student-form-title">${isEdit?(returnToDetails?"Edit Profile":"Edit Patient"):"Add New Patient"}</h3><button class="modal-close" onclick="closeModal()" aria-label="Close patient form">${ICONS.x}</button></div>
   <div class="modal-body"><form class="form-grid" id="stu-form">
     <div class="f-field"><label>Last Name <span class="req">*</span></label><input id="sf-lastname" value="${escapeHtml(lastName)}" required></div>
     <div class="f-field"><label>Given Name <span class="req">*</span></label><input id="sf-firstname" value="${escapeHtml(firstName)}" required></div>
@@ -183,7 +184,7 @@ function openStudentForm(existing=null){
     if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
     const allergyAnswer=initialVisitEntered?initialAllergies.value:"";
     const targetStudent=matchingPatient||editingStudent;
-    const rec={id:isEdit?editingStudent.id:matchingPatient?.id||newPatientRecordId(),name:matchingPatient?.name||name,lastName:matchingPatient?.lastName||last,firstName:matchingPatient?.firstName||first,middleInitial:matchingPatient?.middleInitial??middle,course:matchingPatient?.course||course,institutionalCategory:matchingPatient?.institutionalCategory||course,year:matchingPatient?.year||year,personnelType:matchingPatient?.personnelType||(course==="Campus Personnel"?year:null),gender:matchingPatient?.gender||document.getElementById("sf-gender").value,sex:matchingPatient?.gender||document.getElementById("sf-gender").value,guardianName:matchingPatient?.guardianName||document.getElementById("sf-guardian").value,guardianContact:matchingPatient?.guardianContact||guardianContact.value,emergency:matchingPatient?.emergency||document.getElementById("sf-guardian").value,allergies:allergyAnswer==="Yes"?mergePatientAllergies(matchingPatient?.allergies||"Not Yet Assessed","Allergies reported"):allergyAnswer==="No"?(matchingPatient?.allergies&&patientAllergyStatus(matchingPatient.allergies).status!=="unassessed"?matchingPatient.allergies:"No Known Allergies"):f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms:Array.isArray(f.symptoms)?f.symptoms:[]};
+    const rec={...f,id:isEdit?editingStudent.id:matchingPatient?.id||newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,institutionalCategory:course,year,personnelType:course==="Campus Personnel"?year:null,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:allergyAnswer==="Yes"?mergePatientAllergies(matchingPatient?.allergies||"Not Yet Assessed","Allergies reported"):allergyAnswer==="No"?(matchingPatient?.allergies&&patientAllergyStatus(matchingPatient.allergies).status!=="unassessed"?matchingPatient.allergies:"No Known Allergies"):f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms:Array.isArray(f.symptoms)?f.symptoms:[]};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const newPatient=!wasEdit&&!matchingPatient;
@@ -251,10 +252,21 @@ function openStudentForm(existing=null){
       ]:undefined,
       auditAction:`${wasEdit?"Patient Record Updated":"Patient Added"} — ${rec.id}`,module:"Patients",detail:rec.id,
       successTitle:wasEdit?"Patient updated":initialVisit?(newPatient?"Patient and visit saved":"Visit saved"):"Patient added",
-      successMessage:wasEdit?`${rec.name}'s record has been updated.`:initialVisit?(newPatient?`${rec.name} and the initial clinical visit were saved.`:`A visit was recorded for existing patient ${rec.name}.`):`Welcome, ${rec.name}! Added to patient records.`,
+      successMessage:wasEdit?`${rec.name}'s profile has been updated.`:initialVisit?(newPatient?`${rec.name} and the initial clinical visit were saved.`:`A visit was recorded for existing patient ${rec.name}.`):`Welcome, ${rec.name}! Added to patient records.`,
       refresh:renderConsultTabBody,
     });}finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
-    if(saved)closeModal();
+    if(saved){
+      closeModal();
+      if(wasEdit&&returnToDetails){
+        const updated=STUDENTS.find(patient=>patient.id===rec.id)||rec;
+        const detailsModal=modalStack.find(backdrop=>backdrop.querySelector("#student-detail-modal-title"));
+        const detailsBody=detailsModal?.querySelector(".modal-body");
+        if(detailsBody){
+          detailsBody.innerHTML=renderStudentDetail(updated,true);
+          bindStudentDetailActions(updated,detailsModal);
+        }
+      }
+    }
   };
 }
 
@@ -330,11 +342,11 @@ function openStudentDetailModal(student){
 
 function bindStudentDetailActions(student,root=document){
   const find=(selector)=>root.querySelector(selector);
-  const edit=find("#edit-student-visit-btn");
-  if(edit)edit.onclick=()=>{
-    const latestVisit=studentClinicalVisits(student).find(visit=>visit.status!=="Superseded");
-    if(!latestVisit){toast("No visits available","This patient has no visit record to edit.","err");return;}
-    closeModal();openConsultationForm(student,latestVisit);
+  const editProfile=find("#edit-student-profile-btn");
+  if(editProfile)editProfile.onclick=()=>openStudentForm(student,true);
+  const newVisit=find("#new-student-visit-btn");
+  if(newVisit)newVisit.onclick=()=>{
+    closeModal();openConsultationForm(student);
   };
   const del=find("#delete-student-btn"); if(del)del.onclick=()=>{closeModal();deleteStudent(student);};
   root.querySelectorAll("[data-view-student-consult]").forEach(button=>button.onclick=()=>{
