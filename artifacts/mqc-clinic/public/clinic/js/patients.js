@@ -173,6 +173,30 @@ function openStudentForm(existing = null, returnToDetails = false) {
     symptoms: [],
   };
   const selectedCategory = f.institutionalCategory || f.course || "";
+  const selectedYear = f.personnelType || f.year || "";
+  const legacyCategoryOption =
+    isEdit &&
+    selectedCategory &&
+    !COURSES.includes(selectedCategory) &&
+    selectedCategory !== "Campus Personnel"
+      ? `<option selected>${escapeHtml(selectedCategory)}</option>`
+      : "";
+  const knownYears =
+    selectedCategory === "Campus Personnel"
+      ? PERSONNEL_TYPES
+      : YEAR_LEVEL_GROUPS.flatMap((group) => group.options);
+  const legacyYearOption =
+    isEdit && selectedYear && !knownYears.includes(selectedYear)
+      ? `<option selected>${escapeHtml(selectedYear)}</option>`
+      : "";
+  const yearOptions = yearOptionsForCategoryHtml(selectedCategory, selectedYear);
+  const yearOptionsWithLegacy =
+    legacyYearOption && selectedCategory
+      ? yearOptions.replace(
+          `</option>`,
+          `</option>${legacyYearOption}`,
+        )
+      : yearOptions;
   const parts = (f.name || "").split(",");
   const lastName = f.lastName || parts[0] || "";
   const firstName = f.firstName || (parts[1] || "").trim().split(" ")[0] || "";
@@ -181,8 +205,8 @@ function openStudentForm(existing = null, returnToDetails = false) {
     <div class="f-field"><label>Last Name <span class="req">*</span></label><input id="sf-lastname" value="${escapeHtml(lastName)}" required></div>
     <div class="f-field"><label>Given Name <span class="req">*</span></label><input id="sf-firstname" value="${escapeHtml(firstName)}" required></div>
     <div class="f-field"><label>Middle Initial</label><input id="sf-middle" maxlength="3" value="${escapeHtml(f.middleInitial || "")}" placeholder="M.I."></div>
-    <div class="f-field full"><label>Institutional Category <span class="req">*</span></label><select id="sf-category" required><option value="">Select Institutional Category</option>${courseOptionsHtml(selectedCategory)}</select></div>
-    <div class="f-field"><label id="sf-year-label">${selectedCategory === "Campus Personnel" ? "Personnel Type" : "Year Level"} <span class="req">*</span></label><select id="sf-year" required>${yearOptionsForCategoryHtml(selectedCategory, f.personnelType || f.year)}</select></div>
+    <div class="f-field full"><label>Institutional Category <span class="req">*</span></label><select id="sf-category" required><option value="">Select Institutional Category</option>${legacyCategoryOption}${courseOptionsHtml(selectedCategory)}</select></div>
+    <div class="f-field"><label id="sf-year-label">${selectedCategory === "Campus Personnel" ? "Personnel Type" : "Year Level"} <span class="req">*</span></label><select id="sf-year" required>${yearOptionsWithLegacy}</select></div>
     <div class="f-field"><label>Sex</label><select id="sf-gender"><option value="">Select Sex</option>${["Male", "Female"].map((g) => `<option ${f.gender === g ? "selected" : ""}>${g}</option>`).join("")}</select></div>
     <div class="f-field"><label>Parent / Guardian Name</label><input id="sf-guardian" value="${escapeHtml(f.guardianName || f.emergency || "")}"></div>
     <div class="f-field full"><label for="sf-guardian-contact">Parent / Guardian Contact <span class="req">*</span></label><input id="sf-guardian-contact" type="text" inputmode="numeric" pattern="[0-9]{11}" minlength="11" autocomplete="tel-national" required aria-describedby="sf-guardian-contact-error" aria-invalid="false" value="${escapeHtml(f.guardianContact || "")}" placeholder="09XXXXXXXXX"><div class="field-error hidden" id="sf-guardian-contact-error" role="alert"></div></div>
@@ -206,7 +230,11 @@ function openStudentForm(existing = null, returnToDetails = false) {
   );
   let guardianContactTouched = Boolean(guardianContact.value);
   const updateGuardianContactValidity = () => {
-    const valid = /^\d{11}$/.test(guardianContact.value);
+    const unchangedLegacyContact =
+      isEdit &&
+      guardianContact.value === String(f.guardianContact || "") &&
+      !/^\d{11}$/.test(guardianContact.value);
+    const valid = /^\d{11}$/.test(guardianContact.value) || unchangedLegacyContact;
     guardianContact.setCustomValidity(
       valid ? "" : "Enter exactly 11 digits using numbers only.",
     );
