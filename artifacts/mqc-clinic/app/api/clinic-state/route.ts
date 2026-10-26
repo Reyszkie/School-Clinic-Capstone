@@ -1392,7 +1392,9 @@ export async function PUT(request: Request) {
           { status: 409, headers: { "Cache-Control": "no-store" } },
         );
       }
-      await purgeRows(purgeRequest);
+      if (purgeRequest.requests.length) {
+        await purgeRows(purgeRequest);
+      }
       await savePurgeHistory(purgeRequest.requests);
       return new Response(null, {
         status: 204,
