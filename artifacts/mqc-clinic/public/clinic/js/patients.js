@@ -125,7 +125,6 @@ function openStudentForm(existing=null,returnToDetails=false){
     <div class="f-field"><label>Sex</label><select id="sf-gender"><option value="">Select Sex</option>${["Male","Female"].map(g=>`<option ${f.gender===g?"selected":""}>${g}</option>`).join("")}</select></div>
     <div class="f-field"><label>Parent / Guardian Name</label><input id="sf-guardian" value="${escapeHtml(f.guardianName||f.emergency||"")}"></div>
     <div class="f-field full"><label for="sf-guardian-contact">Parent / Guardian Contact <span class="req">*</span></label><input id="sf-guardian-contact" type="text" inputmode="numeric" pattern="[0-9]{11}" minlength="11" autocomplete="tel-national" required aria-describedby="sf-guardian-contact-error" aria-invalid="false" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"><div class="field-error hidden" id="sf-guardian-contact-error" role="alert"></div></div>
-    ${isEdit?"":initialPatientVisitSection()}
   </form></div><div class="modal-foot"><span class="form-save-status" id="sf-status" aria-live="polite"></span><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Patient"}</button></div>`;
   openModal(html,"patient-form-modal");
   const categorySelect=document.getElementById("sf-category"),yearSelect=document.getElementById("sf-year");
@@ -135,10 +134,6 @@ function openStudentForm(existing=null,returnToDetails=false){
     yearSelect.innerHTML=yearOptionsForCategoryHtml(categorySelect.value,resetYear?"":yearSelect.value);
   };
   categorySelect.addEventListener("change",()=>syncCategoryFields(true));
-  const initialAllergies=document.getElementById("iv-allergies");
-  bindOptionFreeText("initial-intervention-other");
-  bindVisitInventoryCard({id:"iv-medicine",quantityId:"iv-medqty",items:MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)&&Number(item.qty)>0),unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0,defaultQuantity:0});
-  bindVisitInventoryCard({id:"iv-supply",quantityId:"iv-supply-qty",items:EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0),unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0,defaultQuantity:0});
   const guardianContact=document.getElementById("sf-guardian-contact");
   const guardianContactError=document.getElementById("sf-guardian-contact-error");
   let guardianContactTouched=Boolean(guardianContact.value);
@@ -163,10 +158,6 @@ function openStudentForm(existing=null,returnToDetails=false){
     if(!last||!first){toast("Missing information","Last name and given name are required.","err");return;}
     guardianContactTouched=true;
     updateGuardianContactValidity();
-    const initialVisitEntered=!isEdit&&initialPatientVisitHasDetails();
-    if(initialVisitEntered){
-      ["iv-date","iv-time","iv-reason","iv-outcome","iv-allergies"].forEach(id=>{document.getElementById(id).required=true;});
-    }
     if(!document.getElementById("stu-form").reportValidity())return;
     const course=categorySelect.value,year=yearSelect.value;
     const guardianContactValue=guardianContact.value.trim();
@@ -177,82 +168,30 @@ function openStudentForm(existing=null,returnToDetails=false){
       String(patient.middleInitial||"").trim().replace(/\.$/,"").toLowerCase()===middle.replace(/\.$/,"").toLowerCase()&&
       ((patient.institutionalCategory||patient.course)===course&&(patient.personnelType||patient.year)===year||Boolean(guardianContactValue&&String(patient.guardianContact||"").replace(/\D/g,"")===guardianContactValue))
     );
-    if(matchingPatient&&!initialVisitEntered){
+    if(matchingPatient){
       closeModal();openStudentDetailModal(matchingPatient);
       return;
     }
     if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
-    const allergyAnswer=initialVisitEntered?initialAllergies.value:"";
-    const targetStudent=matchingPatient||editingStudent;
-    const rec={...f,id:isEdit?editingStudent.id:matchingPatient?.id||newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,institutionalCategory:course,year,personnelType:course==="Campus Personnel"?year:null,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:allergyAnswer==="Yes"?mergePatientAllergies(matchingPatient?.allergies||"Not Yet Assessed","Allergies reported"):allergyAnswer==="No"?(matchingPatient?.allergies&&patientAllergyStatus(matchingPatient.allergies).status!=="unassessed"?matchingPatient.allergies:"No Known Allergies"):f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms:Array.isArray(f.symptoms)?f.symptoms:[]};
+    const rec={...f,id:isEdit?editingStudent.id:newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,institutionalCategory:course,year,personnelType:course==="Campus Personnel"?year:null,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms:Array.isArray(f.symptoms)?f.symptoms:[]};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const newPatient=!wasEdit&&!matchingPatient;
-    let initialVisit=null,inventorySnapshot=null,visitsSnapshot=null,previousAllergies=null;
-    if(initialVisitEntered){
-      const reasonValue=document.getElementById("iv-reason").value.trim();
-      if(!reasonValue){document.getElementById("iv-reason").focus();toast("Missing information","Please enter a reason for the clinic visit.","err");return;}
-      if(reasonValue.toLowerCase()==="other"){document.getElementById("iv-reason").focus();toast("Missing information","Enter the custom reason instead of selecting Other.","err");return;}
-      const complaint=COMPLAINTS.includes(reasonValue)?reasonValue:"Other";
-      const medicineCode=document.getElementById("iv-medicine").value,medicine=MEDICINES.find(item=>item.code===medicineCode);
-      const supplyItemId=document.getElementById("iv-supply").value,supply=EQUIPMENT.find(item=>item.id===supplyItemId);
-      const interventions=selectedChecks('[data-check-group="initial-intervention"]');
-      const interventionOther=document.querySelector('[data-free-text="initial-intervention-other"]')?.value.trim();
-      if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-      initialVisit={
-        id:uid("CS"),date:document.getElementById("iv-date").value,time:document.getElementById("iv-time").value,
-        nurse:state.currentUser.name,nurseId:state.currentUser.id,studentId:rec.id,studentName:rec.name,course:rec.course,year:rec.personnelType||rec.year,
-        complaint,reasonOther:complaint==="Other"?reasonValue:"",description:"",
-        symptomStart:document.getElementById("iv-start").value,painLevel:document.getElementById("iv-pain").value,
-        knownConditions:document.getElementById("iv-conditions").value||"No",
-        allergiesHistory:allergyAnswer,currentMedication:document.getElementById("iv-current-med").value||"No",
-        weight:"",height:"",temp:document.getElementById("iv-temp").value,bp:document.getElementById("iv-bp").value,pulse:document.getElementById("iv-pulse").value,
-        respiratoryRate:document.getElementById("iv-respiratory-rate").value,spo2:document.getElementById("iv-spo2").value,
-        interventions,
-        medicine:medicine?.name||"",medicineCode:medicine?.code||null,medQty:Number(document.getElementById("iv-medqty").value),
-        supplyUsed:supply?.name||"",supplyItemId:supply?.id||null,supplyQty:Number(document.getElementById("iv-supply-qty").value),
-        equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("iv-outcome").value,
-        remarks:document.getElementById("iv-remarks").value,guardianContacted:document.getElementById("iv-guardian-contacted").value,
-        guardianMethod:document.getElementById("iv-guardian-method").value,personContacted:document.getElementById("iv-person").value,
-        staffRecord:document.getElementById("iv-nurse").value,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,revision:1,createdAt:new Date().toISOString(),
-      };
-      if(!initialVisit.outcome){document.getElementById("iv-outcome").focus();toast("Missing information","Please select a clinic disposition outcome.","err");return;}
-      ensureInventoryLedger();
-      try{validateVisitInventoryUsage(initialVisit,null);}catch(error){toast("Invalid treatment quantity",error.message||"Check the selected inventory quantities.","err");return;}
-      inventorySnapshot=captureInventoryState();
-      visitsSnapshot=CONSULTATIONS.slice();
-      previousAllergies=targetStudent?.allergies;
-    }
     const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     let saved=false;
     try{saved=await commitClinicRecordMutation({
       apply:()=>{
         if(wasEdit){if(index<0)throw new Error("This patient record is no longer available.");STUDENTS[index]={...previous,...rec};const updated=STUDENTS[index];CONSULTATIONS.forEach(visit=>{if(visit.studentId===updated.id){visit.studentName=updated.name;visit.course=updated.course;visit.year=updated.year;}});editingStudent=updated;state.selectedStudent=updated;}
         else if(newPatient){STUDENTS.unshift(rec);editingStudent=rec;state.selectedStudent=rec;}
-        if(initialVisit){
-          const patient=matchingPatient||rec;
-          applyVisitInventoryUsage(initialVisit);
-          patient.allergies=rec.allergies;
-          CONSULTATIONS.unshift(initialVisit);
-        }
       },
       rollback:()=>{
-        if(inventorySnapshot)restoreInventoryState(inventorySnapshot);
-        if(visitsSnapshot)CONSULTATIONS.splice(0,CONSULTATIONS.length,...visitsSnapshot);
         if(wasEdit&&previous){STUDENTS[index]=previous;previousVisits.forEach(row=>Object.assign(row.visit,{studentName:row.studentName,course:row.course,year:row.year}));editingStudent=previous;state.selectedStudent=previous;}
         else if(newPatient){const patientIndex=STUDENTS.findIndex(patient=>patient.id===rec.id);if(patientIndex>=0)STUDENTS.splice(patientIndex,1);state.selectedStudent=null;}
-        if(matchingPatient&&previousAllergies!==null)matchingPatient.allergies=previousAllergies;
       },
-      save:()=>initialVisit?saveVisitToClinicState([initialVisit.id],inventorySnapshot,[rec.id],newPatient):saveToClinicState(false,true),
-      auditActions:initialVisit?[
-        ...(newPatient?[{action:`Patient Added — ${rec.id}`,module:"Patients",detail:rec.id}]:[]),
-        {action:`Patient Visit Created — ${initialVisit.id}`,module:"Patient Visits",detail:initialVisit.id},
-        ...clinicInventoryAuditActions(inventorySnapshot,`visit ${initialVisit.id}`),
-        {action:`Patient Allergies ${allergyAnswer==="Yes"?"Recorded":"Confirmed None"} — ${rec.id} from visit ${initialVisit.id}`,module:"Patients",detail:rec.id},
-      ]:undefined,
+      save:()=>saveToClinicState(false,true),
       auditAction:`${wasEdit?"Patient Record Updated":"Patient Added"} — ${rec.id}`,module:"Patients",detail:rec.id,
-      successTitle:wasEdit?"Patient updated":initialVisit?(newPatient?"Patient and visit saved":"Visit saved"):"Patient added",
-      successMessage:wasEdit?`${rec.name}'s profile has been updated.`:initialVisit?(newPatient?`${rec.name} and the initial clinical visit were saved.`:`A visit was recorded for existing patient ${rec.name}.`):`Welcome, ${rec.name}! Added to patient records.`,
+      successTitle:wasEdit?"Patient updated":"Patient added",
+      successMessage:wasEdit?`${rec.name}'s profile has been updated.`:`Welcome, ${rec.name}! Added to patient records.`,
       refresh:renderConsultTabBody,
     });}finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
     if(saved){
@@ -282,54 +221,6 @@ function newPatientRecordId(){
 function bindSelectButtons(){
   document.querySelectorAll("[data-select-stu]").forEach(b=>b.onclick=()=>openStudentDetailModal(STUDENTS.find(s=>s.id===b.dataset.selectStu)));
   document.querySelectorAll("[data-del-stu]").forEach(b=>b.onclick=()=>deleteStudent(STUDENTS.find(s=>s.id===b.dataset.delStu)));
-}
-
-function initialPatientVisitHasDetails(){
-  const textFields=["iv-reason","iv-start","iv-temp","iv-pulse","iv-respiratory-rate","iv-bp","iv-spo2","iv-remarks","iv-person"];
-  const selectFields=["iv-pain","iv-conditions","iv-allergies","iv-current-med","iv-medicine","iv-supply"];
-  return textFields.some(id=>Boolean(document.getElementById(id)?.value.trim()))
-    ||selectFields.some(id=>Boolean(document.getElementById(id)?.value))
-    ||document.getElementById("iv-guardian-contacted")?.value!=="Not Applicable"
-    ||selectedChecks('[data-check-group="initial-intervention"]').length>0
-    ||Boolean(document.querySelector('[data-free-text="initial-intervention-other"]')?.value.trim());
-}
-
-function initialPatientVisitSection(){
-  const meds=MEDICINES.filter(m=>!m.deleted&&!medicineIsExpired(m));
-  const supplies=EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0);
-  return `<div class="form-grid full initial-visit-grid">
-      <div class="f-field"><label for="iv-date">Visit Date</label><input type="date" id="iv-date" value="${todayDateString()}"></div>
-      <div class="f-field"><label for="iv-time">Visit Time</label><input id="iv-time" value="${escapeHtml(currentTimeString())}"></div>
-      <div class="f-field full"><label for="iv-reason">Reason for Clinic Visit</label><input id="iv-reason" list="iv-reasons" maxlength="300" placeholder="Select or enter a reason"><datalist id="iv-reasons">${COMPLAINTS.map(reason=>`<option value="${escapeHtml(reason)}">`).join("")}<option value="Other"></datalist></div>
-      <div class="f-field"><label for="iv-start">When Did Symptoms Start?</label><input id="iv-start" placeholder="e.g. this morning"></div>
-      <div class="f-field"><label for="iv-pain">Pain Level</label><select id="iv-pain"><option value="">Select Pain Level</option>${["0 – No pain","1–3 – Mild","4–6 – Moderate","7–9 – Severe","10 – Worst possible pain"].map(value=>`<option>${value}</option>`).join("")}</select></div>
-      <div class="f-field full"><label>Medical History</label><div class="initial-visit-subgrid">
-        <label>Known Medical Conditions<select id="iv-conditions"><option value="">Select</option><option>No</option><option>Yes</option></select></label>
-        <label>Allergies<select id="iv-allergies"><option value="">Select</option><option>Yes</option><option>No</option></select></label>
-        <label>Current Medication<select id="iv-current-med"><option value="">Select</option><option>No</option><option>Yes</option></select></label>
-      </div></div>
-      <div class="f-field full"><label>Vital Signs</label><div class="vital-signs-grid">
-        <label>Body Temperature (°C)<input type="number" min="25" max="50" step="0.1" id="iv-temp" placeholder="e.g. 36.8"></label>
-        <label>Pulse Rate (Heart Rate, bpm)<input type="number" min="0" max="300" id="iv-pulse" placeholder="e.g. 72"></label>
-        <label>Respiratory Rate (breaths/min)<input type="number" min="0" max="100" id="iv-respiratory-rate" placeholder="e.g. 16"></label>
-        <label>Blood Pressure (BP, mmHg)<input id="iv-bp" placeholder="110/70" aria-label="Blood pressure in millimeters of mercury"></label>
-        <label>Oxygen Saturation (SpO2, %)<input type="number" min="0" max="100" id="iv-spo2" placeholder="e.g. 98"></label>
-      </div></div>
-      <div class="f-field full"><label>Treatment / Intervention</label>${optionListHtml(INTERVENTIONS,[],"initial-intervention")}<label class="option-check"><input type="checkbox" data-free-text-toggle="initial-intervention-other"><span>Other</span></label><input class="option-free-text hidden" data-free-text="initial-intervention-other" placeholder="Enter other intervention"></div>
-      <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
-        ${visitInventoryCard({id:"iv-medicine",label:"Medicines",items:meds,selected:"",quantityId:"iv-medqty",quantity:0,unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0})}
-        ${visitInventoryCard({id:"iv-supply",label:"Medical Supplies",items:supplies,selected:"",quantityId:"iv-supply-qty",quantity:0,unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0})}
-      </div></div>
-      <div class="f-field full"><label for="iv-outcome">Clinic Disposition — Outcome</label><select id="iv-outcome"><option value="">Select Outcome</option>${DISPOSITIONS.map(value=>`<option>${value}</option>`).join("")}<option>Other</option></select></div>
-      <div class="f-field full"><label for="iv-remarks">Remarks</label><textarea id="iv-remarks"></textarea></div>
-      <div class="f-field full"><label>Parent / Guardian Notification</label><div class="initial-visit-subgrid">
-        <label>Contacted?<select id="iv-guardian-contacted"><option>Not Applicable</option><option>Yes</option><option>No</option></select></label>
-        <label>Method<select id="iv-guardian-method">${[["not applicable","Not Applicable"],["phone call","Phone Call"],["sms/text","SMS/Text"],["messenger","Messenger"],["in person","In Person"]].map(([value,label])=>`<option value="${value}">${label}</option>`).join("")}</select></label>
-        <label>Person Contacted<input id="iv-person"></label>
-      </div></div>
-      <div class="f-field"><label for="iv-nurse">Nurse on Duty</label><input id="iv-nurse" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
-      <div class="f-field"><label>Position</label><input id="iv-position" value="${escapeHtml(state.currentUser.role||"Staff Nurse")}" readonly aria-readonly="true"></div>
-    </div>`;
 }
 
 function openStudentDetailModal(student){
@@ -428,14 +319,6 @@ function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForIte
   quantity.addEventListener("input",()=>{quantity.value=quantity.value.replace(/\D/g,"");update();});
   update();
   return update;
-}
-
-function mergePatientAllergies(currentValue,newValue){
-  const isEmpty=value=>!value||["no","none","none known","no known allergy","no known allergies","no allergies","nka","none recorded","not specified","not yet assessed","unknown"].includes(String(value).trim().toLowerCase());
-  const entries=[...(isEmpty(currentValue)?[]:String(currentValue).split(/[;,]/)),...String(newValue).split(/[;,]/)].map(value=>value.trim()).filter(Boolean);
-  const seen=new Set();
-  const unique=entries.filter(value=>{const key=value.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;});
-  return unique.join("; ")||"Not Yet Assessed";
 }
 
 function normalizeGuardianContacted(value){
