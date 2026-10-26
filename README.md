@@ -200,9 +200,9 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Add, edit, enable, disable, and delete user actions.
 - Deleted user recovery.
 - Last name, first name, and middle initial fields.
-- Head Nurse and Administrator role.
-- Head Nurse role.
+- Head Nurse role with full administrative permissions.
 - Staff Nurse role.
+- Existing legacy Head Nurse & Administrator accounts retain access; the legacy role is not offered for new accounts.
 - Username field.
 - Password and confirm-password fields.
 - Password show/hide controls.
@@ -230,8 +230,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Deleted medicines list.
 - Deleted inventory items list.
 - Deleted users list.
-- Restore actions for every record category.
-- Permanent delete actions.
+- Restore actions for every record category (Head Nurse and existing legacy administrators only).
+- Permanent delete actions (Head Nurse and existing legacy administrators only).
 - Permanent delete confirmation dialog.
 - Warning audit entry for permanent deletion.
 - Empty-state message for each category.
@@ -254,7 +254,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 - Supabase PostgreSQL persistence through authenticated Next.js REST API routes.
 - Normalized tables for patients, visits, inventory, users, settings, and audit logs, with `clinic_state` retained as a compatibility snapshot.
-- Server-side session and role checks for clinic data, account creation, and permanent deletion.
+- Server-side session and role checks for clinic data, account management, and deletion/restoration.
+- Staff Nurses can add and edit records but cannot delete or restore them, including through direct API requests.
 - `GET /api/healthz` health endpoint.
 - `GET /api/clinic-state` shared-state endpoint.
 - `PUT /api/clinic-state` shared-state update endpoint.
@@ -289,9 +290,9 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields and the `save_clinical_visit_with_inventory` / `set_clinical_visit_inventory_status` database functions used to save treatments and prevent concurrent overselling. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields, normalizes known legacy guardian-contact values, and installs the `save_clinical_visit_with_inventory` / `set_clinical_visit_inventory_status` database functions used to save treatments and prevent concurrent overselling. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
-The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled; the API uses its server-side secret key, so that key must never be exposed to browser code.
+The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled without client policies; data access is restricted to the authenticated server API, which uses its server-side secret key. That key must never be exposed to browser code.
 
 ## Technology
 
@@ -312,11 +313,11 @@ The clinic API reads normalized tables and uses `clinic_state` for compatibility
 3. Set `SUPABASE_URL` to the URL of that Supabase project.
 4. Set `SUPABASE_SECRET_KEY` to that project's server-side Secret key, or use `SUPABASE_SERVICE_ROLE_KEY` for a legacy project. Never expose this key to the browser.
 5. Optionally set `AUDIT_SESSION_SECRET` to a separate long random secret for signing clinic sessions. If omitted, the server-side Supabase key is used.
-6. Create the first administrator in the Supabase SQL Editor, replacing the sample username and password before running:
+6. Create the first Head Nurse in the Supabase SQL Editor, replacing the sample username and password before running:
 
 	```sql
 insert into public.clinic_users (id, name, last_name, first_name, role, username, password_hash, status)
-values ('NRS-ADMIN-001', 'Clinic Administrator', 'Administrator', 'Clinic', 'Head Nurse & Administrator', 'YOUR_ADMIN_USERNAME', extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')), 'Active');
+values ('NRS-ADMIN-001', 'Clinic Head Nurse', 'Nurse', 'Clinic', 'Head Nurse', 'YOUR_ADMIN_USERNAME', extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')), 'Active');
 	```
 
    The schema also creates a local test account (`testnurse` / `test12345`) with the Staff Nurse role. Change or remove it before production use.

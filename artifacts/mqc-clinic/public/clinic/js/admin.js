@@ -1,6 +1,6 @@
 /* ================= ADMIN ================= */
 function isClinicAdminRole(role){
-  return String(role||"").trim().toLowerCase()==="head nurse & administrator";
+  return hasClinicAdminPrivileges(role);
 }
 function canManageClinicAccounts(){
   return isClinicAdminRole(state.currentUser?.role);
@@ -41,8 +41,10 @@ function renderUsersTab(){
 }
 function openUserForm(existing=null){
   const isEdit=!!existing;
-  const f=existing||{id:uid("NRS"), lastName:"", firstName:"", middleInitial:"", name:"", role:"Staff Nurse", username:"", password:"", status:"Active"};
+  const f=existing||{id:uid("NRS"), lastName:"", firstName:"", middleInitial:"", name:"", role:"", username:"", password:"", status:"Active"};
   const parts=(f.name||"").split(",");
+  const roles=[["Head Nurse","Head Nurse"],["Staff Nurse","Staff Nurse"]];
+  if(isEdit&&f.role==="Head Nurse & Administrator")roles.unshift(["Head Nurse & Administrator","Legacy Administrator (unchanged)"]);
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} User</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
@@ -50,7 +52,7 @@ function openUserForm(existing=null){
       <div class="f-field"><label>Last Name <span class="req">*</span></label><input type="text" id="uf-lastname" value="${escapeHtml(f.lastName||parts[0]||"")}" required></div>
       <div class="f-field"><label>First Name <span class="req">*</span></label><input type="text" id="uf-firstname" value="${escapeHtml(f.firstName||(parts[1]||"").trim()||"")}" required></div>
       <div class="f-field"><label>Middle Initial</label><input type="text" id="uf-middle" value="${escapeHtml(f.middleInitial||"")}" maxlength="3"></div>
-      <div class="f-field"><label>Role</label><select id="uf-role">${[["Head Nurse & Administrator","Administrator/Head Nurse"],["Head Nurse","Head Nurse"],["Staff Nurse","Staff Nurse"]].map(([value,label])=>`<option value="${value}" ${f.role===value?'selected':''}>${label}</option>`).join("")}</select></div>
+      <div class="f-field"><label>Role <span class="req">*</span></label><select id="uf-role" required><option value="">Select Role</option>${roles.map(([value,label])=>`<option value="${value}" ${f.role===value?'selected':''} ${value==="Head Nurse & Administrator"?"disabled":""}>${label}</option>`).join("")}</select></div>
       <div class="f-field"><label>Username <span class="req">*</span></label><input type="text" id="uf-username" value="${escapeHtml(f.username||"")}" required></div>
       <div class="f-field"><label>Status</label><select id="uf-status">${["Active","Disabled"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
       ${isEdit?"":`<div class="f-field"><label>Password <span class="req">*</span></label><div class="input-row"><input type="password" id="uf-password" value="" autocomplete="new-password" required><button type="button" class="toggle-pw" data-toggle-password="uf-password" aria-label="Show password">${ICONS.eye}</button></div></div>
@@ -70,13 +72,16 @@ function openUserForm(existing=null){
     const first=document.getElementById('uf-firstname').value.trim();
     const middle=document.getElementById('uf-middle').value.trim();
     const username=document.getElementById('uf-username').value.trim();
+    const role=document.getElementById('uf-role').value;
     const password=document.getElementById('uf-password')?.value||"";
     const confirm=document.getElementById('uf-confirm')?.value||"";
+    if(!document.getElementById("user-form").reportValidity())return;
     if(!last || !first || !username){ toast('Missing information','Last name, first name, and username are required.','err'); return; }
+    if(!role){toast("Role required","Select a role for this user.","err");return;}
     if(!isEdit&&!password){ toast('Password required','Create a password for this user.','err'); return; }
     if(password!==confirm){ toast('Passwords do not match','Enter the same password in both fields.','err'); return; }
     const name=`${last}, ${first}${middle?' '+middle.replace(/\.$/,'')+'.':''}`;
-    const rec={...f,id:f.id,name,lastName:last,firstName:first,middleInitial:middle,role:document.getElementById('uf-role').value,username,status:document.getElementById('uf-status').value};
+    const rec={...f,id:f.id,name,lastName:last,firstName:first,middleInitial:middle,role,username,status:document.getElementById('uf-status').value};
     if(!isEdit){
       const response=await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lastName:last,firstName:first,middleInitial:middle,role:rec.role,username,password,status:rec.status})});
       if(!response.ok){const result=await response.json().catch(()=>({}));toast('Account creation failed',result.message||'Unable to create the Supabase account.','err');return;}
@@ -124,7 +129,7 @@ function bindUsersTab(){
       const u=state.users.find(x=>x.id===b.dataset.toggleUser);
       if(!u)return;
       if(u.id===state.currentUser?.id&&u.status==="Active"){toast("Cannot disable signed-in account","Sign in with another administrator account before disabling this user.","err");return;}
-      if(u.status==="Active"&&isClinicAdminRole(u.role)&&state.users.filter(user=>user.status==="Active"&&isClinicAdminRole(user.role)).length<=1){toast("Administrator required","At least one active administrator account must remain.","err");return;}
+      if(u.status==="Active"&&isClinicAdminRole(u.role)&&state.users.filter(user=>user.status==="Active"&&isClinicAdminRole(user.role)).length<=1){toast("Administrator required","At least one active Head Nurse or legacy administrator account must remain.","err");return;}
       const previousStatus=u.status,nextStatus=u.status==='Active'?'Disabled':'Active';
       await commitClinicRecordMutation({apply:()=>{u.status=nextStatus;},rollback:()=>{u.status=previousStatus;},auditAction:`User ${nextStatus==='Active'?'Enabled':'Disabled'} — ${u.name}`,module:"User Management",detail:u.id,successTitle:`User ${nextStatus.toLowerCase()}`,successMessage:`${u.name} is now ${nextStatus.toLowerCase()}.`,refresh:renderAdminTabBody});
     };
@@ -134,7 +139,7 @@ function bindUsersTab(){
       const u=state.users.find(x=>x.id===b.dataset.delUser);
       if(!u)return;
       if(u.id===state.currentUser?.id){toast("Cannot delete signed-in account","Sign in with another administrator account before deleting this user.","err");return;}
-      if(u.status==="Active"&&isClinicAdminRole(u.role)&&state.users.filter(user=>user.status==="Active"&&isClinicAdminRole(user.role)).length<=1){toast("Administrator required","At least one active administrator account must remain.","err");return;}
+      if(u.status==="Active"&&isClinicAdminRole(u.role)&&state.users.filter(user=>user.status==="Active"&&isClinicAdminRole(user.role)).length<=1){toast("Administrator required","At least one active Head Nurse or legacy administrator account must remain.","err");return;}
       const index=state.users.findIndex(user=>user.id===u.id),deleted={...u,deleted:true,deletedAt:new Date().toISOString()};
       confirmDialog({title:"Delete this user?", msg:`<b>${escapeHtml(u.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete User", onConfirm:async()=>{
         await commitClinicRecordMutation({apply:()=>{state.users=state.users.filter(x=>x.id!==u.id);DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);DELETED_USERS.unshift(deleted);},rollback:()=>{DELETED_USERS=DELETED_USERS.filter(x=>x.id!==u.id);state.users.splice(index,0,u);},auditAction:`Record Deleted — User ${u.name}`,module:"User Management",status:"Warning",detail:u.id,successTitle:"User deleted",successMessage:`${u.name} moved to Deleted Records.`,refresh:renderAdminTabBody});
@@ -184,7 +189,7 @@ function renderDeletedTab(){
   const delMeds=MEDICINES.filter(m=>m.deleted||m.deletedAt);
   const delEq=EQUIPMENT.filter(e=>e.deleted||e.deletedAt);
   const delUsers=canAdminister?DELETED_USERS||[]:[];
-  const rowActions=(restoreAttribute,id,purgeAttribute,restoreAllowed=true)=>`<div class="row-actions">${restoreAllowed?`<button class="mini-btn good" data-${restoreAttribute}="${escapeHtml(id)}" title="Restore">${ICONS.restore}</button>`:""}${canAdminister?`<button class="mini-btn danger" data-${purgeAttribute}="${escapeHtml(id)}" title="Delete permanently">${ICONS.trash_sm}</button>`:""}</div>`;
+  const rowActions=(restoreAttribute,id,purgeAttribute,restoreAllowed=canDeleteClinicRecords())=>`<div class="row-actions">${restoreAllowed?`<button class="mini-btn good" data-${restoreAttribute}="${escapeHtml(id)}" title="Restore">${ICONS.restore}</button>`:""}${canAdminister?`<button class="mini-btn danger" data-${purgeAttribute}="${escapeHtml(id)}" title="Delete permanently">${ICONS.trash_sm}</button>`:""}</div>`;
   const section=(title, rows, empty)=>`
     <div class="card" style="margin-bottom:16px;">
       <div class="panel-title"><h4>${title}</h4></div>
@@ -248,6 +253,7 @@ function bindDeletedTab(){
       confirmDialog({title:"Permanently delete?",msg:`This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`,okLabel:"Delete Permanently",onConfirm:()=>commitDeletedRecordChange({label,apply:action,rollback,purge,auditAction:`Record Permanently Deleted — ${label}`,auditActions:events,module:"Administration",status:"Warning",successTitle:"Permanently deleted",successMessage:`${label} has been permanently removed.`})});
   };
   document.querySelectorAll('[data-restore-dc]').forEach(b=>b.onclick=()=>{
+    if(!canDeleteClinicRecords())return;
     const record=CONSULTATIONS.find(row=>row.id===b.dataset.restoreDc);if(!record)return;
     const patient=DELETED_STUDENTS.find(row=>row.id===record.studentId);
     const restoredPatient=patient?{...patient,deleted:false}:null;
@@ -257,14 +263,15 @@ function bindDeletedTab(){
     confirmDialog({title:"Restore this patient visit?",msg:`Visit <b>${escapeHtml(record.id)}</b> will return to Patient Visits${patient?" and its deleted patient will also be restored":""}.`,okLabel:"Restore Visit",danger:false,onConfirm:()=>commitDeletedRecordChange({label:`visit ${record.id}`,apply:()=>{if(patient&&STUDENTS.some(row=>row.id===patient.id))throw new Error("A record with this patient ID is already active.");validateVisitInventoryUsage(record);applyVisitInventoryUsage(record);if(patient){DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row.id!==patient.id);STUDENTS.unshift(restoredPatient);}record.deleted=false;delete record.deletedAt;if(record.status==="Deleted")record.status="Active";},rollback:()=>{restoreInventoryState(inventorySnapshot);Object.assign(record,previous);if(patient){const activeIndex=STUDENTS.findIndex(row=>row.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(patientIndex,DELETED_STUDENTS.length),0,patient);}},save:()=>saveVisitInventoryStatusToClinicState(record.id,false,Boolean(patient)),auditActions:[{action:`Record Restored — Patient Visit ${record.id}`,module:"Patient Visits",detail:record.id},...(patient?[{action:`Record Restored — Patient ${patient.id}`,module:"Patients",detail:patient.id}]:[]),...clinicInventoryAuditActions(inventorySnapshot,`visit ${record.id} restored`)],module:"Patient Visits",successTitle:"Restored",successMessage:`Visit ${record.id} restored.`})});
   });
   document.querySelectorAll('[data-restore-dp]').forEach(b=>b.onclick=()=>{
+    if(!canDeleteClinicRecords())return;
     const patient=DELETED_STUDENTS.find(row=>row.id===b.dataset.restoreDp);if(!patient)return;
     if(STUDENTS.some(row=>row.id===patient.id)){toast("Patient already exists","A record with this patient ID is already active.","err");return;}
     const restored={...patient,deleted:false};delete restored.deletedAt;delete restored.deletedBy;
     const deletedIndex=DELETED_STUDENTS.indexOf(patient);
     commitDeletedRecordChange({label:`patient ${patient.name}`,apply:()=>{DELETED_STUDENTS=DELETED_STUDENTS.filter(row=>row.id!==patient.id);STUDENTS.unshift(restored);},rollback:()=>{const activeIndex=STUDENTS.findIndex(row=>row.id===patient.id);if(activeIndex>=0)STUDENTS.splice(activeIndex,1);DELETED_STUDENTS.splice(Math.min(deletedIndex,DELETED_STUDENTS.length),0,patient);},auditAction:`Record Restored — Patient ${patient.id}`,module:"Patients",auditActions:[{action:`Record Restored — Patient ${patient.id}`,module:"Patients",detail:patient.id}],successTitle:"Restored",successMessage:`${patient.name} restored.`});
   });
-  document.querySelectorAll('[data-restore-dm]').forEach(b=>b.onclick=()=>{const item=MEDICINES.find(row=>row.code===b.dataset.restoreDm);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`medicine ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),save:()=>saveInventoryItemStatusToClinicState("medicine",item.code,false),auditAction:`Record Restored — ${item.name}`,module:"Medicines",auditActions:[{action:`Record Restored — Medicine ${item.name}`,module:"Medicines",detail:item.code}],successTitle:"Restored",successMessage:`${item.name} restored.`});});
-  document.querySelectorAll('[data-restore-de]').forEach(b=>b.onclick=()=>{const item=EQUIPMENT.find(row=>row.id===b.dataset.restoreDe);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`medical supply ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),save:()=>saveInventoryItemStatusToClinicState("equipment",item.id,false),auditAction:`Record Restored — ${item.name}`,module:"Medical Supplies",auditActions:[{action:`Record Restored — Medical Supply ${item.name}`,module:"Medical Supplies",detail:item.id}],successTitle:"Restored",successMessage:`${item.name} restored.`});});
+  document.querySelectorAll('[data-restore-dm]').forEach(b=>b.onclick=()=>{if(!canDeleteClinicRecords())return;const item=MEDICINES.find(row=>row.code===b.dataset.restoreDm);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`medicine ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),save:()=>saveInventoryItemStatusToClinicState("medicine",item.code,false),auditAction:`Record Restored — ${item.name}`,module:"Medicines",auditActions:[{action:`Record Restored — Medicine ${item.name}`,module:"Medicines",detail:item.code}],successTitle:"Restored",successMessage:`${item.name} restored.`});});
+  document.querySelectorAll('[data-restore-de]').forEach(b=>b.onclick=()=>{if(!canDeleteClinicRecords())return;const item=EQUIPMENT.find(row=>row.id===b.dataset.restoreDe);if(!item)return;const previous={deleted:item.deleted,deletedAt:item.deletedAt};commitDeletedRecordChange({label:`medical supply ${item.name}`,apply:()=>{item.deleted=false;delete item.deletedAt;},rollback:()=>Object.assign(item,previous),save:()=>saveInventoryItemStatusToClinicState("equipment",item.id,false),auditAction:`Record Restored — ${item.name}`,module:"Medical Supplies",auditActions:[{action:`Record Restored — Medical Supply ${item.name}`,module:"Medical Supplies",detail:item.id}],successTitle:"Restored",successMessage:`${item.name} restored.`});});
   document.querySelectorAll('[data-restore-du]').forEach(b=>b.onclick=()=>{if(!canManageClinicAccounts())return;const user=DELETED_USERS.find(row=>row.id===b.dataset.restoreDu);if(!user)return;if(state.users.some(row=>row.id===user.id||row.username.toLowerCase()===String(user.username).toLowerCase())){toast("User already exists","An active account already uses this user ID or username.","err");return;}const restored={...user,deleted:false};delete restored.deletedAt;delete restored.deletedBy;commitDeletedRecordChange({label:`user ${user.name}`,apply:()=>{DELETED_USERS=DELETED_USERS.filter(row=>row.id!==user.id);state.users.unshift(restored);},rollback:()=>{state.users=state.users.filter(row=>row.id!==user.id);DELETED_USERS.unshift(user);},auditAction:`User Restored — ${user.name}`,module:"User Management",auditActions:[{action:`User Restored — ${user.name}`,module:"User Management",detail:user.id}],successTitle:"Restored",successMessage:`${user.name} restored.`});});
   document.querySelectorAll('[data-perm-dc]').forEach(b=>b.onclick=()=>{if(!canManageClinicAccounts())return;const record=CONSULTATIONS.find(row=>row.id===b.dataset.permDc);if(!record)return;const previous=CONSULTATIONS.slice();confirmPurge(`visit ${record.id}`,"clinical_visits","id",record.id,()=>{CONSULTATIONS=CONSULTATIONS.filter(row=>row!==record);},()=>{CONSULTATIONS=previous;});});
   document.querySelectorAll('[data-perm-dp]').forEach(b=>b.onclick=()=>{

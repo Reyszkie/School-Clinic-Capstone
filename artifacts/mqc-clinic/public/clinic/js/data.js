@@ -49,16 +49,24 @@ function yearLevelOptionsHtml(selected){
   return YEAR_LEVEL_GROUPS.map(group=>`<optgroup label="${group.label}">${group.options.map(year=>`<option ${selected===year?"selected":""}>${year}</option>`).join("")}</optgroup>`).join("");
 }
 function yearOptionsForCategoryHtml(category,selected=""){
-  if(category==="Campus Personnel")return PERSONNEL_TYPES.map(type=>`<option ${selected===type?"selected":""}>${type}</option>`).join("");
+  const placeholder=`<option value="">Select ${category==="Campus Personnel"?"Personnel Type":"Year Level"}</option>`;
+  if(!category)return placeholder;
+  if(category==="Campus Personnel")return placeholder+PERSONNEL_TYPES.map(type=>`<option ${selected===type?"selected":""}>${type}</option>`).join("");
   const groupName=COLLEGE_COURSES.includes(category)?"College":
     ["HUMSS","GAS","ABM","STEM","ICT","HE"].includes(category)?"Senior High School":
     category==="James"?"Junior High School":
     category==="Job"?"Elementary":
     category==="John"?"Kindergarten":"";
   const group=YEAR_LEVEL_GROUPS.find(candidate=>candidate.label===groupName);
-  if(!group)return yearLevelOptionsHtml(selected);
-  const current=group.options.includes(selected)?selected:group.options[0];
-  return group.options.map(year=>`<option ${year===current?"selected":""}>${year}</option>`).join("");
+  if(!group)return placeholder+yearLevelOptionsHtml(selected);
+  return placeholder+group.options.map(year=>`<option ${selected===year?"selected":""}>${year}</option>`).join("");
+}
+function hasClinicAdminPrivileges(role){
+  const normalized=String(role||"").trim().toLowerCase();
+  return normalized==="head nurse"||normalized==="head nurse & administrator";
+}
+function canDeleteClinicRecords(){
+  return hasClinicAdminPrivileges(state.currentUser?.role);
 }
 function schoolLevelForYear(year){
   return YEAR_LEVEL_GROUPS.find(group=>group.options.includes(year))?.label||"College";

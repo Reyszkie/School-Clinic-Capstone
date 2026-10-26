@@ -61,7 +61,7 @@ function renderMedicinesTab(){
       <td><span class="chip ${st.chip}">${st.label}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>
-        <button class="mini-btn danger" data-del-med="${m.code}" title="Delete">${ICONS.trash_sm}</button>
+        ${canDeleteClinicRecords()?`<button class="mini-btn danger" data-del-med="${m.code}" title="Delete">${ICONS.trash_sm}</button>`:""}
       </div></td>
     </tr>`;}).join("");
   const deletedCount = MEDICINES.filter(m=>m.deleted).length;
@@ -171,6 +171,7 @@ function bindMedicinesTab(){
   document.querySelectorAll('[data-edit-med]').forEach(b=> b.onclick=()=>openMedicineForm(MEDICINES.find(m=>m.code===b.dataset.editMed)));
   document.querySelectorAll('[data-del-med]').forEach(b=>{
     b.onclick=()=>{
+      if(!canDeleteClinicRecords())return;
       const rec=MEDICINES.find(m=>m.code===b.dataset.delMed);
       if(!rec)return;
       confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
@@ -204,7 +205,7 @@ function renderEquipmentTab(){
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-eq="${e.id}" title="Edit">${ICONS.edit}</button>
-        <button class="mini-btn danger" data-del-eq="${e.id}" title="Delete">${ICONS.trash_sm}</button>
+        ${canDeleteClinicRecords()?`<button class="mini-btn danger" data-del-eq="${e.id}" title="Delete">${ICONS.trash_sm}</button>`:""}
       </div></td>
     </tr>`).join("");
   return `
@@ -273,6 +274,7 @@ function bindEquipmentTab(){
   document.querySelectorAll('[data-edit-eq]').forEach(b=> b.onclick=()=>openEquipmentForm(EQUIPMENT.find(e=>e.id===b.dataset.editEq)));
   document.querySelectorAll('[data-del-eq]').forEach(b=>{
     b.onclick=()=>{
+      if(!canDeleteClinicRecords())return;
       const rec=EQUIPMENT.find(e=>e.id===b.dataset.delEq);
       if(!rec)return;
       confirmDialog({title:"Delete this supply?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{

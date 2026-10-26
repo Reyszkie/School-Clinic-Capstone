@@ -162,6 +162,18 @@ alter table public.clinical_visits
   add column if not exists supply_item_id text references public.equipment(id) on delete set null,
   add column if not exists supply_quantity integer;
 
+update public.clinical_visits
+set guardian_contacted = case lower(btrim(guardian_contacted))
+  when 'yes' then 'Yes'
+  when 'no' then 'No'
+  when 'not applical' then 'Not Applicable'
+  when 'not applicable' then 'Not Applicable'
+  when 'n/a' then 'Not Applicable'
+  when 'na' then 'Not Applicable'
+  else guardian_contacted
+end
+where lower(btrim(guardian_contacted)) in ('yes', 'no', 'not applical', 'not applicable', 'n/a', 'na');
+
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'clinical_visits_equipment_quantity_check' and conrelid = 'public.clinical_visits'::regclass) then
@@ -208,6 +220,16 @@ begin
   if v_visit.id is null or v_visit.patient_id is null then
     raise exception 'A visit ID and patient ID are required.';
   end if;
+  if nullif(btrim(v_visit.complaint), '') is null then
+    raise exception 'A reason for the clinic visit is required.';
+  end if;
+  if nullif(btrim(v_visit.outcome), '') is null then
+    raise exception 'A clinic disposition outcome is required.';
+  end if;
+  if v_visit.guardian_contacted is not null
+    and v_visit.guardian_contacted not in ('Yes', 'No', 'Not Applicable') then
+    raise exception 'Parent / Guardian Contacted must be Yes, No, or Not Applicable.';
+  end if;
   perform pg_advisory_xact_lock(hashtextextended(v_visit.id, 0));
 
   if exists (select 1 from public.clinical_visits where id = v_visit.id) then
@@ -218,7 +240,7 @@ begin
     raise exception 'The selected medicine could not be matched to an inventory item.';
   end if;
 
-  if not exists (select 1 from public.patients where id = v_visit.patient_id) then
+  if not exists (select 1 from public.patients where id = v_visit.patient_id and deleted_at is null) then
     raise exception 'The patient record for this visit could not be found.';
   end if;
 
@@ -751,7 +773,7 @@ create index if not exists medicines_expiration_idx
 create index if not exists audit_logs_created_at_idx
   on public.audit_logs (created_at desc);
 
--- Keep tables private to server-side code until Supabase Auth policies are added.
+-- RLS is enabled without client policies; access flows through the authenticated server API.
 alter table public.clinic_users enable row level security;
 
 -- Local test account for the clinic login endpoint.

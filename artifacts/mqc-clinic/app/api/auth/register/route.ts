@@ -1,4 +1,4 @@
-import { readActiveClinicSession } from "../session";
+import { hasClinicAdminPrivileges, readActiveClinicSession } from "../session";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     return Response.json({ message: "Account creation is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
   if (!session) return Response.json({ message: "Sign in to manage clinic accounts." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  if (session.role !== "Head Nurse & Administrator") return Response.json({ message: "Only the Head Nurse & Administrator can create clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  if (!hasClinicAdminPrivileges(session.role)) return Response.json({ message: "Only a Head Nurse or existing legacy administrator can create clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
 
   let body: unknown;
   try {
@@ -54,11 +54,11 @@ export async function POST(request: Request) {
   const lastName = typeof input.lastName === "string" ? input.lastName.trim() : "";
   const firstName = typeof input.firstName === "string" ? input.firstName.trim() : "";
   const middleInitial = typeof input.middleInitial === "string" ? input.middleInitial.trim() : null;
-  const role = typeof input.role === "string" ? input.role : "Staff Nurse";
-  const status = input.status === "Disabled" ? "Disabled" : "Active";
+  const role = typeof input.role === "string" ? input.role.trim() : "";
+  const status = input.status === "Disabled" ? "Disabled" : input.status === "Active" ? "Active" : "";
 
-  if (!username || !password || !lastName || !firstName) {
-    return Response.json({ message: "Name, username, and password are required." }, { status: 400 });
+  if (!username || !password || !lastName || !firstName || !status || !role) {
+    return Response.json({ message: "Name, username, password, role, and status are required." }, { status: 400 });
   }
   if (!/^[A-Za-z0-9._-]{3,50}$/.test(username)) {
     return Response.json({ message: "Username must be 3-50 letters, numbers, dots, underscores, or hyphens." }, { status: 400 });
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
   if (password.length < 8) {
     return Response.json({ message: "Password must be at least 8 characters." }, { status: 400 });
   }
-  if (!["Head Nurse & Administrator", "Head Nurse", "Staff Nurse"].includes(role)) {
+  if (!["Head Nurse", "Staff Nurse"].includes(role)) {
     return Response.json({ message: "Invalid clinic role." }, { status: 400 });
   }
 

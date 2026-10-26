@@ -26,16 +26,16 @@ Do not share your personal `.env` or `.env.local` files. They contain server cre
 1. Create or select a Supabase project.
 2. Open its SQL Editor and run the repository file `supabase/schema.sql`.
 3. The schema creates a local test user: `testnurse` / `test12345`. This account has the Staff Nurse role; change or remove it before production use.
-4. Create the first administrator in the SQL Editor. Replace the username and password placeholders with your own values before running:
+4. Create the first Head Nurse in the SQL Editor. Replace the username and password placeholders with your own values before running:
 
 ```sql
 insert into public.clinic_users (id, name, last_name, first_name, role, username, password_hash, status)
 values (
   'NRS-ADMIN-001',
-  'Clinic Administrator',
-  'Administrator',
+  'Clinic Head Nurse',
+  'Nurse',
   'Clinic',
-  'Head Nurse & Administrator',
+  'Head Nurse',
   'YOUR_ADMIN_USERNAME',
   extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')),
   'Active'
@@ -43,7 +43,7 @@ values (
 on conflict (username) do nothing;
 ```
 
-This first administrator can then create and manage clinic accounts from Administration. Account creation and permanent deletion are restricted to this role.
+This Head Nurse can then manage clinic accounts and perform administrative actions. Staff Nurses may add and edit records, but cannot delete or restore records, including through direct API requests. Existing `Head Nurse & Administrator` accounts retain their access for compatibility; the role is not available for newly created accounts.
 
 ## 3. Configure the application
 

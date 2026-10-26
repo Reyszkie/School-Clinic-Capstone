@@ -7,6 +7,10 @@ const REMEMBERED_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 type ClinicSession = { userId: string; userName: string; expiresAt: number };
 export type ActiveClinicSession = ClinicSession & { role: string; username: string };
 
+export function hasClinicAdminPrivileges(role: string) {
+  return role === "Head Nurse" || role === "Head Nurse & Administrator";
+}
+
 function sessionSecret() {
   const secret = process.env.AUDIT_SESSION_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret) throw new Error("A server-side session signing key is not configured.");

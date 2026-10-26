@@ -1,4 +1,4 @@
-import { readActiveClinicSession } from "../auth/session";
+import { hasClinicAdminPrivileges, readActiveClinicSession } from "../auth/session";
 
 const clinicStateId = 1;
 
@@ -157,16 +157,37 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
   };
 }
 
+function normalizeGuardianContacted(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "yes") return "Yes";
+  if (normalized === "no") return "No";
+  if (["not applicable", "not applical", "n/a", "na"].includes(normalized)) return "Not Applicable";
+  return value.trim() || null;
+}
+
 function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = false) {
   const medicineName = row.medicine ?? row.medicineName ?? row.medicine_name ?? null;
   const medicineQuantity = toNumber(row.medQty ?? row.medicineQuantity ?? row.medicine_quantity);
   const complaint = typeof row.complaint === "string" ? row.complaint.trim() : "";
   const reasonOther = typeof row.reasonOther === "string" ? row.reasonOther.trim() : "";
+  const outcome = typeof row.outcome === "string" ? row.outcome.trim() : "";
+  const guardianContacted = normalizeGuardianContacted(row.guardianContacted ?? row.guardian_contacted);
+  if (requireOtherReason && !complaint) throw new Error("A reason for the clinic visit is required.");
+  if (requireOtherReason && !outcome) throw new Error("A clinic disposition outcome is required.");
   if (requireOtherReason && complaint.toLowerCase() === "other" && !reasonOther) {
     throw new Error("Specify the custom reason when the clinic visit reason is Other.");
   }
   if (medicineName && (!Number.isInteger(medicineQuantity) || Number(medicineQuantity) <= 0)) {
     throw new Error("Medication quantity must be a positive whole number when a medication is selected.");
+  }
+  const supplyName = row.supplyUsed ?? row.supply_used ?? null;
+  const supplyQuantity = toNumber(row.supplyQty ?? row.supplyQuantity ?? row.supply_quantity);
+  if (requireOtherReason && supplyName && (!Number.isInteger(supplyQuantity) || Number(supplyQuantity) <= 0)) {
+    throw new Error("Medical supply quantity must be a positive whole number when a supply is selected.");
+  }
+  if (requireOtherReason && !["Yes", "No", "Not Applicable"].includes(guardianContacted ?? "")) {
+    throw new Error("Parent / Guardian Contacted must be Yes, No, or Not Applicable.");
   }
   return {
     id: row.id ?? null,
@@ -205,13 +226,13 @@ function normalizeVisitRow(row: Record<string, unknown>, requireOtherReason = fa
     supply_item_id: row.supplyItemId ?? row.supply_item_id ?? null,
     equipment_used: Array.isArray(row.equipmentUsed ?? row.equipment_used) ? row.equipmentUsed ?? row.equipment_used : [],
     equipment_quantity: toNumber(row.equipmentQty ?? row.equipmentQuantity ?? row.equipment_quantity),
-    supply_used: row.supplyUsed ?? row.supply_used ?? null,
-    supply_quantity: toNumber(row.supplyQty ?? row.supplyQuantity ?? row.supply_quantity),
+    supply_used: supplyName,
+    supply_quantity: supplyQuantity,
     dosage: row.dosage ?? null,
-    outcome: row.outcome ?? "Treated and Released",
+    outcome: outcome || (requireOtherReason ? "" : "Treated and Released"),
     released_at: row.releasedAt ?? row.released_at ?? null,
     remarks: row.remarks ?? null,
-    guardian_contacted: row.guardianContacted ?? row.guardian_contacted ?? null,
+    guardian_contacted: guardianContacted,
     guardian_method: row.guardianMethod ?? row.guardian_method ?? null,
     person_contacted: row.personContacted ?? row.person_contacted ?? null,
     staff_record: row.staffRecord ?? row.staff_record ?? null,
@@ -291,6 +312,33 @@ async function readTable(tableName: string) {
     rows.push(...page);
     if (page.length < pageSize) return rows;
   }
+}
+
+function isDeletedRecord(row: Record<string, unknown>) {
+  return Boolean(row.deleted) || Boolean(row.deleted_at) || Boolean(row.deletedAt) || row.status === "Deleted";
+}
+
+async function hasStaffDeleteRestoreTransition(tableName: string, key: string, rows: unknown) {
+  if (!Array.isArray(rows)) return false;
+  const submittedRows = rows as Array<Record<string, unknown>>;
+  const existingRows = await readTable(tableName);
+  const existingById = new Map(existingRows.map(row => [String(row[key] ?? ""), row]));
+  return submittedRows.some(row => {
+    const id = String(row[key] ?? "");
+    const existing = existingById.get(id);
+    return isDeletedRecord(row) !== Boolean(existing && isDeletedRecord(existing));
+  });
+}
+
+async function validateNewPatientFields(rows: Array<Record<string, unknown>>) {
+  const existingPatients = await readTable("patients");
+  const existingIds = new Set(existingPatients.map(patient => String(patient.id ?? "")));
+  return rows.some(patient => {
+    if (existingIds.has(String(patient.id ?? ""))) return false;
+    const category = patient.institutionalCategory ?? patient.institutional_category ?? patient.course;
+    const year = patient.personnelType ?? patient.personnel_type ?? patient.year ?? patient.yearLevel ?? patient.year_level;
+    return !String(category ?? "").trim() || !String(year ?? "").trim();
+  });
 }
 
 async function hasInvalidGuardianContactChange(rows: Array<Record<string, unknown>>) {
@@ -679,6 +727,21 @@ export async function PUT(request: Request) {
     const session = await readActiveClinicSession(request);
     if (!session) return Response.json({ message: "Sign in to update clinic records." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const snapshot = state as Record<string, unknown>;
+    if (session.role === "Staff Nurse") {
+      const transitions = await Promise.all([
+        hasStaffDeleteRestoreTransition("patients", "id", snapshot.students),
+        hasStaffDeleteRestoreTransition("clinical_visits", "id", snapshot.consultations),
+        snapshot.inventoryBootstrap === true
+          ? hasStaffDeleteRestoreTransition("medicines", "code", snapshot.medicines)
+          : Promise.resolve(false),
+        snapshot.inventoryBootstrap === true
+          ? hasStaffDeleteRestoreTransition("equipment", "id", snapshot.equipment)
+          : Promise.resolve(false),
+      ]);
+      if (transitions.some(Boolean)) {
+        return Response.json({ message: "Staff Nurses cannot delete or restore clinic records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+      }
+    }
     const persistedSnapshot = { ...snapshot };
     delete persistedSnapshot.auditLogs;
     delete persistedSnapshot.purgeRequests;
@@ -705,7 +768,7 @@ export async function PUT(request: Request) {
       const submitted = affected[0];
       const previousQuantity = toNumber(inventoryMutation.previousQuantity);
       if (previousQuantity !== null) {
-        const currentResponse = await supabaseRequest(`${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},quantity,updated_at`);
+        const currentResponse = await supabaseRequest(`${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},quantity,deleted_at,updated_at`);
         if (!currentResponse.ok) throw new Error(`${table} inventory check returned ${currentResponse.status}`);
         const currentRows = await currentResponse.json() as Array<Record<string, unknown>>;
         const current = currentRows[0];
@@ -713,6 +776,9 @@ export async function PUT(request: Request) {
           return Response.json({ message: "This inventory item changed or was removed. Refresh the inventory list and try again." }, { status: 409 });
         }
         const normalized = table === "medicines" ? normalizeMedicineRow(submitted) : normalizeEquipmentRow(submitted);
+        if (session.role === "Staff Nurse" && Boolean(current.deleted_at) !== Boolean(normalized.deleted_at)) {
+          return Response.json({ message: "Staff Nurses cannot delete or restore inventory records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+        }
         const submittedQuantity = toNumber(normalized.quantity) ?? 0;
         const patch = { ...normalized } as Record<string, unknown>;
         delete patch[key];
@@ -733,6 +799,13 @@ export async function PUT(request: Request) {
           return Response.json({ message: "Inventory changed while this item was being edited. Refresh the list and try again." }, { status: 409 });
         }
       } else {
+        const existingResponse = await supabaseRequest(`${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},deleted_at&limit=1`);
+        if (!existingResponse.ok) throw new Error(`${table} inventory status check returned ${existingResponse.status}`);
+        const [existing] = await existingResponse.json() as Array<Record<string, unknown>>;
+        const normalized = table === "medicines" ? normalizeMedicineRow(submitted) : normalizeEquipmentRow(submitted);
+        if (session.role === "Staff Nurse" && (Boolean(existing?.deleted_at) || Boolean(normalized.deleted_at))) {
+          return Response.json({ message: "Staff Nurses cannot delete or restore inventory records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+        }
         await upsertTableRows(table, key, [table === "medicines" ? normalizeMedicineRow(submitted) : normalizeEquipmentRow(submitted)]);
       }
       try {
@@ -760,6 +833,7 @@ export async function PUT(request: Request) {
       ? snapshot.inventoryStatusMutation as Record<string, unknown>
       : null;
     if (inventoryStatusMutation) {
+      if (session.role === "Staff Nurse") return Response.json({ message: "Staff Nurses cannot delete or restore inventory records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
       if (snapshot.visitMutation || snapshot.visitStatusMutation || snapshot.purgeRequests) {
         return Response.json({ message: "Inventory status changes cannot be combined with other mutations." }, { status: 400 });
       }
@@ -784,23 +858,35 @@ export async function PUT(request: Request) {
       return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
     }
     const clinicUsersChanged = await hasClinicUserChanges(snapshot.users);
-    if (clinicUsersChanged && session.role !== "Head Nurse & Administrator") {
-      return Response.json({ message: "Only the Head Nurse & Administrator can change clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    if (clinicUsersChanged && !hasClinicAdminPrivileges(session.role)) {
+      return Response.json({ message: "Only a Head Nurse or existing legacy administrator can change clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
     }
     if (clinicUsersChanged) {
       const submittedUsers = Array.isArray(snapshot.users) ? snapshot.users as Array<Record<string, unknown>> : [];
-      const activeAdministrators = submittedUsers.filter((user) => user.role === "Head Nurse & Administrator" && user.status === "Active" && !user.deleted && !user.deletedAt);
+      const existingUsers = await readTable("clinic_users");
+      const existingUsersById = new Map(existingUsers.map(user => [String(user.id ?? ""), user]));
+      const invalidRole = submittedUsers.some(user => {
+        const role = user.role;
+        if (role !== "Head Nurse" && role !== "Staff Nurse" && role !== "Head Nurse & Administrator") return true;
+        return role === "Head Nurse & Administrator"
+          && existingUsersById.get(String(user.id ?? ""))?.role !== "Head Nurse & Administrator";
+      });
+      if (invalidRole) return Response.json({ message: "Select Head Nurse or Staff Nurse. The legacy administrator role cannot be assigned to new accounts." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      const activeAdministrators = submittedUsers.filter((user) => hasClinicAdminPrivileges(String(user.role ?? "")) && user.status === "Active" && !user.deleted && !user.deletedAt);
       const requestingUser = submittedUsers.find((user) => String(user.id ?? "") === session.userId);
       if (!activeAdministrators.length) {
-        return Response.json({ message: "At least one active administrator account must remain." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+        return Response.json({ message: "At least one active Head Nurse or legacy administrator account must remain." }, { status: 409, headers: { "Cache-Control": "no-store" } });
       }
       if (!requestingUser || requestingUser.status !== "Active" || requestingUser.deleted || requestingUser.deletedAt) {
         return Response.json({ message: "The signed-in account cannot be disabled or deleted by this change." }, { status: 409, headers: { "Cache-Control": "no-store" } });
       }
+      if (hasClinicAdminPrivileges(session.role) && !hasClinicAdminPrivileges(String(requestingUser.role ?? ""))) {
+        return Response.json({ message: "Use another Head Nurse account to change your own administrative role." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
     }
     const purgeRequest = await validatePurgeRows(snapshot.purgeRequests);
-    if (purgeRequest.requests.length && session.role !== "Head Nurse & Administrator") {
-      return Response.json({ message: "Only the Head Nurse & Administrator can permanently delete clinic records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    if (purgeRequest.requests.length && !hasClinicAdminPrivileges(session.role)) {
+      return Response.json({ message: "Only a Head Nurse or existing legacy administrator can permanently delete clinic records." }, { status: 403, headers: { "Cache-Control": "no-store" } });
     }
     if (purgeRequest.requests.some((record) => record.table === "clinic_users" && String(record.value) === session.userId)) {
       return Response.json({ message: "You cannot permanently delete your signed-in account." }, { status: 409, headers: { "Cache-Control": "no-store" } });
@@ -830,11 +916,18 @@ export async function PUT(request: Request) {
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
       if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
       if (!visitToSave) throw new Error("The new clinical visit for this save could not be found.");
+      if (visitToSave.deleted || visitToSave.status === "Deleted") return Response.json({ message: "A new clinical visit cannot be saved as deleted." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       if (await hasInvalidGuardianContactChange(affectedPatients)) {
         return Response.json({ message: "Parent / Guardian Contact must contain exactly 11 digits." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
 
-      const normalizedVisit = normalizeVisitRow(visitToSave, visitToSave.status !== "Superseded");
+      let normalizedVisit: ReturnType<typeof normalizeVisitRow>;
+      try {
+        normalizedVisit = normalizeVisitRow(visitToSave, visitToSave.status !== "Superseded");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "The clinical visit details are invalid.";
+        return Response.json({ message }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
       const patient = affectedPatients.find(row => String(row.id) === String(normalizedVisit.patient_id));
       const rpcResponse = await supabaseRequest("rpc/save_clinical_visit_with_inventory", {
         method: "POST",
@@ -875,6 +968,7 @@ export async function PUT(request: Request) {
       ? snapshot.visitStatusMutation as Record<string, unknown>
       : null;
     if (visitStatusMutation) {
+      if (session.role === "Staff Nurse") return Response.json({ message: "Staff Nurses cannot delete or restore clinical visits." }, { status: 403, headers: { "Cache-Control": "no-store" } });
       if (snapshot.inventoryMutation || snapshot.inventoryStatusMutation || snapshot.visitMutation || snapshot.purgeRequests) {
         return Response.json({ message: "Visit status changes cannot be combined with other record mutations." }, { status: 400 });
       }
@@ -924,6 +1018,9 @@ export async function PUT(request: Request) {
 
     if (Array.isArray(snapshot.students)) {
       const patients = snapshot.students as Array<Record<string, unknown>>;
+      if (await validateNewPatientFields(patients)) {
+        return Response.json({ message: "Institutional category and year level or personnel type are required for new patients." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
       if (await hasInvalidGuardianContactChange(patients)) {
         return Response.json({ message: "Parent / Guardian Contact must contain exactly 11 digits." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
@@ -951,7 +1048,7 @@ export async function PUT(request: Request) {
     if (Array.isArray(snapshot.consultations) && !normalizedReady) {
       await upsertTableRows("clinical_visits", "id", snapshot.consultations.map((row) => normalizeVisitRow(row as Record<string, unknown>)));
     }
-    if (Array.isArray(snapshot.users) && session.role === "Head Nurse & Administrator") {
+    if (Array.isArray(snapshot.users) && hasClinicAdminPrivileges(session.role)) {
       const userRows = snapshot.users.map((row) => normalizeUserRow(row as Record<string, unknown>));
       await upsertTableRows("clinic_users", "id", await resolveClinicUsers(userRows));
     }
