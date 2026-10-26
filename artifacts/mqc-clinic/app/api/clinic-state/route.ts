@@ -2253,7 +2253,9 @@ export async function PUT(request: Request) {
         },
       ]);
     }
-    await purgeRows(purgeRequest);
+    if (purgeRequest.requests.length) {
+      await purgeRows(purgeRequest);
+    }
 
     try {
       const snapshotResponse = await supabaseRequest("clinic_state", {
