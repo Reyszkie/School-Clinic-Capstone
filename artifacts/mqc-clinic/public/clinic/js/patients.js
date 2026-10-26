@@ -126,7 +126,7 @@ function openStudentForm(existing=null){
     <div class="f-field full"><label for="sf-guardian-contact">Parent / Guardian Contact <span class="req">*</span></label><input id="sf-guardian-contact" type="text" inputmode="numeric" pattern="[0-9]{11}" minlength="11" autocomplete="tel-national" required aria-describedby="sf-guardian-contact-error" aria-invalid="false" value="${escapeHtml(f.guardianContact||"")}" placeholder="09XXXXXXXXX"><div class="field-error hidden" id="sf-guardian-contact-error" role="alert"></div></div>
     ${isEdit?"":initialPatientVisitSection()}
   </form></div><div class="modal-foot"><span class="form-save-status" id="sf-status" aria-live="polite"></span><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="sf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Patient"}</button></div>`;
-  openModal(html);
+  openModal(html,"patient-form-modal");
   const categorySelect=document.getElementById("sf-category"),yearSelect=document.getElementById("sf-year");
   const syncCategoryFields=(resetYear=false)=>{
     const personnel=categorySelect.value==="Campus Personnel";
