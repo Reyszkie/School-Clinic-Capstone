@@ -503,6 +503,11 @@ tbody tr:hover{background:#F7FAFD;}
 .clinical-records-table td:nth-child(2){min-width:250px;white-space:normal;}
 .clinical-records-table td:nth-child(3){min-width:120px;}
 .clinical-records-table td:nth-child(4){min-width:130px;}
+.patient-visit-detail-row>td{padding:0 12px 10px;}
+.patient-visit-details{border:1px solid #EAF0F7;border-radius:8px;background:#FAFCFE;}
+.patient-visit-details summary{padding:9px 12px;color:var(--teal);font-size:12px;font-weight:600;cursor:pointer;}
+.patient-visit-details[open] summary{border-bottom:1px solid #EAF0F7;}
+.patient-visit-details .record-detail-table{padding:0 6px;}
 .record-time{color:var(--ink-soft);font-size:11.5px;}
 .record-preview{display:block;max-width:360px;margin-top:3px;color:var(--ink-soft);font-size:11.5px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .clinical-empty{display:flex;flex-direction:column;gap:4px;align-items:center;padding:22px 12px;color:var(--ink-soft);white-space:normal;}

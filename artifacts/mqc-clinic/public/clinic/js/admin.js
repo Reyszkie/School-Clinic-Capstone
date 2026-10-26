@@ -41,6 +41,7 @@ function renderUsersTab(){
 function openUserForm(existing=null){
   const isEdit=!!existing;
   const f=existing||{id:uid("NRS"), lastName:"", firstName:"", middleInitial:"", name:"", role:"", username:"", password:"", status:"Active"};
+  const canChangeOwnPassword=isEdit&&state.currentUser?.role==="Head Nurse"&&state.currentUser.id===f.id;
   const canChangeOtherPasswords=isEdit&&state.currentUser?.role==="Head Nurse"&&state.currentUser.id!==f.id;
   const parts=(f.name||"").split(",");
   const roles=[["Head Nurse","Head Nurse"],["Staff Nurse","Staff Nurse"]];
@@ -55,7 +56,12 @@ function openUserForm(existing=null){
       <div class="f-field"><label>Role <span class="req">*</span></label><select id="uf-role" required><option value="">Select Role</option>${roles.map(([value,label])=>`<option value="${value}" ${f.role===value?'selected':''} ${value==="Head Nurse & Administrator"?"disabled":""}>${label}</option>`).join("")}</select></div>
       <div class="f-field"><label>Username <span class="req">*</span></label><input type="text" id="uf-username" value="${escapeHtml(f.username||"")}" required></div>
       <div class="f-field"><label>Status</label><select id="uf-status">${["Active","Disabled"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
-      ${canChangeOtherPasswords?`<div class="f-field full"><h4>Change Password</h4><p class="field-hint">Use at least 8 characters. The password is updated through Supabase Auth and is not stored in clinic records.</p></div>
+      ${canChangeOwnPassword?`<div class="f-field full"><h4>Change Password</h4><p class="field-hint">Use 8-128 characters without spaces. Verify your current password to continue.</p></div>
+      <div class="f-field"><label for="uf-current-password">Current Password</label><div class="input-row"><input type="password" id="uf-current-password" autocomplete="current-password"><button type="button" class="toggle-pw" data-toggle-password="uf-current-password" aria-label="Show current password">${ICONS.eye}</button></div></div>
+      <div class="f-field"><label for="uf-change-password">New Password</label><div class="input-row"><input type="password" id="uf-change-password" autocomplete="new-password" minlength="8"><button type="button" class="toggle-pw" data-toggle-password="uf-change-password" aria-label="Show new password">${ICONS.eye}</button></div></div>
+      <div class="f-field"><label for="uf-confirm-change-password">Confirm New Password</label><div class="input-row"><input type="password" id="uf-confirm-change-password" autocomplete="new-password" minlength="8"><button type="button" class="toggle-pw" data-toggle-password="uf-confirm-change-password" aria-label="Show password confirmation">${ICONS.eye}</button></div></div>
+      <div class="f-field full"><button type="button" class="btn btn-dark" id="uf-password-save">${ICONS.check} Change Password</button></div>`:""}
+      ${canChangeOtherPasswords?`<div class="f-field full"><h4>Change Password</h4><p class="field-hint">Use 8-128 characters without spaces. Password is managed by Supabase Auth.</p></div>
       <div class="f-field"><label for="uf-change-password">New Password</label><div class="input-row"><input type="password" id="uf-change-password" autocomplete="new-password" minlength="8"><button type="button" class="toggle-pw" data-toggle-password="uf-change-password" aria-label="Show new password">${ICONS.eye}</button></div></div>
       <div class="f-field"><label for="uf-confirm-change-password">Confirm New Password</label><div class="input-row"><input type="password" id="uf-confirm-change-password" autocomplete="new-password" minlength="8"><button type="button" class="toggle-pw" data-toggle-password="uf-confirm-change-password" aria-label="Show password confirmation">${ICONS.eye}</button></div></div>
       <div class="f-field full"><button type="button" class="btn btn-dark" id="uf-password-save">${ICONS.check} Change Password</button></div>`:""}
@@ -71,18 +77,24 @@ function openUserForm(existing=null){
     if(savingPassword)return;
     const passwordInput=document.getElementById("uf-change-password");
     const confirmInput=document.getElementById("uf-confirm-change-password");
+    const currentPasswordInput=document.getElementById("uf-current-password");
     const password=passwordInput.value,confirmPassword=confirmInput.value;
-    if(password.length<8){toast("Password too short","Use at least 8 characters for the new password.","err");passwordInput.focus();return;}
+    if(canChangeOwnPassword&&!currentPasswordInput.value){toast("Current password required","Enter your current password to continue.","err");currentPasswordInput.focus();return;}
+    if(password.length<8||password.length>128){toast("Invalid password","Use between 8 and 128 characters for the new password.","err");passwordInput.focus();return;}
     if(/\s/.test(password)){toast("Invalid password","Passwords cannot contain spaces.","err");passwordInput.focus();return;}
     if(password!==confirmPassword){toast("Passwords do not match","Enter the same password in both fields.","err");confirmInput.focus();return;}
     const button=document.getElementById("uf-password-save"),label=button.innerHTML;
     savingPassword=true;button.disabled=true;button.innerHTML='<span class="button-spinner"></span> Saving...';
     try{
-      const response=await fetch(`/api/auth/users/${encodeURIComponent(f.id)}/password`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password,confirmPassword})});
+      const response=await fetch(`/api/auth/users/${encodeURIComponent(f.id)}/password`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password,confirmPassword,...(canChangeOwnPassword?{currentPassword:currentPasswordInput.value}:{})})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok){toast("Password update failed",result.message||"Unable to update the Supabase password.","err");return;}
+      if(currentPasswordInput)currentPasswordInput.value="";
       passwordInput.value="";confirmInput.value="";
-      toast("Password changed",`The password for ${f.name} was updated.`,"ok");
+      let auditSucceeded=true;
+      try{await logAudit(`Password Changed — ${f.id}`,"User Management","Success",false,true,f.id);}catch{auditSucceeded=false;}
+      if(auditSucceeded)toast("Password changed",canChangeOwnPassword?"Your password was updated.":`The password for ${f.name} was updated.`,"ok");
+      else toast("Password changed; audit sync failed","The password was updated, but its audit entry could not be recorded.","err");
     }catch(error){
       toast("Password update failed",error.message||"Unable to update the Supabase password.","err");
     }finally{

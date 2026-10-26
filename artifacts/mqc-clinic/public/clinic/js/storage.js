@@ -90,8 +90,8 @@ function visitInventoryRequirements(visit){
     const prior=requirements.get(key);
     requirements.set(key,{itemType,itemId:itemType==="medicine"?item.code:item.id,item,quantity:Math.max(prior?.quantity||0,quantity)});
   };
-  if(visit.medicine){
-    const medicine=MEDICINES.find(item=>item.name===visit.medicine);
+  if(visit.medicine||visit.medicineCode){
+    const medicine=MEDICINES.find(item=>item.code===visit.medicineCode||item.name===visit.medicine);
     if(medicine)add("medicine",medicine,Math.max(1,Number(visit.medQty)||1));
     else{
       const equipment=EQUIPMENT.find(item=>item.name===visit.medicine);
@@ -99,10 +99,9 @@ function visitInventoryRequirements(visit){
     }
   }
   const supplyNames=Array.isArray(visit.supplyUsed)?visit.supplyUsed:(visit.supplyUsed?[visit.supplyUsed]:[]);
-  supplyNames.forEach(name=>{
-    const item=EQUIPMENT.find(candidate=>candidate.name===name);
-    if(item)add("equipment",item,Math.max(1,Number(visit.supplyQty)||1));
-  });
+  const selectedSupply=EQUIPMENT.find(candidate=>candidate.id===visit.supplyItemId)
+    ||EQUIPMENT.find(candidate=>candidate.category==="Medical Supplies"&&supplyNames.includes(candidate.name));
+  if(selectedSupply)add("equipment",selectedSupply,Math.max(1,Number(visit.supplyQty)||1));
   const toolNames=Array.isArray(visit.equipmentUsed)?visit.equipmentUsed:(visit.equipmentUsed?[visit.equipmentUsed]:[]);
   toolNames.forEach(name=>{
     const item=EQUIPMENT.find(candidate=>candidate.name===name);
@@ -118,21 +117,25 @@ function validateVisitInventoryUsage(visit,previousVisit=null){
   });
   for(const requirement of visitInventoryRequirements(visit)){
     const available=(Number(requirement.item.qty)||0)+(returning.get(inventoryItemKey(requirement.itemType,requirement.itemId))||0);
-    if(requirement.itemType==="medicine"&&medicineIsExpired(requirement.item))throw new Error(`${requirement.item.name} is expired and cannot be dispensed.`);
-    if(requirement.item.deleted||requirement.itemType==="medicine"&&medicineIsExpired(requirement.item)||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||available<requirement.quantity){
+    const previouslyDispensed=returning.get(inventoryItemKey(requirement.itemType,requirement.itemId))||0;
+    const needsNewStock=requirement.quantity>previouslyDispensed;
+    if(needsNewStock&&(requirement.item.deleted||requirement.itemType==="medicine"&&medicineIsExpired(requirement.item)||requirement.itemType==="equipment"&&requirement.item.status!=="Available")||available<requirement.quantity){
       const label=requirement.itemType==="medicine"?`${requirement.item.name} ${requirement.item.unit||"unit(s)"}`:requirement.item.name;
       throw new Error(`${label} has only ${available} available; ${requirement.quantity} required.`);
     }
   }
 }
-function applyVisitInventoryUsage(visit){
+function applyVisitInventoryUsage(visit,previousVisit=null){
   const requirements=visitInventoryRequirements(visit);
   const active=activeVisitInventoryTransactions(visit.id);
+  const previouslyDispensed=new Map((previousVisit?visitInventoryRequirements(previousVisit):[])
+    .map(requirement=>[inventoryItemKey(requirement.itemType,requirement.itemId),requirement.quantity]));
   for(const requirement of requirements){
     const alreadyApplied=active.some(entry=>entry.itemType===requirement.itemType&&entry.itemId===requirement.itemId);
     if(alreadyApplied)continue;
-    if(requirement.itemType==="medicine"&&medicineIsExpired(requirement.item))throw new Error(`${requirement.item.name} is expired and cannot be dispensed.`);
-    if(requirement.item.deleted||requirement.itemType==="medicine"&&medicineIsExpired(requirement.item)||requirement.itemType==="equipment"&&requirement.item.status!=="Available"||Number(requirement.item.qty)<requirement.quantity){
+    const historicalQuantity=previouslyDispensed.get(inventoryItemKey(requirement.itemType,requirement.itemId))||0;
+    const needsNewStock=requirement.quantity>historicalQuantity;
+    if(needsNewStock&&(requirement.item.deleted||requirement.itemType==="medicine"&&medicineIsExpired(requirement.item)||requirement.itemType==="equipment"&&requirement.item.status!=="Available")||Number(requirement.item.qty)<requirement.quantity){
       const available=Number(requirement.item.qty)||0;
       throw new Error(`${requirement.item.name} has only ${available} available; ${requirement.quantity} required.`);
     }
@@ -263,12 +266,13 @@ function saveInventoryItemStatusToClinicState(itemType,itemId,deleted){
   },true);
 }
 
-function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[],createPatient=false){
+function saveVisitToClinicState(visitIds,inventorySnapshot,patientIds=[],createPatient=false,updateVisit=false){
   const payload=snapshotData(false);
   payload.visitMutation={
     visitIds:visitIds.filter(Boolean),
     patientIds:patientIds.filter(Boolean),
     createPatient,
+    updateVisit,
     medicineCodes:inventorySnapshot.medicineQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.code),
     equipmentIds:inventorySnapshot.equipmentQuantities.filter(([item,quantity])=>Number(item.qty)!==quantity).map(([item])=>item.id),
   };

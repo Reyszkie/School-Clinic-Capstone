@@ -405,6 +405,185 @@ begin
 end;
 $$;
 
+create or replace function public.update_clinical_visit_with_inventory(
+  p_visit jsonb,
+  p_patient_allergies text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_visit public.clinical_visits;
+  v_previous public.clinical_visits;
+  v_old_medicine_quantity integer;
+  v_old_supply_quantity integer;
+  v_old_supply_id text;
+  v_new_supply_id text;
+  v_delta integer;
+begin
+  select * into v_previous
+  from public.clinical_visits
+  where id = p_visit->>'id'
+  for update;
+  if not found or v_previous.status <> 'Active' or v_previous.deleted_at is not null then
+    raise exception 'The active visit to update could not be found.';
+  end if;
+
+  v_visit := jsonb_populate_record(v_previous, p_visit);
+  if v_visit.patient_id is distinct from v_previous.patient_id then
+    raise exception 'A visit cannot be reassigned to a different patient.';
+  end if;
+  if nullif(btrim(v_visit.complaint), '') is null or nullif(btrim(v_visit.outcome), '') is null then
+    raise exception 'A reason for the clinic visit and an outcome are required.';
+  end if;
+  if v_visit.medicine_name = '' then v_visit.medicine_name := null; end if;
+  if v_visit.medicine_name is not null and v_visit.medicine_code is null then
+    raise exception 'The selected medicine could not be matched to an inventory item.';
+  end if;
+  if v_visit.medicine_code is not null and (v_visit.medicine_quantity is null or v_visit.medicine_quantity <= 0) then
+    raise exception 'Medication quantity must be a positive whole number.';
+  end if;
+
+  v_old_supply_id := v_previous.supply_item_id;
+  if v_old_supply_id is null and v_previous.supply_used is not null then
+    select id into v_old_supply_id from public.equipment
+    where name = v_previous.supply_used order by id limit 1;
+  end if;
+  v_new_supply_id := v_visit.supply_item_id;
+  if v_new_supply_id is null and v_visit.supply_used is not null then
+    select id into v_new_supply_id from public.equipment
+    where name = v_visit.supply_used and category = 'Medical Supplies'
+    order by id limit 1;
+  end if;
+  if v_visit.supply_used is not null and v_new_supply_id is null then
+    raise exception 'The selected medical supply could not be matched to inventory.';
+  end if;
+  v_visit.supply_item_id := v_new_supply_id;
+  if v_new_supply_id is not null and (v_visit.supply_quantity is null or v_visit.supply_quantity <= 0) then
+    raise exception 'Supply quantity must be a positive whole number.';
+  end if;
+
+  select coalesce(sum(quantity), 0)::integer into v_old_medicine_quantity
+  from public.clinical_visit_inventory_deductions
+  where visit_id = v_previous.id and item_type = 'medicine' and reversed_at is null;
+  if v_old_medicine_quantity = 0 then
+    v_old_medicine_quantity := case when v_previous.medicine_code is null then 0 else coalesce(v_previous.medicine_quantity, 0) end;
+  end if;
+  select coalesce(sum(quantity), 0)::integer into v_old_supply_quantity
+  from public.clinical_visit_inventory_deductions
+  where visit_id = v_previous.id and item_type = 'equipment'
+    and item_id = coalesce(v_old_supply_id, '') and reversed_at is null;
+  if v_old_supply_quantity = 0 then
+    v_old_supply_quantity := case when v_old_supply_id is null then 0 else coalesce(v_previous.supply_quantity, 0) end;
+  end if;
+
+  if v_previous.medicine_code is not distinct from v_visit.medicine_code then
+    v_delta := v_old_medicine_quantity - coalesce(v_visit.medicine_quantity, 0);
+    if v_delta > 0 then
+      if not exists (select 1 from public.medicines where code = v_previous.medicine_code) then
+        raise exception 'The historical medicine is no longer in inventory, so its recorded quantity cannot be changed.';
+      end if;
+      update public.medicines set quantity = quantity + v_delta where code = v_previous.medicine_code;
+    elsif v_delta < 0 then
+      update public.medicines
+      set quantity = quantity + v_delta
+      where code = v_visit.medicine_code and deleted_at is null
+        and (expiration_date is null or expiration_date >= current_date)
+        and quantity >= -v_delta;
+      if not found then raise exception 'The selected medicine is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  else
+    if v_previous.medicine_code is not null and v_old_medicine_quantity > 0 then
+      update public.medicines set quantity = quantity + v_old_medicine_quantity where code = v_previous.medicine_code;
+    end if;
+    if v_visit.medicine_code is not null then
+      update public.medicines
+      set quantity = quantity - v_visit.medicine_quantity
+      where code = v_visit.medicine_code and name = v_visit.medicine_name
+        and deleted_at is null and (expiration_date is null or expiration_date >= current_date)
+        and quantity >= v_visit.medicine_quantity;
+      if not found then raise exception 'The selected medicine is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  end if;
+
+  if v_old_supply_id is not distinct from v_new_supply_id then
+    v_delta := v_old_supply_quantity - coalesce(v_visit.supply_quantity, 0);
+    if v_delta > 0 then
+      update public.equipment set quantity = quantity + v_delta where id = v_old_supply_id;
+    elsif v_delta < 0 then
+      update public.equipment
+      set quantity = quantity + v_delta
+      where id = v_new_supply_id and category = 'Medical Supplies'
+        and status = 'Available' and deleted_at is null and quantity >= -v_delta;
+      if not found then raise exception 'The selected medical supply is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  else
+    if v_old_supply_id is not null and v_old_supply_quantity > 0 then
+      update public.equipment set quantity = quantity + v_old_supply_quantity where id = v_old_supply_id;
+    end if;
+    if v_new_supply_id is not null then
+      update public.equipment
+      set quantity = quantity - v_visit.supply_quantity
+      where id = v_new_supply_id and name = v_visit.supply_used
+        and category = 'Medical Supplies' and status = 'Available'
+        and deleted_at is null and quantity >= v_visit.supply_quantity;
+      if not found then raise exception 'The selected medical supply is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  end if;
+
+  update public.clinical_visit_inventory_deductions
+  set reversed_at = now()
+  where visit_id = v_previous.id and reversed_at is null
+    and ((item_type = 'medicine' and item_id = coalesce(v_previous.medicine_code, '') and v_previous.medicine_code is distinct from v_visit.medicine_code)
+      or (item_type = 'equipment' and item_id = coalesce(v_old_supply_id, '') and v_old_supply_id is distinct from v_new_supply_id));
+  if v_visit.medicine_code is not null then
+    insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+    values (v_visit.id, 'medicine', v_visit.medicine_code, v_visit.medicine_quantity, null)
+    on conflict (visit_id, item_type, item_id) do update
+    set quantity = excluded.quantity, reversed_at = null;
+  end if;
+  if v_new_supply_id is not null then
+    insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+    values (v_visit.id, 'equipment', v_new_supply_id, v_visit.supply_quantity, null)
+    on conflict (visit_id, item_type, item_id) do update
+    set quantity = excluded.quantity, reversed_at = null;
+  end if;
+
+  v_visit.created_at := v_previous.created_at;
+  v_visit.updated_at := now();
+  v_visit.status := 'Active';
+  v_visit.deleted_at := null;
+  update public.clinical_visits set
+    nurse_id = v_visit.nurse_id, nurse_name = v_visit.nurse_name, visit_date = v_visit.visit_date,
+    visit_time = v_visit.visit_time, complaint = v_visit.complaint, reason_other = v_visit.reason_other,
+    description = v_visit.description, symptom_start = v_visit.symptom_start, pain_level = v_visit.pain_level,
+    pain_location = v_visit.pain_location, symptoms = v_visit.symptoms, known_conditions = v_visit.known_conditions,
+    allergies_history = v_visit.allergies_history, current_medication = v_visit.current_medication,
+    previous_similar = v_visit.previous_similar, last_meal = v_visit.last_meal, weight = v_visit.weight,
+    height = v_visit.height, temperature = v_visit.temperature, blood_pressure = v_visit.blood_pressure,
+    heart_rate = v_visit.heart_rate, respiratory_rate = v_visit.respiratory_rate,
+    oxygen_saturation = v_visit.oxygen_saturation, assessment = v_visit.assessment,
+    assessment_other = v_visit.assessment_other, notes = v_visit.notes, interventions = v_visit.interventions,
+    treatment_given = v_visit.treatment_given, medicine_code = v_visit.medicine_code,
+    medicine_name = v_visit.medicine_name, medicine_quantity = v_visit.medicine_quantity,
+    equipment_used = v_visit.equipment_used, equipment_quantity = v_visit.equipment_quantity,
+    supply_used = v_visit.supply_used, supply_item_id = v_visit.supply_item_id,
+    supply_quantity = v_visit.supply_quantity, dosage = v_visit.dosage, outcome = v_visit.outcome,
+    released_at = v_visit.released_at, remarks = v_visit.remarks,
+    guardian_contacted = v_visit.guardian_contacted, guardian_method = v_visit.guardian_method,
+    person_contacted = v_visit.person_contacted, staff_record = v_visit.staff_record,
+    position = v_visit.position, version_of = v_previous.version_of, revision = v_previous.revision,
+    supersedes_id = v_previous.supersedes_id, superseded_by = v_previous.superseded_by,
+    updated_at = v_visit.updated_at
+  where id = v_previous.id and patient_id = v_previous.patient_id and status = 'Active';
+
+  update public.patients set allergies = coalesce(p_patient_allergies, allergies)
+  where id = v_previous.patient_id;
+end;
+$$;
+
 create or replace function public.save_new_patient_with_initial_visit(
   p_patient jsonb,
   p_visit jsonb,
@@ -640,6 +819,8 @@ $$;
 
 revoke all on function public.save_clinical_visit_with_inventory(jsonb, text) from public;
 grant execute on function public.save_clinical_visit_with_inventory(jsonb, text) to service_role;
+revoke all on function public.update_clinical_visit_with_inventory(jsonb, text) from public;
+grant execute on function public.update_clinical_visit_with_inventory(jsonb, text) to service_role;
 revoke all on function public.save_new_patient_with_initial_visit(jsonb, jsonb, text) from public;
 grant execute on function public.save_new_patient_with_initial_visit(jsonb, jsonb, text) to service_role;
 revoke all on function public.set_clinical_visit_inventory_status(text, boolean, boolean) from public;
@@ -987,6 +1168,36 @@ $$;
 
 revoke all on function public.authenticate_clinic_user(text, text) from public;
 grant execute on function public.authenticate_clinic_user(text, text) to service_role;
+
+create or replace function public.change_legacy_clinic_user_password(
+  p_username text,
+  p_current_password text,
+  p_new_password text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_updated integer;
+begin
+  update public.clinic_users
+  set password_hash = extensions.crypt(p_new_password, extensions.gen_salt('bf')),
+      updated_at = now()
+  where username = p_username
+    and role = 'Head Nurse'
+    and status = 'Active'
+    and deleted_at is null
+    and password_hash is not null
+    and extensions.crypt(p_current_password, password_hash) = password_hash;
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+revoke all on function public.change_legacy_clinic_user_password(text, text, text) from public;
+grant execute on function public.change_legacy_clinic_user_password(text, text, text) to service_role;
 
 alter table public.patients enable row level security;
 alter table public.medicines enable row level security;

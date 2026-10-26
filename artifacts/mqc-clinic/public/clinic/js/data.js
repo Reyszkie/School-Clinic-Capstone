@@ -107,7 +107,6 @@ const REMOVED_MEDICAL_SUPPLY_NAMES=["Alcohol","Cotton Swabs","Hand Sanitizer"];
 const INVENTORY_CATALOG_VERSION=3;
 let MEDICINES = [];
 let EQUIPMENT = MEDICAL_SUPPLY_NAMES.map((name,index)=>({id:`EQP-DEFAULT-SUP-${String(index+1).padStart(2,"0")}`,name,category:"Medical Supplies"})).map(item=>({...item,qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false}));
-const VISIT_SUPPLY_NAMES=MEDICAL_SUPPLY_NAMES;
 const INVENTORY_ITEM_NAME_ALIASES={
   "Alcohol (70% Isopropyl)":"Alcohol",
   "Blood Pressure Monitor (Digital)":"Blood Pressure Monitor",

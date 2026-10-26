@@ -921,12 +921,16 @@ export async function PUT(request: Request) {
       const affectedPatients = patients.filter(row => patientIds.has(String(row.id)));
       const visitToSave = affectedVisits.find(row => row.status !== "Superseded");
       const createPatient = visitMutation.createPatient === true;
+      const updateVisit = visitMutation.updateVisit === true;
 
       if (affectedVisits.length !== visitIds.size) throw new Error("A visit record for this save could not be found in the submitted state.");
       if (affectedPatients.length !== patientIds.size) throw new Error("A patient record for this save could not be found in the submitted state.");
       if (!visitToSave) throw new Error("The new clinical visit for this save could not be found.");
       if (createPatient && (patientIds.size !== 1 || visitIds.size !== 1)) {
         return Response.json({ message: "Creating a patient with an initial visit requires exactly one new patient and one visit." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+      }
+      if (updateVisit && (createPatient || visitIds.size !== 1 || patientIds.size !== 1)) {
+        return Response.json({ message: "Updating a clinical visit requires exactly one existing visit and its patient." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
       if (visitToSave.deleted || visitToSave.status === "Deleted") return Response.json({ message: "A new clinical visit cannot be saved as deleted." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       if (await hasInvalidGuardianContactChange(affectedPatients)) {
@@ -954,7 +958,8 @@ export async function PUT(request: Request) {
       if (createPatient && (!patient || String(patient.id) !== String(normalizedVisit.patient_id))) {
         return Response.json({ message: "The initial visit must reference the new patient record." }, { status: 400, headers: { "Cache-Control": "no-store" } });
       }
-      const rpcResponse = await supabaseRequest(`rpc/${createPatient?"save_new_patient_with_initial_visit":"save_clinical_visit_with_inventory"}`, {
+      const rpcName=createPatient?"save_new_patient_with_initial_visit":updateVisit?"update_clinical_visit_with_inventory":"save_clinical_visit_with_inventory";
+      const rpcResponse = await supabaseRequest(`rpc/${rpcName}`, {
         method: "POST",
         body: JSON.stringify({
           ...(createPatient && patient ? { p_patient: normalizePatientRow(patient) } : {}),

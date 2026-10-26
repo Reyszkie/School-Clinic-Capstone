@@ -46,8 +46,9 @@ function renderStudentClinicalRecords(student){
       <td><b>${escapeHtml(reason)}</b><br><span class="record-preview">${escapeHtml(note)}</span></td>
       <td>${escapeHtml(c.nurse||"—")}</td><td><span class="chip ${c.status==="Superseded"?"chip-low":"chip-available"}">${escapeHtml(c.status==="Superseded"?"Revised":c.outcome||"Active")}</span></td>
       <td><div class="row-actions"><button class="btn records-view-button" data-view-student-consult="${escapeHtml(c.id)}">View Records</button>
-      ${c.status==="Superseded"?"":`<button class="mini-btn" data-edit-student-consult="${escapeHtml(c.id)}" title="Edit visit record">${ICONS.edit}</button>`}</div></td></tr>`;
-  }).join(""):`<tr><td colspan="5"><div class="clinical-empty"><b>No clinical visits recorded yet.</b><span>Use “New Patient Visit” to record the reason for a visit, assessment, treatment, and outcome.</span></div></td></tr>`;
+      ${c.status==="Superseded"?"":`<button class="mini-btn" data-edit-student-consult="${escapeHtml(c.id)}" title="Edit Patient Visit">${ICONS.edit}</button>`}</div></td></tr>
+      <tr class="patient-visit-detail-row"><td colspan="5"><details class="patient-visit-details"><summary>Visit details</summary><table class="record-detail-table"><tbody>${consultationRows(c).map(([label,value])=>`<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value||"—")}</td></tr>`).join("")}</tbody></table></details></td></tr>`;
+  }).join(""):`<tr><td colspan="5"><div class="clinical-empty"><b>No clinical visits recorded yet.</b><span>Clinical visit records will appear here when available.</span></div></td></tr>`;
 
   return `<div class="student-records"><div class="student-records-head"><div><h4>Clinical Visit Records</h4>
     <p>${visits.length?`${visits.length} recorded visit${visits.length===1?"":"s"} for this patient.`:"This patient's clinical history will appear here."}</p></div>
@@ -67,11 +68,11 @@ function patientAllergyStatus(value){
 function renderStudentDetail(s, inModal=false){
   const displayName=s.name||[s.lastName,s.firstName,s.middleInitial].filter(Boolean).join(", ");
   const initials=displayName.split(/[\s,]+/).filter(Boolean).map(x=>x[0]).slice(0,2).join("");
+  const latestVisit=studentClinicalVisits(s).find(visit=>visit.status!=="Superseded");
   return `<div class="${inModal?"student-detail-content":"card"}" ${inModal?"":"style=\"margin-top:16px;\""}><div class="student-card">
     <div class="s-avatar">${escapeHtml(initials)}</div><div style="flex:1"><h3 style="font-size:19px">${escapeHtml(displayName)}</h3>
       <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.institutionalCategory||s.course||"—")} · ${escapeHtml(s.personnelType||s.year||"—")}</div></div>
-    <button class="btn" id="edit-student-btn">${ICONS.edit} Edit Profile</button>
-    <button class="btn btn-teal" id="open-consult-form">${ICONS.plus} New Patient Visit</button>
+    <button class="btn" id="edit-student-visit-btn" ${latestVisit?"":"disabled"}>${ICONS.edit} Edit Patient Visit</button>
     ${canDeleteClinicRecords()?`    ${canDeleteClinicRecords()?`<button class="btn btn-outline-red" id="delete-student-btn">${ICONS.trash_sm} Delete Patient</button>`:""}`:""}
   </div><div class="info-grid">
     <div class="info-cell"><div class="lbl">Sex</div><div class="val">${escapeHtml(s.gender||s.sex||"—")}</div></div>
@@ -136,8 +137,8 @@ function openStudentForm(existing=null){
   categorySelect.addEventListener("change",()=>syncCategoryFields(true));
   const initialAllergies=document.getElementById("iv-allergies");
   bindOptionFreeText("initial-intervention-other");
-  bindVisitInventoryCard({id:"iv-medicine",quantityId:"iv-medqty",items:MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)),unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0});
-  bindVisitInventoryCard({id:"iv-supply",quantityId:"iv-supply-qty",items:EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0),unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0});
+  bindVisitInventoryCard({id:"iv-medicine",quantityId:"iv-medqty",items:MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)&&Number(item.qty)>0),unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0});
+  bindVisitInventoryCard({id:"iv-supply",quantityId:"iv-supply-qty",items:EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0),unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0});
   const guardianContact=document.getElementById("sf-guardian-contact");
   const guardianContactError=document.getElementById("sf-guardian-contact-error");
   let guardianContactTouched=Boolean(guardianContact.value);
@@ -193,8 +194,8 @@ function openStudentForm(existing=null){
       if(!reasonValue){document.getElementById("iv-reason").focus();toast("Missing information","Please enter a reason for the clinic visit.","err");return;}
       if(reasonValue.toLowerCase()==="other"){document.getElementById("iv-reason").focus();toast("Missing information","Enter the custom reason instead of selecting Other.","err");return;}
       const complaint=COMPLAINTS.includes(reasonValue)?reasonValue:"Other";
-      const medicineName=document.getElementById("iv-medicine").value,medicine=MEDICINES.find(item=>item.name===medicineName);
-      const supplyName=document.getElementById("iv-supply").value,supply=EQUIPMENT.find(item=>item.name===supplyName);
+      const medicineCode=document.getElementById("iv-medicine").value,medicine=MEDICINES.find(item=>item.code===medicineCode);
+      const supplyItemId=document.getElementById("iv-supply").value,supply=EQUIPMENT.find(item=>item.id===supplyItemId);
       const interventions=selectedChecks('[data-check-group="initial-intervention"]');
       const interventionOther=document.querySelector('[data-free-text="initial-intervention-other"]')?.value.trim();
       if(interventionOther)interventions.push(`Other: ${interventionOther}`);
@@ -208,8 +209,8 @@ function openStudentForm(existing=null){
         weight:"",height:"",temp:document.getElementById("iv-temp").value,bp:document.getElementById("iv-bp").value,pulse:document.getElementById("iv-pulse").value,
         respiratoryRate:document.getElementById("iv-respiratory-rate").value,spo2:document.getElementById("iv-spo2").value,
         interventions,
-        medicine:medicineName,medicineCode:medicine?.code||null,medQty:Number(document.getElementById("iv-medqty").value),
-        supplyUsed:supplyName,supplyItemId:supply?.id||null,supplyQty:Number(document.getElementById("iv-supply-qty").value),
+        medicine:medicine?.name||"",medicineCode:medicine?.code||null,medQty:Number(document.getElementById("iv-medqty").value),
+        supplyUsed:supply?.name||"",supplyItemId:supply?.id||null,supplyQty:Number(document.getElementById("iv-supply-qty").value),
         equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("iv-outcome").value,
         remarks:document.getElementById("iv-remarks").value,guardianContacted:document.getElementById("iv-guardian-contacted").value,
         guardianMethod:document.getElementById("iv-guardian-method").value,personContacted:document.getElementById("iv-person").value,
@@ -284,7 +285,7 @@ function initialPatientVisitHasDetails(){
 
 function initialPatientVisitSection(){
   const meds=MEDICINES.filter(m=>!m.deleted&&!medicineIsExpired(m));
-  const supplies=EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0);
+  const supplies=EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0);
   return `<div class="form-grid full initial-visit-grid">
       <div class="f-field"><label for="iv-date">Visit Date</label><input type="date" id="iv-date" value="${todayDateString()}"></div>
       <div class="f-field"><label for="iv-time">Visit Time</label><input id="iv-time" value="${escapeHtml(currentTimeString())}"></div>
@@ -330,8 +331,12 @@ function openStudentDetailModal(student){
 
 function bindStudentDetailActions(student,root=document){
   const find=(selector)=>root.querySelector(selector);
-  const open=document.getElementById("open-consult-form"); if(open)open.onclick=()=>{closeModal();openConsultationForm(student);};
-  const edit=find("#edit-student-btn"); if(edit)edit.onclick=()=>{closeModal();openStudentForm(student);};
+  const edit=find("#edit-student-visit-btn");
+  if(edit)edit.onclick=()=>{
+    const latestVisit=studentClinicalVisits(student).find(visit=>visit.status!=="Superseded");
+    if(!latestVisit){toast("No visits available","This patient has no visit record to edit.","err");return;}
+    closeModal();openConsultationForm(student,latestVisit);
+  };
   const del=find("#delete-student-btn"); if(del)del.onclick=()=>{closeModal();deleteStudent(student);};
   root.querySelectorAll("[data-view-student-consult]").forEach(button=>button.onclick=()=>{
     const visit=CONSULTATIONS.find(record=>record.id===button.dataset.viewStudentConsult);
@@ -373,11 +378,12 @@ function bindOptionFreeText(group, initialValue=""){
 }
 
 function visitInventoryCard({id,label,items,selected,quantityId,quantity,unitForItem,availableForItem}){
-  const selectedItem=items.find(item=>item.name===selected);
+  const itemKey=item=>item.code||item.id||item.name;
+  const selectedItem=items.find(item=>itemKey(item)===selected||item.name===selected);
   const stockText=selectedItem?`Available Stock: ${availableForItem(selectedItem)} ${unitForItem(selectedItem)}`:"Available Stock: Select an item";
   return `<section class="visit-inventory-card">
     <div class="visit-inventory-heading"><label for="${id}">${label}</label>
-      <select id="${id}" aria-label="${label}"><option value="">None</option>${items.map(item=>`<option value="${escapeHtml(item.name)}" ${selected===item.name?"selected":""} ${availableForItem(item)<1&&selected!==item.name?"disabled":""}>${escapeHtml(item.name)}</option>`).join("")}</select>
+      <select id="${id}" aria-label="${label}"><option value="">None</option>${items.map(item=>`<option value="${escapeHtml(itemKey(item))}" ${selected===itemKey(item)||selected===item.name?"selected":""} ${item.deleted||item.unavailable||availableForItem(item)<1&&selected!==itemKey(item)&&selected!==item.name?"disabled":""}>${escapeHtml(item.name)}${item.deleted||item.unavailable?" (Unavailable — historical record)":""}</option>`).join("")}</select>
       <span class="visit-inventory-stock" id="${id}-stock" aria-live="polite">${stockText}</span>
     </div>
     <div class="visit-inventory-quantity"><label for="${quantityId}">Treatment Quantity</label><div class="visit-quantity-control">
@@ -391,7 +397,7 @@ function bindVisitInventoryCard({id,quantityId,items,unitForItem,availableForIte
   if(!select||!quantity||!stock)return;
   const error=document.getElementById(`${quantityId}-error`);
   const update=()=>{
-    const item=items.find(candidate=>candidate.name===select.value);
+    const item=items.find(candidate=>(candidate.code||candidate.id||candidate.name)===select.value||candidate.name===select.value);
     const available=item?availableForItem(item):0;
     stock.textContent=item?`Available Stock: ${available} ${unitForItem(item)}`:"Available Stock: Select an item";
     quantity.max=item?String(available):"";
@@ -428,19 +434,25 @@ function normalizeGuardianContacted(value){
 
 function openConsultationForm(student, existing=null){
   if(!student)return;
+  if(existing&&existing.studentId!==student.id){toast("Visit does not match patient","This visit belongs to a different patient and cannot be edited here.","err");return;}
   const isEdit=!!existing, f=existing||{date:todayDateString(),time:currentTimeString(),nurse:state.currentUser.name,complaint:"",description:"",symptomStart:"",painLevel:"0 – No pain",painLocation:"",symptoms:[],knownConditions:"No",allergiesHistory:"",currentMedication:"No",previousSimilar:"No",lastMeal:"",weight:"",height:"",temp:"",bp:"",pulse:"",respiratoryRate:"",spo2:"",assessment:"Stable",assessmentOther:"",notes:"",interventions:[],supplyUsed:"",supplyQty:1,equipmentUsed:[],equipmentQty:1,treatmentGiven:"",dosage:"",outcome:"",releasedAt:"",remarks:"",guardianContacted:"Not Applicable",guardianMethod:"phone call",personContacted:"",staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",medicine:"",medQty:1};
   const allergyHistory=String(f.allergiesHistory||"");
   const allergyAnswer=/^yes\b/i.test(allergyHistory)?"Yes":/^no\b/i.test(allergyHistory)?"No":"";
   const allergyDetail=allergyAnswer==="Yes"?allergyHistory.replace(/^yes\s*[:—-]?\s*/i,"").trim():"";
   const reasonInputValue=f.complaint==="Other"?(f.reasonOther||"Other"):(f.complaint||"");
   const contactedValue=normalizeGuardianContacted(f.guardianContacted);
-  const existingSupply=f.supplyUsed||(f.equipmentUsed||[]).find(name=>VISIT_SUPPLY_NAMES.includes(name))||"";
+  const existingSupply=f.supplyUsed||(f.equipmentUsed||[]).find(name=>EQUIPMENT.some(item=>item.name===name&&item.category==="Medical Supplies"))||"";
   const returnedInventory=isEdit?activeVisitInventoryTransactions(existing.id):[];
   const returnedQuantity=(itemType,itemId)=>returnedInventory.filter(entry=>entry.itemType===itemType&&entry.itemId===itemId).reduce((total,entry)=>total+Number(entry.quantity||0),0);
   const medicineAvailable=item=>(Number(item.qty)||0)+returnedQuantity("medicine",item.code);
   const equipmentAvailable=item=>(Number(item.qty)||0)+returnedQuantity("equipment",item.id);
-  const meds=MEDICINES.filter(m=>!m.deleted&&!medicineIsExpired(m));
-  const supplies=EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||item.name===existingSupply));
+  const selectedMedicine=MEDICINES.find(item=>item.code===f.medicineCode||item.name===f.medicine)
+    ||(isEdit&&f.medicineCode?{code:f.medicineCode,name:f.medicine||"Unavailable medicine",qty:0,deleted:true}:null);
+  const selectedSupply=EQUIPMENT.find(item=>item.id===f.supplyItemId||item.name===existingSupply);
+  const meds=MEDICINES.filter(item=>!item.deleted&&!medicineIsExpired(item)&&(Number(item.qty)>0||item.code===selectedMedicine?.code));
+  if(selectedMedicine&&!meds.includes(selectedMedicine))meds.push({...selectedMedicine,unavailable:true});
+  const supplies=EQUIPMENT.filter(item=>item.category==="Medical Supplies"&&!item.deleted&&item.status==="Available"&&(equipmentAvailable(item)>0||item.id===selectedSupply?.id));
+  if(selectedSupply&&!supplies.includes(selectedSupply))supplies.push({...selectedSupply,unavailable:true});
   const html=`<div class="modal-head"><h3>${isEdit?"Edit":"New"} Patient Visit — ${escapeHtml(student.name)}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body"><form id="consult-form" class="form-grid">
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
@@ -464,8 +476,8 @@ function openConsultationForm(student, existing=null){
     </div></div>
     <div class="f-field full"><label>Treatment / Intervention</label><div style="padding-top:5px">${optionListHtml(INTERVENTIONS,f.interventions||[],"intervention") }<label class="option-check"><input type="checkbox" id="cf-intervention-other" data-free-text-toggle="intervention-other" ${f.interventions?.some(x=>x==="Other"||x.startsWith("Other: "))?"checked":""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="intervention-other" placeholder="Enter other intervention" value="${escapeHtml((f.interventions||[]).find(x=>x.startsWith("Other: "))?.replace("Other: ","")||"")}"></div></div>
     <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
-      ${visitInventoryCard({id:"cf-medicine",label:"Medicines",items:meds,selected:f.medicine,quantityId:"cf-medqty",quantity:f.medQty,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable})}
-      ${visitInventoryCard({id:"cf-supply",label:"Medical Supplies",items:supplies,selected:existingSupply,quantityId:"cf-supply-qty",quantity:f.supplyQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
+      ${visitInventoryCard({id:"cf-medicine",label:"Medicines",items:meds,selected:selectedMedicine?.code||f.medicine,quantityId:"cf-medqty",quantity:f.medQty,unitForItem:item=>item.unit||"unit(s)",availableForItem:medicineAvailable})}
+      ${visitInventoryCard({id:"cf-supply",label:"Medical Supplies",items:supplies,selected:selectedSupply?.id||existingSupply,quantityId:"cf-supply-qty",quantity:f.supplyQty,unitForItem:()=>"items",availableForItem:equipmentAvailable})}
     </div></div>
     <div class="f-field full"><label>Clinic Disposition — Outcome <span class="req">*</span></label><select id="cf-outcome" required><option value="">Select Outcome</option>${DISPOSITIONS.map(x=>`<option ${f.outcome===x?"selected":""}>${x}</option>`).join("")}<option ${f.outcome==="Other"?"selected":""}>Other</option></select></div>
     <div class="f-field full"><label>Remarks</label><textarea id="cf-remarks">${escapeHtml(f.remarks||"")}</textarea></div>
@@ -476,7 +488,7 @@ function openConsultationForm(student, existing=null){
     </div></div>
     <div class="f-field"><label>Clinic Staff Record</label><input id="cf-staff" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
     <div class="f-field"><label>Position</label><input id="cf-position" value="${escapeHtml(state.currentUser.role||"Staff Nurse")}" readonly aria-readonly="true"></div>
-  </form></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" id="cf-clear">Clear Form</button><button class="btn btn-dark" id="cf-save">${ICONS.check} Save Visit</button></div>`;
+  </form></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" id="cf-clear">Clear Form</button><button class="btn btn-dark" id="cf-save">${ICONS.check} ${isEdit?"Save Changes":"Save Visit"}</button></div>`;
   openModal(html);
   const complaintSelect=document.getElementById("cf-complaint");
   const allergySelect=document.getElementById("cf-allergies"),allergyDetailInput=document.getElementById("cf-allergy-detail");
@@ -508,20 +520,37 @@ function openConsultationForm(student, existing=null){
     const reasonValue=complaintSelect.value.trim(),isStandardReason=COMPLAINTS.includes(reasonValue),complaint=isStandardReason?reasonValue:"Other",reasonOther=complaint==="Other"&&reasonValue.toLowerCase()!=="other"?reasonValue:"",allergyAnswerValue=allergySelect.value,allergyDetail=allergyDetailInput.value.replace(/[\u0000-\u001f\u007f]/g,"").trim();if(!reasonValue){toast("Missing information","Please select or enter a reason for the clinic visit.","err");complaintSelect.focus();return;}if(complaint==="Other"&&!reasonOther){complaintSelect.focus();toast("Missing information","Enter the custom reason in the Reason for Clinic Visit field.","err");return;}if(!allergyAnswerValue){allergySelect.focus();toast("Missing information","Please answer the allergy question.","err");return;}if(allergyAnswerValue==="Yes"&&!allergyDetail){allergyDetailInput.focus();toast("Missing information","Specify the patient's allergies.","err");return;}
     const outcome=document.getElementById("cf-outcome").value;
     if(!outcome){document.getElementById("cf-outcome").focus();toast("Missing information","Please select a clinic disposition outcome.","err");return;}
-    const medName=document.getElementById("cf-medicine").value, medQty=Number(document.getElementById("cf-medqty").value), med=MEDICINES.find(m=>m.name===medName);
-    const supplyName=document.getElementById("cf-supply").value,supplyQty=Number(document.getElementById("cf-supply-qty").value);
+    const medicineKey=document.getElementById("cf-medicine").value,medQty=Number(document.getElementById("cf-medqty").value),med=MEDICINES.find(item=>item.code===medicineKey||item.name===medicineKey)||(isEdit&&medicineKey===f.medicineCode?selectedMedicine:null);
+    const supplyKey=document.getElementById("cf-supply").value,supplyQty=Number(document.getElementById("cf-supply-qty").value),supplyItem=EQUIPMENT.find(item=>item.id===supplyKey||item.name===supplyKey)||(isEdit&&supplyKey===f.supplyItemId?selectedSupply:null);
+    const medName=med?.name||"",supplyName=supplyItem?.name||"";
     if(medName&&(!Number.isInteger(medQty)||medQty<1)){toast("Invalid quantity","Enter a whole-number medication quantity of at least 1.","err");return;}
     if(supplyName&&(!Number.isInteger(supplyQty)||supplyQty<1)){toast("Invalid quantity","Enter a whole-number supply quantity of at least 1.","err");return;}
     const previous=isEdit?CONSULTATIONS.find(c=>c.id===existing.id):null;
+    if(isEdit&&(!previous||previous.studentId!==student.id||previous.deleted||previous.status==="Superseded")){toast("Visit unavailable","The selected visit could not be found for this patient.","err");return;}
     ensureInventoryLedger();
     const interventions=selectedChecks('[data-check-group="intervention"]'); const interventionOther=document.querySelector('[data-free-text="intervention-other"]')?.value.trim(); if(interventionOther)interventions.push(`Other: ${interventionOther}`);
-    const supplyItem=EQUIPMENT.find(item=>item.name===supplyName);
     if(medName&&med&&medQty>medicineAvailable(med)||supplyName&&supplyItem&&supplyQty>equipmentAvailable(supplyItem)){
       toast("Insufficient inventory","The requested treatment quantity exceeds the currently available stock. Review Available Stock before saving.","err");
       return;
     }
-    pendingVisitId=pendingVisitId||uid("CS");
-    const rec={id:pendingVisitId,date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,nurse:state.currentUser.name,studentId:student.id,studentName:student.name,course:student.course,year:student.year,complaint,reasonOther,description:isEdit?f.description||"":"",symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,painLocation:isEdit?f.painLocation||"":"",symptoms:isEdit?f.symptoms||[]:[],knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?`Yes: ${allergyDetail}`:"No",currentMedication:document.getElementById("cf-current-med").value,previousSimilar:isEdit?f.previousSimilar||"":"",lastMeal:isEdit?f.lastMeal||"":"",weight:document.getElementById("cf-weight").value,height:document.getElementById("cf-height").value,temp:document.getElementById("cf-temp").value,bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,spo2:document.getElementById("cf-spo2").value,assessment:isEdit?f.assessment||"":"",assessmentOther:isEdit?f.assessmentOther||"":"",notes:isEdit?f.notes||"":"",interventions,treatmentGiven:isEdit?f.treatmentGiven||"":"",dosage:isEdit?f.dosage||"":"",medicine:medName,medicineCode:med?.code||null,medQty,supplyUsed:supplyName,supplyItemId:supplyItem?.id||null,supplyQty,equipmentUsed:[],equipmentQty:1,outcome,releasedAt:isEdit?f.releasedAt||"":"",remarks:document.getElementById("cf-remarks").value,guardianContacted:document.getElementById("cf-guardian-contacted").value,guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,createdAt:new Date().toISOString()};
+    pendingVisitId=pendingVisitId||(isEdit?existing.id:uid("CS"));
+    const rec={
+      ...f,id:pendingVisitId,date:document.getElementById("cf-date").value,time:document.getElementById("cf-time").value,
+      nurse:isEdit?f.nurse:state.currentUser.name,nurseId:isEdit?f.nurseId:state.currentUser.id,
+      studentId:student.id,studentName:student.name,course:student.course,year:student.personnelType||student.year,
+      complaint,reasonOther,symptomStart:document.getElementById("cf-start").value,painLevel:document.getElementById("cf-pain").value,
+      knownConditions:document.getElementById("cf-conditions").value,allergiesHistory:allergyAnswerValue==="Yes"?`Yes: ${allergyDetail}`:"No",
+      currentMedication:document.getElementById("cf-current-med").value,temp:document.getElementById("cf-temp").value,
+      bp:document.getElementById("cf-bp").value,pulse:document.getElementById("cf-pulse").value,
+      spo2:document.getElementById("cf-spo2").value,interventions,medicine:medName,medicineCode:med?.code||null,medQty,
+      supplyUsed:supplyName,supplyItemId:supplyItem?.id||null,supplyQty,equipmentUsed:isEdit?f.equipmentUsed||[]:[],
+      equipmentQty:isEdit?f.equipmentQty||1:1,outcome,remarks:document.getElementById("cf-remarks").value,
+      guardianContacted:document.getElementById("cf-guardian-contacted").value,
+      guardianMethod:document.getElementById("cf-guardian-method").value,personContacted:document.getElementById("cf-person").value,
+      staffRecord:isEdit?f.staffRecord:state.currentUser.name,position:isEdit?f.position:state.currentUser.role||"Staff Nurse",
+      followUp:"No",status:"Active",deleted:false,revision:isEdit?Number(f.revision)||1:1,
+      createdAt:isEdit?f.createdAt:new Date().toISOString(),
+    };
     rec.respiratoryRate=document.getElementById("cf-respiratory-rate").value;
     rec.supplyUsed=supplyName||(isEdit&&!supplies.some(item=>item.name===existingSupply)?existingSupply:"");
     const saveButton=document.getElementById("cf-save");
@@ -536,34 +565,28 @@ function openConsultationForm(student, existing=null){
       visitsSnapshot=CONSULTATIONS.slice();
       previousSnapshot=previous?{...previous}:null;
       previousAllergies=student.allergies;
-      if(isEdit){
-        reverseVisitInventoryUsage(previous);
-        const revision=Number(previous.revision)||1;
-        rec.versionOf=previous.versionOf||previous.id;
-        rec.revision=revision+1;
-        rec.supersedesId=previous.id;
-        previous.status="Superseded";
-        previous.supersededBy=rec.id;
-        previous.supersededAt=new Date().toISOString();
-      }else rec.revision=1;
-      applyVisitInventoryUsage(rec);
+      if(isEdit)reverseVisitInventoryUsage(previous);
+      applyVisitInventoryUsage(rec,previous);
       student.allergies=allergyAnswerValue==="Yes"
         ? mergePatientAllergies(student.allergies,allergyDetail)
         : patientAllergyStatus(student.allergies).status==="unassessed"?"No Known Allergies":student.allergies;
-      CONSULTATIONS.unshift(rec);
-      await saveVisitToClinicState([rec.id,previous?.id],inventorySnapshot,[student.id]);
+      if(isEdit)Object.assign(previous,rec);
+      else CONSULTATIONS.unshift(rec);
+      await saveVisitToClinicState([rec.id],inventorySnapshot,[student.id],false,isEdit);
       pendingVisitId="";
       let auditSucceeded=true;
       try{
-        const auditActions=[{action:`${isEdit?"Patient Visit Revised":"Patient Visit Created"} — ${rec.id}`,module:"Patient Visits",detail:rec.id},...clinicInventoryAuditActions(inventorySnapshot,`visit ${rec.id}`)];
+        const auditActions=[{action:`${isEdit?"Patient Visit Updated":"Patient Visit Created"} — ${rec.id}`,module:"Patient Visits",detail:rec.id},...clinicInventoryAuditActions(inventorySnapshot,`visit ${rec.id}`)];
         auditActions.push({action:`Patient Allergies ${allergyAnswerValue==="Yes"?"Recorded":"Confirmed None"} — ${student.id} from visit ${rec.id}`,module:"Patients",detail:student.id});
         for(const event of auditActions)await logAudit(event.action,event.module,"Success",false,true,event.detail||"");
       }catch{auditSucceeded=false;}
       if(auditSucceeded){
-        if(isEdit)toast("Visit revision saved",`Created new record ${rec.id}; the original remains available in Visit History.`,"ok");
+        if(isEdit)toast("Visit updated",`Updated visit ${rec.id}.`,"ok");
         else toast("Visit saved",`Recorded visit for ${student.name}.`,"ok");
       }else toast("Visit saved; audit sync failed","The visit was saved, but one or more audit entries could not be recorded.","err");
-      closeModal();renderPage();
+      closeModal();
+      if(state.selectedStudent?.id===student.id)openStudentDetailModal(student);
+      else renderPage();
     }catch(error){
       if(inventorySnapshot){
         restoreInventoryState(inventorySnapshot);
@@ -588,12 +611,13 @@ function consultationRows(c){
     ["Nurse on Duty",c.nurse||"—"],
     ["Reason for Clinic Visit",c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint||"—"],
     ["Detailed Description",c.description||"—"],
+    ["Symptom Onset",c.symptomStart||"—"],
     ["Symptoms",(c.symptoms||[]).join(", ")||"—"],
     ["Pain",`${c.painLevel||"—"}${c.painLocation?" · "+c.painLocation:""}`],
     ["Medical History",`Conditions: ${c.knownConditions||"—"} · Allergies: ${c.allergiesHistory||"—"} · Current medication: ${c.currentMedication||"—"} · Previous similar symptoms: ${c.previousSimilar||"—"}`],
     ["Last Meal / Food",c.lastMeal||"—"],
-    ["Vital Signs",`Temp ${c.temp||"—"} °C · Pulse ${c.pulse||"—"} bpm · Respiratory rate ${c.respiratoryRate||"—"} breaths/min · BP ${c.bp||"—"} mmHg · SpO2 ${c.spo2||"—"} %`],
-    ["Nurse's Assessment",c.assessment||c.diagnosis||"—"],
+    ["Vital Signs",`Temp ${c.temp||"—"} °C · Pulse ${c.pulse||"—"} bpm · Respiratory rate ${c.respiratoryRate||"—"} breaths/min · BP ${c.bp||"—"} mmHg · SpO2 ${c.spo2||"—"} % · Weight ${c.weight||"—"} · Height ${c.height||"—"}`],
+    ["Nurse's Assessment",`${c.assessment||c.diagnosis||"—"}${c.assessmentOther?` · Other: ${c.assessmentOther}`:""}`],
     ["Nurse's Notes",c.notes||"—"],
     ["Treatment / Intervention",(c.interventions||[]).join(", ")||c.treatment||"—"],
     ["Medical Supplies",c.supplyUsed?`${c.supplyUsed} × ${c.supplyQty||1}`:"—"],
@@ -602,7 +626,7 @@ function consultationRows(c){
     ["Medicines",c.medicine?`${c.medicine} × ${c.medQty||1} · ${c.dosage||""}`:"—"],
     ["Outcome",c.outcome||"—"],
     ["Time Released / Referred",c.releasedAt||"—"],
-    ["Guardian Notification",`${normalizeGuardianContacted(c.guardianContacted)}${c.personContacted?" · "+c.personContacted:""}`],
+    ["Guardian Notification",`${normalizeGuardianContacted(c.guardianContacted)}${c.guardianMethod?` · ${c.guardianMethod}`:""}${c.personContacted?` · ${c.personContacted}`:""}`],
     ["Remarks",c.remarks||"—"],
     ["Clinic Staff Record",`${c.staffRecord||"—"} · ${c.position||"—"}`],
   ];
@@ -616,7 +640,7 @@ function viewConsultation(c){
   openModal(`<div class="modal-head"><h3>${isSuperseded?"Original":"Clinical"} Visit Record</h3><button class="modal-close" onclick="closeModal()" aria-label="Close clinical visit record">${ICONS.x}</button></div>
      <div class="modal-body"><div class="visit-record-summary"><span>${isSuperseded?"Original record · preserved for audit":"Reason for clinic visit"}</span><strong>${escapeHtml(c.complaint||"Other")}</strong><small>${escapeHtml(c.studentName||"")} · ${escapeHtml(fmtDate(c.date))} at ${escapeHtml(c.time||"—")} · Revision ${c.revision||1}${isSuperseded&&c.supersededBy?` · Revised as ${escapeHtml(c.supersededBy)}`:""}</small></div>
     <table class="record-detail-table"><tbody>${rows.map(r=>`<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1]||"—")}</td></tr>`).join("")}</tbody></table></div>
-     <div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button><button class="btn" id="view-record-print">${ICONS.print} Print</button>${isSuperseded?"":`<button class="btn btn-dark" id="view-record-edit">${ICONS.edit} Edit Visit</button>`}</div>`);
+     <div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button><button class="btn" id="view-record-print">${ICONS.print} Print</button>${isSuperseded?"":`<button class="btn btn-dark" id="view-record-edit">${ICONS.edit} Edit Patient Visit</button>`}</div>`);
   document.getElementById("view-record-print").onclick=()=>printConsultation(c);
   document.getElementById("view-record-edit")?.addEventListener("click",()=>{
     closeModal();
