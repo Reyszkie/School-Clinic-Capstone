@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
     if (!url || !key) throw new Error("Supabase server configuration is missing.");
-    const profileResponse = await fetch(`${url}/rest/v1/clinic_users?username=eq.${encodeURIComponent(username)}&select=id,name,role,username,status,auth_user_id,deleted_at&limit=1`, {
+    const profileResponse = await fetch(`${url}/rest/v1/clinic_users?username=eq.${encodeURIComponent(username)}&select=id,name,role,username,status,auth_user_id,deleted_at,appearance_theme&limit=1`, {
       headers: supabaseHeaders(key),
       cache: "no-store",
     });
@@ -54,7 +54,8 @@ export async function POST(request: Request) {
     const users = (await response.json()) as Array<Record<string, string>>;
     if (users[0]) {
       if (users[0].id !== profile.id) return Response.json({ message: "Invalid username or password." }, { status: 401 });
-      return Response.json(users[0], { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(users[0].id, users[0].name, rememberMe === true) } });
+      const user = { ...users[0], appearanceTheme: profile.appearance_theme || "ocean" };
+      return Response.json(user, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(users[0].id, users[0].name, rememberMe === true) } });
     }
     if (!profile.auth_user_id) {
       return Response.json({ message: "Invalid username or password." }, { status: 401 });
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
     const authResult = (await authResponse.json()) as { user?: { id?: string } };
     if (authResult.user?.id !== profile.auth_user_id) return Response.json({ message: "Invalid username or password." }, { status: 401 });
     const profileName = profile.name || profile.username || "Clinic staff";
-    return Response.json({ id: profile.id, name: profileName, role: profile.role, username: profile.username, status: profile.status }, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(profile.id, profileName, rememberMe === true) } });
+    return Response.json({ id: profile.id, name: profileName, role: profile.role, username: profile.username, status: profile.status, appearanceTheme: profile.appearance_theme || "ocean" }, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(profile.id, profileName, rememberMe === true) } });
   } catch (error) {
     console.error("Unable to authenticate clinic account", error);
     return Response.json({ message: "Clinic account authentication is unavailable." }, { status: 503 });

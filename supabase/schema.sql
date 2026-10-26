@@ -13,12 +13,16 @@ create table if not exists public.clinic_users (
   middle_initial text,
   role text not null check (role in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse')),
   username text not null unique,
+  appearance_theme text not null default 'ocean',
   password_hash text,
   status text not null default 'Active' check (status in ('Active', 'Disabled')),
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.clinic_users
+  add column if not exists appearance_theme text not null default 'ocean';
 
 create table if not exists public.patients (
   id text primary key,
@@ -171,6 +175,35 @@ create table if not exists public.clinical_visits (
   updated_at timestamptz not null default now()
 );
 
+-- Visit outcome is optional clinical information; legacy rows remain unchanged.
+alter table public.clinical_visits
+  alter column outcome drop not null;
+
+create or replace function public.prevent_patient_delete_with_undeleted_visits()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if exists (
+    select 1
+    from public.clinical_visits
+    where patient_id = old.id
+      and deleted_at is null
+      and status <> 'Deleted'
+  ) then
+    raise exception 'Patient records with visits outside Deleted Records cannot be permanently removed.'
+      using errcode = '23503';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists patients_prevent_delete_with_undeleted_visits on public.patients;
+create trigger patients_prevent_delete_with_undeleted_visits
+before delete on public.patients
+for each row execute function public.prevent_patient_delete_with_undeleted_visits();
+
 -- Add the patient link when upgrading installations created before visits were
 -- normalized with a patient_id column.
 alter table public.clinical_visits
@@ -252,11 +285,11 @@ begin
   if v_visit.id is null or v_visit.patient_id is null then
     raise exception 'A visit ID and patient ID are required.';
   end if;
+  if v_visit.visit_date is null or nullif(btrim(v_visit.visit_time), '') is null then
+    raise exception 'A visit date and time are required.';
+  end if;
   if nullif(btrim(v_visit.complaint), '') is null then
     raise exception 'A reason for the clinic visit is required.';
-  end if;
-  if nullif(btrim(v_visit.outcome), '') is null then
-    raise exception 'A clinic disposition outcome is required.';
   end if;
   if v_visit.guardian_contacted is not null
     and v_visit.guardian_contacted not in ('Yes', 'No', 'Not Applicable') then
@@ -472,8 +505,11 @@ begin
   if v_visit.patient_id is distinct from v_previous.patient_id then
     raise exception 'A visit cannot be reassigned to a different patient.';
   end if;
-  if nullif(btrim(v_visit.complaint), '') is null or nullif(btrim(v_visit.outcome), '') is null then
-    raise exception 'A reason for the clinic visit and an outcome are required.';
+  if v_visit.visit_date is null or nullif(btrim(v_visit.visit_time), '') is null then
+    raise exception 'A visit date and time are required.';
+  end if;
+  if nullif(btrim(v_visit.complaint), '') is null then
+    raise exception 'A reason for the clinic visit is required.';
   end if;
   if v_visit.medicine_name = '' then v_visit.medicine_name := null; end if;
   if v_visit.medicine_name is not null and v_visit.medicine_code is null then

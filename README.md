@@ -280,18 +280,19 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 The repository includes a normalized Supabase schema at `supabase/schema.sql`. It creates:
 
-- `clinic_users` for staff accounts and future Supabase Auth user links.
+- `clinic_users` for staff accounts, future Supabase Auth user links, and per-user appearance preferences.
 - `patients` for student and patient profiles.
 - `patients.institutional_category` and `patients.personnel_type` for student classifications and campus personnel records, while retaining legacy `course` and `year_level` columns.
-- `clinical_visits` for consultation records, vital signs, assessments, treatments, outcomes, and visit revisions.
+- `clinical_visits` for consultation records, vital signs, assessments, treatments, optional outcome details, and visit revisions.
 - `clinical_visit_inventory_deductions` for idempotent treatment stock deductions and reversals.
 - `medicines` for medicine stock, expiration dates, and soft deletion. Legacy batch and supplier columns are retained for existing records but are no longer used by the application.
 - `equipment` for medical supply quantities, maintenance dates, statuses, and soft deletion. Legacy equipment and condition data are retained for historical records.
 - `audit_logs` for user actions and module activity.
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
+- `clinic_sync_meta` for normalized-data migration and synchronization state.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields, restores patient profiles from a legacy `students` table or the `clinic_state` snapshot, backfills a missing `clinical_visits.patient_id` from legacy visit links or the snapshot, normalizes known legacy guardian-contact values, and installs the `save_clinical_visit_with_inventory`, `update_clinical_visit_with_inventory`, and `set_clinical_visit_inventory_status` database functions used for separate visit records and inventory updates. If any visit still cannot be linked to an existing patient, the migration stops with the first 20 unresolved visit and patient IDs so they can be restored or corrected without discarding visits. It also removes the obsolete function that created a patient and initial visit together. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations before deploying application changes that use it. It adds the patient classification fields, the per-user `clinic_users.appearance_theme` preference, and allows visit outcome details to be left blank; restores patient profiles from a legacy `students` table or the `clinic_state` snapshot; backfills a missing `clinical_visits.patient_id` from legacy visit links or the snapshot; normalizes known legacy guardian-contact values; and installs the `save_clinical_visit_with_inventory`, `update_clinical_visit_with_inventory`, and `set_clinical_visit_inventory_status` database functions used for separate visit records and inventory updates. A database trigger prevents a patient purge from cascading into visit rows that are not already in Deleted Records. If any visit still cannot be linked to an existing patient, the migration stops with the first 20 unresolved visit and patient IDs so they can be restored or corrected without discarding visits. It also removes the obsolete function that created a patient and initial visit together. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
 `supabase/reset_patient_records.sql` is a destructive reset script. Verify the Supabase project before running it. By default it requires an external backup reference and explicit operator confirmation; proceeding without a backup requires explicitly setting `operator_confirmed_without_backup` and `operator_confirmed` to `true`. That option is irreversible without another backup. The script preserves user accounts and inventory rows and checks their data before committing.
 

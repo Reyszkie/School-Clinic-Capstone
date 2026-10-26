@@ -256,14 +256,16 @@ function normalizeVisitRow(
     typeof row.complaint === "string" ? row.complaint.trim() : "";
   const reasonOther =
     typeof row.reasonOther === "string" ? row.reasonOther.trim() : "";
+  const visitDate = toDateValue(row.date ?? row.visitDate ?? row.visit_date);
+  const visitTime = row.time ?? row.visitTime ?? row.visit_time;
   const outcome = typeof row.outcome === "string" ? row.outcome.trim() : "";
   const guardianContacted = normalizeGuardianContacted(
     row.guardianContacted ?? row.guardian_contacted,
   );
   if (requireOtherReason && !complaint)
     throw new Error("A reason for the clinic visit is required.");
-  if (requireOtherReason && !outcome)
-    throw new Error("A clinic disposition outcome is required.");
+  if (requireOtherReason && (!visitDate || !String(visitTime ?? "").trim()))
+    throw new Error("A visit date and time are required.");
   if (
     requireOtherReason &&
     complaint.toLowerCase() === "other" &&
@@ -294,23 +296,13 @@ function normalizeVisitRow(
       "Medical supply quantity must be a positive whole number when a supply is selected.",
     );
   }
-  if (
-    requireOtherReason &&
-    !["Yes", "No", "Not Applicable"].includes(guardianContacted ?? "")
-  ) {
-    throw new Error(
-      "Parent / Guardian Contacted must be Yes, No, or Not Applicable.",
-    );
-  }
   return {
     id: row.id ?? null,
     patient_id: row.studentId ?? row.patientId ?? row.patient_id ?? null,
     nurse_id: row.nurseId ?? row.nurse_id ?? null,
     nurse_name: row.nurse ?? row.nurseName ?? row.nurse_name ?? "Unknown",
-    visit_date:
-      toDateValue(row.date ?? row.visitDate ?? row.visit_date) ??
-      new Date().toISOString().slice(0, 10),
-    visit_time: row.time ?? row.visitTime ?? row.visit_time ?? "00:00",
+    visit_date: visitDate ?? new Date().toISOString().slice(0, 10),
+    visit_time: String(visitTime ?? "").trim() || "00:00",
     complaint: complaint || "",
     reason_other: complaint.toLowerCase() === "other" ? reasonOther : null,
     description: row.description ?? null,
@@ -349,7 +341,7 @@ function normalizeVisitRow(
     supply_used: supplyName,
     supply_quantity: supplyQuantity,
     dosage: row.dosage ?? null,
-    outcome: outcome || (requireOtherReason ? "" : "Treated and Released"),
+    outcome: outcome || null,
     released_at: row.releasedAt ?? row.released_at ?? null,
     remarks: row.remarks ?? null,
     guardian_contacted: guardianContacted,
@@ -945,6 +937,28 @@ async function purgeRows(
     throw new Error("Permanently delete one record at a time.");
   }
   for (const group of prepared.groups) {
+    if (group.table === "patients") {
+      const linkedVisits = await supabaseRequest(
+        `clinical_visits?patient_id=eq.${encodeURIComponent(String(group.values[0]))}&select=id,status,deleted_at`,
+      );
+      if (!linkedVisits.ok)
+        throw new Error(
+          `Linked patient visits could not be checked before deletion (${linkedVisits.status}).`,
+        );
+      const visits = (await linkedVisits.json()) as Array<{
+        status?: string;
+        deleted_at?: string | null;
+      }>;
+      if (
+        visits.some(
+          (visit) => !visit.deleted_at && visit.status !== "Deleted",
+        )
+      ) {
+        throw new Error(
+          "This patient still has visit records outside Deleted Records. Delete those visits first to prevent losing clinical history.",
+        );
+      }
+    }
     const values = group.values
       .map(
         (value) =>

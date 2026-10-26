@@ -47,13 +47,6 @@ const state = {
     appearanceTheme: "ocean",
   },
 };
-try {
-  const savedTheme = window.localStorage.getItem(
-    "mqc_clinic_appearance_theme_v1",
-  );
-  if (CLINIC_THEMES.some((theme) => theme.id === savedTheme))
-    state.settings.appearanceTheme = savedTheme;
-} catch {}
 function applyClinicTheme(theme = state.settings.appearanceTheme) {
   const selected = CLINIC_THEMES.some((option) => option.id === theme)
     ? theme

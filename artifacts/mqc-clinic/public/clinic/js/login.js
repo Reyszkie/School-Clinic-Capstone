@@ -173,6 +173,7 @@ function openIdentityVerification(user,loginPassword=""){
       return;
     }
     state.currentUser=ensureVisibleClinicUser(user);
+    applyClinicTheme(user.appearanceTheme);
     state.loggedIn=true;
     startClinicRefresh();
     saveAuthSession(user);

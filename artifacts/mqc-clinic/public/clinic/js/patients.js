@@ -663,6 +663,7 @@ function normalizeGuardianContacted(value) {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
+  if (!normalized) return "";
   if (normalized === "yes") return "Yes";
   if (normalized === "no") return "No";
   if (["not applicable", "not applical", "n/a", "na"].includes(normalized))
@@ -716,7 +717,7 @@ function openConsultationForm(student, existing = null) {
       outcome: "",
       releasedAt: "",
       remarks: "",
-      guardianContacted: "Not Applicable",
+      guardianContacted: "",
       guardianMethod: "phone call",
       personContacted: "",
       staffRecord: state.currentUser.name,
@@ -804,7 +805,7 @@ function openConsultationForm(student, existing = null) {
     <div class="f-field"><label>Pain Level</label><select id="cf-pain">${["0 – No pain", "1–3 – Mild", "4–6 – Moderate", "7–9 – Severe", "10 – Worst possible pain"].map((x) => `<option ${f.painLevel === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
     <div class="f-field full"><label>Medical History</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
       <label>Known Medical Conditions<select id="cf-conditions"><option>No</option><option ${f.knownConditions === "Yes" ? "selected" : ""}>Yes</option></select></label>
-      <label><span>Allergies</span><select id="cf-allergies" required><option value="">Select</option><option value="Yes" ${allergyAnswer === "Yes" ? "selected" : ""}>Yes</option><option value="No" ${allergyAnswer === "No" ? "selected" : ""}>No</option></select></label>
+      <label><span>Allergies</span><select id="cf-allergies"><option value="">Not recorded</option><option value="Yes" ${allergyAnswer === "Yes" ? "selected" : ""}>Yes</option><option value="No" ${allergyAnswer === "No" ? "selected" : ""}>No</option></select></label>
       <label>Current Medication<select id="cf-current-med"><option>No</option><option ${f.currentMedication === "Yes" ? "selected" : ""}>Yes</option></select></label>
     </div></div>
     <div class="f-field full"><label>Vital Signs</label><div class="vital-signs-grid">
@@ -820,10 +821,10 @@ function openConsultationForm(student, existing = null) {
       ${visitInventoryCard({ id: "cf-medicine", label: "Medicines", items: meds, selected: selectedMedicine?.code || f.medicine, quantityId: "cf-medqty", quantity: f.medQty, unitForItem: (item) => item.unit || "unit(s)", availableForItem: medicineAvailable })}
       ${visitInventoryCard({ id: "cf-supply", label: "Medical Supplies", items: supplies, selected: selectedSupply?.id || existingSupply, quantityId: "cf-supply-qty", quantity: f.supplyQty, unitForItem: () => "items", availableForItem: equipmentAvailable })}
     </div></div>
-    <div class="f-field full"><label>Clinic Disposition — Outcome <span class="req">*</span></label><select id="cf-outcome" required><option value="">Select Outcome</option>${DISPOSITIONS.map((x) => `<option ${f.outcome === x ? "selected" : ""}>${x}</option>`).join("")}<option ${f.outcome === "Other" ? "selected" : ""}>Other</option></select></div>
+    <div class="f-field full"><label>Clinic Disposition — Outcome</label><select id="cf-outcome"><option value="">Not recorded</option>${DISPOSITIONS.map((x) => `<option ${f.outcome === x ? "selected" : ""}>${x}</option>`).join("")}<option ${f.outcome === "Other" ? "selected" : ""}>Other</option></select></div>
     <div class="f-field full"><label>Remarks</label><textarea id="cf-remarks">${escapeHtml(f.remarks || "")}</textarea></div>
     <div class="f-field full"><label>Parent / Guardian Notification</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-      <label>Contacted?<select id="cf-guardian-contacted"><option ${contactedValue === "Yes" ? "selected" : ""}>Yes</option><option ${contactedValue === "No" ? "selected" : ""}>No</option><option ${contactedValue === "Not Applicable" ? "selected" : ""}>Not Applicable</option></select></label>
+      <label>Contacted?<select id="cf-guardian-contacted"><option value="" ${!contactedValue ? "selected" : ""}>Not recorded</option><option ${contactedValue === "Yes" ? "selected" : ""}>Yes</option><option ${contactedValue === "No" ? "selected" : ""}>No</option><option ${contactedValue === "Not Applicable" ? "selected" : ""}>Not Applicable</option></select></label>
       <label>Method<select id="cf-guardian-method">${[
         ["not applicable", "Not Applicable"],
         ["phone call", "Phone Call"],
@@ -923,25 +924,7 @@ function openConsultationForm(student, existing = null) {
       );
       return;
     }
-    if (!allergyAnswerValue) {
-      allergySelect.focus();
-      toast(
-        "Missing information",
-        "Please answer the allergy question.",
-        "err",
-      );
-      return;
-    }
     const outcome = document.getElementById("cf-outcome").value;
-    if (!outcome) {
-      document.getElementById("cf-outcome").focus();
-      toast(
-        "Missing information",
-        "Please select a clinic disposition outcome.",
-        "err",
-      );
-      return;
-    }
     const medicineKey = document.getElementById("cf-medicine").value,
       medQty = Number(document.getElementById("cf-medqty").value),
       med =
@@ -1024,8 +1007,11 @@ function openConsultationForm(student, existing = null) {
       symptomStart: document.getElementById("cf-start").value,
       painLevel: document.getElementById("cf-pain").value,
       knownConditions: document.getElementById("cf-conditions").value,
-      allergiesHistory:
-        allergyAnswerValue === "Yes" ? allergyHistory || "Yes" : "No",
+      allergiesHistory: allergyAnswerValue
+        ? allergyAnswerValue === "Yes"
+          ? allergyHistory || "Yes"
+          : "No"
+        : null,
       currentMedication: document.getElementById("cf-current-med").value,
       temp: document.getElementById("cf-temp").value,
       bp: document.getElementById("cf-bp").value,
@@ -1076,14 +1062,16 @@ function openConsultationForm(student, existing = null) {
       previousAllergies = student.allergies;
       if (isEdit) reverseVisitInventoryUsage(previous);
       applyVisitInventoryUsage(rec, previous);
-      student.allergies =
-        allergyAnswerValue === "Yes"
-          ? patientAllergyStatus(student.allergies).status === "unassessed"
-            ? "Allergies reported"
-            : student.allergies
-          : patientAllergyStatus(student.allergies).status === "unassessed"
-            ? "No Known Allergies"
-            : student.allergies;
+      if (allergyAnswerValue) {
+        student.allergies =
+          allergyAnswerValue === "Yes"
+            ? patientAllergyStatus(student.allergies).status === "unassessed"
+              ? "Allergies reported"
+              : student.allergies
+            : patientAllergyStatus(student.allergies).status === "unassessed"
+              ? "No Known Allergies"
+              : student.allergies;
+      }
       if (isEdit) Object.assign(previous, rec);
       else CONSULTATIONS.unshift(rec);
       await saveVisitToClinicState(

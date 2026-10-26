@@ -1136,6 +1136,21 @@ function bindDeletedTab() {
         const relatedVisits = CONSULTATIONS.filter(
           (visit) => visit.studentId === record.id,
         );
+        if (
+          relatedVisits.some(
+            (visit) =>
+              !visit.deleted &&
+              !visit.deletedAt &&
+              visit.status !== "Deleted",
+          )
+        ) {
+          toast(
+            "Patient cannot be permanently deleted",
+            "Move all linked clinical visits to Deleted Records first so active clinical history is not removed.",
+            "err",
+          );
+          return;
+        }
         const relatedText = relatedVisits.length
           ? ` and ${relatedVisits.length} related patient visit${relatedVisits.length === 1 ? "" : "s"}`
           : "";

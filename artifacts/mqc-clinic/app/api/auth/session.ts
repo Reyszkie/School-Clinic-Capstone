@@ -5,7 +5,7 @@ const SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 const REMEMBERED_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 type ClinicSession = { userId: string; userName: string; expiresAt: number };
-export type ActiveClinicSession = ClinicSession & { role: string; username: string };
+export type ActiveClinicSession = ClinicSession & { role: string; username: string; appearanceTheme: string };
 
 export function hasClinicAdminPrivileges(role: string) {
   return role === "Head Nurse" || role === "Head Nurse & Administrator";
@@ -65,13 +65,13 @@ export async function readActiveClinicSession(request: Request): Promise<ActiveC
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) throw new Error("Supabase server configuration is missing.");
 
-  const profileResponse = await fetch(`${url}/rest/v1/clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&deleted_at=is.null&select=id,name,role,username&limit=1`, {
+  const profileResponse = await fetch(`${url}/rest/v1/clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&deleted_at=is.null&select=id,name,role,username,appearance_theme&limit=1`, {
     headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     cache: "no-store",
   });
   if (!profileResponse.ok) throw new Error(`Clinic session validation returned ${profileResponse.status}`);
-  const profiles = await profileResponse.json() as Array<{ id?: string; name?: string; role?: string; username?: string }>;
+  const profiles = await profileResponse.json() as Array<{ id?: string; name?: string; role?: string; username?: string; appearance_theme?: string }>;
   const profile = profiles[0];
   if (!profile?.id || !profile.username) return null;
-  return { ...session, userName: profile.name || session.userName, role: profile.role || "Staff Nurse", username: profile.username };
+  return { ...session, userName: profile.name || session.userName, role: profile.role || "Staff Nurse", username: profile.username, appearanceTheme: profile.appearance_theme || "ocean" };
 }

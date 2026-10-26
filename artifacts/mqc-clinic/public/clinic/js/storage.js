@@ -22,6 +22,8 @@ function setSyncStatus(label, stateName = "idle") {
 
 function snapshotData(includeAuditLogs = true) {
   ensureInventoryLedger();
+  const clinicSettings = { ...state.settings };
+  delete clinicSettings.appearanceTheme;
   const normalizedAuditLogs = (AUDIT_LOGS || []).map((log) => ({
     ...log,
     timestamp: normalizeAuditTimestamp(log),
@@ -47,7 +49,7 @@ function snapshotData(includeAuditLogs = true) {
     deletedUsers: DELETED_USERS,
     purged: PURGED_RECORDS,
     users: [...state.users, ...DELETED_USERS],
-    settings: state.settings,
+    settings: clinicSettings,
     inventoryCatalogVersion: INVENTORY_CATALOG_VERSION,
     savedAt: new Date(
       new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }),
@@ -692,13 +694,8 @@ function applyStoredData(data) {
   if (Array.isArray(data.users)) state.users = data.users;
   if (data.settings && typeof data.settings === "object")
     state.settings = { ...state.settings, ...data.settings };
-  try {
-    const savedTheme = window.localStorage.getItem(
-      "mqc_clinic_appearance_theme_v1",
-    );
-    if (CLINIC_THEMES.some((theme) => theme.id === savedTheme))
-      state.settings.appearanceTheme = savedTheme;
-  } catch {}
+  if (state.currentUser?.appearanceTheme)
+    applyClinicTheme(state.currentUser.appearanceTheme);
   ensureInventoryLedger();
   return migratedInventory;
 }
@@ -850,6 +847,7 @@ async function restoreAuthSession() {
     ensureVisibleClinicUser(user);
     state.currentUser = user;
     state.loggedIn = true;
+    applyClinicTheme(user.appearanceTheme);
     return true;
   } catch (err) {
     console.warn("MQC Clinic: couldn't restore the login session.", err);

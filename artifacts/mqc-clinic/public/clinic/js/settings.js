@@ -20,11 +20,20 @@ function renderSettings(){
 }
 function bindSettings(){
   document.getElementById("appearance-theme")?.addEventListener("change",async event=>{
-    applyClinicTheme(event.target.value);
-    try{window.localStorage.setItem("mqc_clinic_appearance_theme_v1",state.settings.appearanceTheme);}catch{}
-    try{await saveToClinicState(true);}
-    catch(error){toast("Theme applied on this device","The theme is active and saved locally, but shared sync failed: "+(error.message||"Unable to sync the selected theme."),"err");return;}
-    try{await logAudit(`Appearance Theme Changed — ${state.settings.appearanceTheme}`,"Settings","Success",false,true);toast("Appearance updated","Your color theme has been saved.","ok");}
+    const select=event.target,previousTheme=state.settings.appearanceTheme,nextTheme=select.value;
+    applyClinicTheme(nextTheme);
+    try{
+      const response=await fetch("/api/auth/session",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({appearanceTheme:nextTheme})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.message||"Unable to save the selected theme.");
+      state.currentUser.appearanceTheme=result.appearanceTheme;
+    }catch(error){
+      applyClinicTheme(previousTheme);
+      select.value=previousTheme;
+      toast("Theme not saved",error.message||"Unable to save the selected theme.","err");
+      return;
+    }
+    try{await logAudit(`Appearance Theme Changed — ${nextTheme}`,"Settings","Success",false,true);toast("Appearance updated","Your color theme has been saved to your account.","ok");}
     catch{toast("Appearance saved; audit sync failed","The theme was saved, but its audit entry could not be recorded.","err");}
   });
   document.getElementById("backup-btn")?.addEventListener("click",async()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);try{await logAudit("Clinic Data Backup Exported","Settings","Success",false,true);toast("Backup created","A JSON backup of clinic records was downloaded.","ok");}catch{toast("Backup created; audit sync failed","The backup downloaded, but its audit entry could not be recorded.","err");}});
