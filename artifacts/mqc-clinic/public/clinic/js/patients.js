@@ -211,16 +211,15 @@ function openStudentForm(existing=null){
         id:uid("CS"),date:document.getElementById("iv-date").value,time:document.getElementById("iv-time").value,
         nurse:state.currentUser.name,nurseId:state.currentUser.id,studentId:rec.id,studentName:rec.name,course:rec.course,year:rec.personnelType||rec.year,
         complaint,reasonOther:complaint==="Other"?reasonValue:"",description:"",
-        symptomStart:document.getElementById("iv-start").value,painLevel:document.getElementById("iv-pain").value,painLocation:document.getElementById("iv-pain-location").value,
-        symptoms:selectedChecks('[data-check-group="initial-symptoms"]'),knownConditions:document.getElementById("iv-conditions").value||"No",
+        symptomStart:document.getElementById("iv-start").value,painLevel:document.getElementById("iv-pain").value,
+        knownConditions:document.getElementById("iv-conditions").value||"No",
         allergiesHistory:allergyAnswer==="Yes"?`Yes: ${allergyDetail}`:"No",currentMedication:document.getElementById("iv-current-med").value||"No",
-        previousSimilar:document.getElementById("iv-previous").value,lastMeal:document.getElementById("iv-last-meal").value,
         weight:"",height:"",temp:document.getElementById("iv-temp").value,bp:document.getElementById("iv-bp").value,pulse:document.getElementById("iv-pulse").value,
         respiratoryRate:document.getElementById("iv-respiratory-rate").value,spo2:document.getElementById("iv-spo2").value,
-        interventions,treatmentGiven:document.getElementById("iv-treatment-given").value,dosage:document.getElementById("iv-dosage").value,
+        interventions,
         medicine:medicineName,medicineCode:medicine?.code||null,medQty:Number(document.getElementById("iv-medqty").value),
         supplyUsed:supplyName,supplyItemId:supply?.id||null,supplyQty:Number(document.getElementById("iv-supply-qty").value),
-        equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("iv-outcome").value,releasedAt:document.getElementById("iv-released-at").value,
+        equipmentUsed:[],equipmentQty:1,outcome:document.getElementById("iv-outcome").value,
         remarks:document.getElementById("iv-remarks").value,guardianContacted:document.getElementById("iv-guardian-contacted").value,
         guardianMethod:document.getElementById("iv-guardian-method").value,personContacted:document.getElementById("iv-person").value,
         staffRecord:state.currentUser.name,position:state.currentUser.role||"Staff Nurse",followUp:"No",status:"Active",deleted:false,revision:1,createdAt:new Date().toISOString(),
@@ -283,12 +282,11 @@ function bindSelectButtons(){
 }
 
 function initialPatientVisitHasDetails(){
-  const textFields=["iv-reason","iv-start","iv-pain-location","iv-allergy-detail","iv-last-meal","iv-temp","iv-pulse","iv-respiratory-rate","iv-bp","iv-spo2","iv-treatment-given","iv-dosage","iv-released-at","iv-outcome","iv-remarks","iv-person"];
-  const selectFields=["iv-pain","iv-conditions","iv-allergies","iv-current-med","iv-previous","iv-medicine","iv-supply"];
+  const textFields=["iv-reason","iv-start","iv-allergy-detail","iv-temp","iv-pulse","iv-respiratory-rate","iv-bp","iv-spo2","iv-remarks","iv-person"];
+  const selectFields=["iv-pain","iv-conditions","iv-allergies","iv-current-med","iv-medicine","iv-supply"];
   return textFields.some(id=>Boolean(document.getElementById(id)?.value.trim()))
     ||selectFields.some(id=>Boolean(document.getElementById(id)?.value))
     ||document.getElementById("iv-guardian-contacted")?.value!=="Not Applicable"
-    ||selectedChecks('[data-check-group="initial-symptoms"]').length>0
     ||selectedChecks('[data-check-group="initial-intervention"]').length>0
     ||Boolean(document.querySelector('[data-free-text="initial-intervention-other"]')?.value.trim());
 }
@@ -296,23 +294,17 @@ function initialPatientVisitHasDetails(){
 function initialPatientVisitSection(){
   const meds=MEDICINES.filter(m=>!m.deleted&&!medicineIsExpired(m));
   const supplies=EQUIPMENT.filter(item=>VISIT_SUPPLY_NAMES.includes(item.name)&&!item.deleted&&item.status==="Available"&&Number(item.qty)>0);
-  return `<section class="f-field full initial-visit-section">
-    <div class="initial-visit-heading"><h4>Initial Clinical Visit (Optional)</h4><p>Leave the clinical fields blank to register the patient without a visit. A separate visit record is created when clinical details are entered.</p></div>
-    <div class="form-grid initial-visit-grid">
+  return `<div class="form-grid full initial-visit-grid">
       <div class="f-field"><label for="iv-date">Visit Date</label><input type="date" id="iv-date" value="${todayDateString()}"></div>
       <div class="f-field"><label for="iv-time">Visit Time</label><input id="iv-time" value="${escapeHtml(currentTimeString())}"></div>
       <div class="f-field"><label for="iv-nurse">Nurse on Duty</label><input id="iv-nurse" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
       <div class="f-field full"><label for="iv-reason">Reason for Clinic Visit</label><input id="iv-reason" list="iv-reasons" maxlength="300" placeholder="Select or enter a reason"><datalist id="iv-reasons">${COMPLAINTS.map(reason=>`<option value="${escapeHtml(reason)}">`).join("")}<option value="Other"></datalist></div>
       <div class="f-field"><label for="iv-start">When Did Symptoms Start?</label><input id="iv-start" placeholder="e.g. this morning"></div>
       <div class="f-field"><label for="iv-pain">Pain Level</label><select id="iv-pain"><option value="">Select Pain Level</option>${["0 – No pain","1–3 – Mild","4–6 – Moderate","7–9 – Severe","10 – Worst possible pain"].map(value=>`<option>${value}</option>`).join("")}</select></div>
-      <div class="f-field"><label for="iv-pain-location">Pain Location</label><input id="iv-pain-location"></div>
-      <div class="f-field full"><label>Symptoms</label>${optionListHtml(SYMPTOMS,[],"initial-symptoms")}</div>
       <div class="f-field full"><label>Medical History</label><div class="initial-visit-subgrid">
         <label>Known Medical Conditions<select id="iv-conditions"><option value="">Select</option><option>No</option><option>Yes</option></select></label>
         <div><label for="iv-allergies">Allergies</label><select id="iv-allergies"><option value="">Select</option><option>Yes</option><option>No</option></select><label for="iv-allergy-detail">Allergy Details</label><input id="iv-allergy-detail" maxlength="500" autocomplete="off" placeholder="Required when Yes is selected"></div>
         <label>Current Medication<select id="iv-current-med"><option value="">Select</option><option>No</option><option>Yes</option></select></label>
-        <label>Previous Similar Symptoms<select id="iv-previous"><option value="">Select</option><option>No</option><option>Yes</option></select></label>
-        <label>Last Meal / Food<input id="iv-last-meal"></label>
       </div></div>
       <div class="f-field full"><label>Vital Signs</label><div class="vital-signs-grid">
         <label>Body Temperature (°C)<input type="number" min="25" max="50" step="0.1" id="iv-temp" placeholder="e.g. 36.8"></label>
@@ -322,11 +314,10 @@ function initialPatientVisitSection(){
         <label>Oxygen Saturation (SpO2, %)<input type="number" min="0" max="100" id="iv-spo2" placeholder="e.g. 98"></label>
       </div></div>
       <div class="f-field full"><label>Treatment / Intervention</label>${optionListHtml(INTERVENTIONS,[],"initial-intervention")}<label class="option-check"><input type="checkbox" data-free-text-toggle="initial-intervention-other"><span>Other</span></label><input class="option-free-text hidden" data-free-text="initial-intervention-other" placeholder="Enter other intervention"></div>
-      <div class="f-field full"><label>Treatment Given</label><textarea id="iv-treatment-given" placeholder="Describe treatment provided"></textarea></div>
-      <div class="f-field full visit-treatment-group"><h4>Treatment Items</h4><div class="visit-inventory-grid">
+      <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
         ${visitInventoryCard({id:"iv-medicine",label:"Medicines",items:meds,selected:"",quantityId:"iv-medqty",quantity:1,unitForItem:item=>item.unit||"unit(s)",availableForItem:item=>Number(item.qty)||0})}
         ${visitInventoryCard({id:"iv-supply",label:"Medical Supplies",items:supplies,selected:"",quantityId:"iv-supply-qty",quantity:1,unitForItem:()=>"items",availableForItem:item=>Number(item.qty)||0})}
-      </div><div class="initial-visit-subgrid"><label>Dosage / Instructions<input id="iv-dosage"></label><label>Time Released / Referred<input id="iv-released-at"></label></div></div>
+      </div></div>
       <div class="f-field full"><label for="iv-outcome">Clinic Disposition — Outcome</label><select id="iv-outcome"><option value="">Select Outcome</option>${DISPOSITIONS.map(value=>`<option>${value}</option>`).join("")}<option>Other</option></select></div>
       <div class="f-field full"><label for="iv-remarks">Remarks</label><textarea id="iv-remarks"></textarea></div>
       <div class="f-field full"><label>Parent / Guardian Notification</label><div class="initial-visit-subgrid">
@@ -337,7 +328,7 @@ function initialPatientVisitSection(){
       <div class="f-field"><label>Clinic Staff Record</label><input id="iv-staff" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
       <div class="f-field"><label>Position</label><input id="iv-position" value="${escapeHtml(state.currentUser.role||"Staff Nurse")}" readonly aria-readonly="true"></div>
     </div>
-  </section>`;
+  </div>`;
 }
 
 function openStudentDetailModal(student){

@@ -917,10 +917,7 @@ tbody tr:hover{background:#F7FBFB;}
 .modal-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:26px;}
 .modal.user-details-modal .modal-body{flex:0 1 auto;overflow:visible;}
 .modal-foot{flex:0 0 auto;padding:17px 26px;gap:11px;position:relative;}
-.initial-visit-section{padding:16px;border:1px solid var(--line);border-radius:12px;background:#FAFCFD;}
-.initial-visit-heading h4{margin:0 0 5px;color:var(--navy-deep);}
-.initial-visit-heading p{margin:0;color:var(--ink-soft);font-size:12px;line-height:1.5;}
-.initial-visit-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:15px;}
+.initial-visit-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
 .initial-visit-subgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
 .initial-visit-subgrid>label,.initial-visit-subgrid>div{min-width:0;font-size:12px;font-weight:600;color:var(--navy-deep);}
 .initial-visit-subgrid input,.initial-visit-subgrid select{width:100%;margin-top:5px;}
