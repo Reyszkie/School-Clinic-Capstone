@@ -327,8 +327,7 @@ function initialPatientVisitSection(){
       </div></div>
       <div class="f-field"><label>Clinic Staff Record</label><input id="iv-staff" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
       <div class="f-field"><label>Position</label><input id="iv-position" value="${escapeHtml(state.currentUser.role||"Staff Nurse")}" readonly aria-readonly="true"></div>
-    </div>
-  </div>`;
+    </div>`;
 }
 
 function openStudentDetailModal(student){
