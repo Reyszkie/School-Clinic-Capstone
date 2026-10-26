@@ -951,6 +951,177 @@ create table if not exists public.clinic_sync_meta (
   updated_at timestamptz not null default now()
 );
 
+-- Migrate rows from installations that stored patient profiles in public.students.
+do $$
+begin
+  if to_regclass('public.students') is not null then
+    execute $migration$
+      insert into public.patients (
+        id, last_name, first_name, middle_initial, name, course, year_level,
+        institutional_category, personnel_type, gender, age, contact,
+        guardian_name, guardian_contact, allergies, medical_conditions, symptoms,
+        deleted_at, deleted_by, updated_at
+      )
+      select
+        patient_id,
+        coalesce(nullif(patient->>'lastName', ''), nullif(patient->>'last_name', ''),
+          split_part(coalesce(nullif(patient->>'name', ''), 'Unknown Patient'), ',', 1)),
+        coalesce(nullif(patient->>'firstName', ''), nullif(patient->>'first_name', ''),
+          case when position(',' in coalesce(patient->>'name', '')) > 0
+            then nullif(btrim(split_part(patient->>'name', ',', 2)), '')
+            else nullif(patient->>'name', '') end, 'Unknown'),
+        coalesce(nullif(patient->>'middleInitial', ''), nullif(patient->>'middle_initial', '')),
+        coalesce(nullif(patient->>'name', ''), 'Unknown Patient'),
+        coalesce(nullif(patient->>'course', ''), nullif(patient->>'institutionalCategory', ''),
+          nullif(patient->>'institutional_category', ''), 'Not recorded'),
+        coalesce(nullif(patient->>'year', ''), nullif(patient->>'yearLevel', ''),
+          nullif(patient->>'year_level', ''), nullif(patient->>'personnelType', ''),
+          nullif(patient->>'personnel_type', ''), 'Not recorded'),
+        coalesce(nullif(patient->>'institutionalCategory', ''),
+          nullif(patient->>'institutional_category', ''), nullif(patient->>'course', ''),
+          'Not recorded'),
+        coalesce(nullif(patient->>'personnelType', ''), nullif(patient->>'personnel_type', '')),
+        coalesce(nullif(patient->>'gender', ''), nullif(patient->>'sex', '')),
+        case when coalesce(patient->>'age', '') ~ '^[0-9]{1,3}$'
+          and (patient->>'age')::numeric between 0 and 120
+          then (patient->>'age')::integer else null end,
+        coalesce(nullif(patient->>'contact', ''), nullif(patient->>'phone', '')),
+        coalesce(nullif(patient->>'guardianName', ''), nullif(patient->>'guardian_name', '')),
+        coalesce(nullif(patient->>'guardianContact', ''), nullif(patient->>'guardian_contact', '')),
+        coalesce(nullif(patient->>'allergies', ''), 'Not Yet Assessed'),
+        coalesce(nullif(patient->>'conditions', ''), nullif(patient->>'medicalConditions', ''),
+          nullif(patient->>'medical_conditions', ''), 'None'),
+        case when jsonb_typeof(patient->'symptoms') = 'array'
+          then patient->'symptoms' else '[]'::jsonb end,
+        case when lower(coalesce(patient->>'deleted', 'false')) = 'true'
+          or patient->>'status' = 'Deleted' then now() else null end,
+        coalesce(nullif(patient->>'deletedBy', ''), nullif(patient->>'deleted_by', '')),
+        now()
+      from (
+        select to_jsonb(students) as patient,
+          coalesce(
+            nullif(to_jsonb(students)->>'id', ''),
+            nullif(to_jsonb(students)->>'patient_id', ''),
+            nullif(to_jsonb(students)->>'student_id', '')
+          ) as patient_id
+        from public.students as students
+      ) as legacy_students
+      where patient_id is not null
+      on conflict (id) do nothing
+    $migration$;
+  end if;
+end;
+$$;
+
+-- Restore patient profiles from the legacy snapshot before linking visits.
+with snapshot_patient_rows as (
+  select entries.patient
+  from public.clinic_state as snapshots
+  cross join lateral (
+    select value as patient
+    from jsonb_array_elements(
+      case when jsonb_typeof(snapshots.state->'students') = 'array'
+        then snapshots.state->'students' else '[]'::jsonb end
+    )
+    union all
+    select value as patient
+    from jsonb_array_elements(
+      case when jsonb_typeof(snapshots.state->'patients') = 'array'
+        then snapshots.state->'patients' else '[]'::jsonb end
+    )
+    union all
+    select value as patient
+    from jsonb_array_elements(
+      case when jsonb_typeof(snapshots.state->'deletedStudents') = 'array'
+        then snapshots.state->'deletedStudents' else '[]'::jsonb end
+    )
+  ) as entries
+),
+patient_rows as (
+  select distinct on (nullif(patient->>'id', ''))
+    patient,
+    coalesce(
+      nullif(patient->>'lastName', ''),
+      nullif(patient->>'last_name', ''),
+      split_part(coalesce(nullif(patient->>'name', ''), 'Unknown Patient'), ',', 1)
+    ) as last_name,
+    coalesce(
+      nullif(patient->>'firstName', ''),
+      nullif(patient->>'first_name', ''),
+      case
+        when position(',' in coalesce(patient->>'name', '')) > 0
+          then nullif(btrim(split_part(patient->>'name', ',', 2)), '')
+        else nullif(patient->>'name', '')
+      end,
+      'Unknown'
+    ) as first_name
+  from snapshot_patient_rows
+  where nullif(patient->>'id', '') is not null
+  order by nullif(patient->>'id', ''),
+    case when lower(coalesce(patient->>'deleted', 'false')) = 'true'
+      or patient->>'status' = 'Deleted' then 1 else 0 end desc
+)
+insert into public.patients (
+  id, last_name, first_name, middle_initial, name, course, year_level,
+  institutional_category, personnel_type, gender, age, contact,
+  guardian_name, guardian_contact, allergies, medical_conditions, symptoms,
+  deleted_at, deleted_by, updated_at
+)
+select
+  patient->>'id',
+  last_name,
+  first_name,
+  coalesce(nullif(patient->>'middleInitial', ''), nullif(patient->>'middle_initial', '')),
+  coalesce(nullif(patient->>'name', ''), concat_ws(', ', last_name, first_name)),
+  coalesce(
+    nullif(patient->>'course', ''),
+    nullif(patient->>'institutionalCategory', ''),
+    nullif(patient->>'institutional_category', ''),
+    'Not recorded'
+  ),
+  coalesce(
+    nullif(patient->>'year', ''),
+    nullif(patient->>'yearLevel', ''),
+    nullif(patient->>'year_level', ''),
+    nullif(patient->>'personnelType', ''),
+    nullif(patient->>'personnel_type', ''),
+    'Not recorded'
+  ),
+  coalesce(
+    nullif(patient->>'institutionalCategory', ''),
+    nullif(patient->>'institutional_category', ''),
+    nullif(patient->>'course', ''),
+    'Not recorded'
+  ),
+  coalesce(nullif(patient->>'personnelType', ''), nullif(patient->>'personnel_type', '')),
+  coalesce(nullif(patient->>'gender', ''), nullif(patient->>'sex', '')),
+  case
+    when coalesce(patient->>'age', '') ~ '^[0-9]{1,3}$'
+      and (patient->>'age')::numeric between 0 and 120
+      then (patient->>'age')::integer
+    else null
+  end,
+  coalesce(nullif(patient->>'contact', ''), nullif(patient->>'phone', '')),
+  coalesce(nullif(patient->>'guardianName', ''), nullif(patient->>'guardian_name', '')),
+  coalesce(nullif(patient->>'guardianContact', ''), nullif(patient->>'guardian_contact', '')),
+  coalesce(nullif(patient->>'allergies', ''), 'Not Yet Assessed'),
+  coalesce(
+    nullif(patient->>'conditions', ''),
+    nullif(patient->>'medicalConditions', ''),
+    nullif(patient->>'medical_conditions', ''),
+    'None'
+  ),
+  case when jsonb_typeof(patient->'symptoms') = 'array' then patient->'symptoms' else '[]'::jsonb end,
+  case
+    when lower(coalesce(patient->>'deleted', 'false')) = 'true'
+      or patient->>'status' = 'Deleted' then now()
+    else null
+  end,
+  coalesce(nullif(patient->>'deletedBy', ''), nullif(patient->>'deleted_by', '')),
+  now()
+from patient_rows
+on conflict (id) do nothing;
+
 -- Preserve patient links from older normalized schemas and the legacy snapshot.
 do $$
 begin
@@ -992,14 +1163,28 @@ where visits.patient_id is null
   );
 
 do $$
+declare
+  v_unlinked_visits text;
 begin
-  if exists (
-    select 1
+  select string_agg(
+    format('visit_id=%s, patient_id=%s', visit_id, patient_id),
+    '; ' order by visit_id
+  )
+  into v_unlinked_visits
+  from (
+    select
+      visits.id as visit_id,
+      coalesce(visits.patient_id, '<NULL>') as patient_id
     from public.clinical_visits as visits
     left join public.patients as patients on patients.id = visits.patient_id
     where visits.patient_id is null or patients.id is null
-  ) then
-    raise exception 'Cannot migrate clinical visit patient links: one or more visits have no matching patient. Restore the patient records or update those visit links, then rerun supabase/schema.sql.';
+    order by visits.id
+    limit 20
+  ) as unlinked;
+
+  if v_unlinked_visits is not null then
+    raise exception 'Cannot migrate clinical visit patient links. First unresolved records (up to 20): %. Restore each patient profile or correct each visit patient_id, then rerun supabase/schema.sql.',
+      v_unlinked_visits;
   end if;
 end;
 $$;
