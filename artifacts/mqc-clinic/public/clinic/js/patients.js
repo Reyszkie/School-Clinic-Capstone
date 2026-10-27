@@ -1075,7 +1075,7 @@ function openConsultationForm(student, existing = null) {
       pulse: document.getElementById("cf-pulse").value,
       spo2: document.getElementById("cf-spo2").value,
       interventions,
-      medicine: medName,
+      medicine: medName || null,
       medicineCode: med?.code || null,
       medQty,
       supplyUsed: supplyName,

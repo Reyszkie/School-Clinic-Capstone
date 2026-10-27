@@ -247,8 +247,16 @@ function normalizeVisitRow(
   row: Record<string, unknown>,
   requireOtherReason = false,
 ) {
-  const medicineName =
+  const rawMedicineName =
     row.medicine ?? row.medicineName ?? row.medicine_name ?? null;
+  const medicineName =
+    typeof rawMedicineName === "string"
+      ? rawMedicineName.trim() || null
+      : null;
+  const rawMedicineCode = row.medicineCode ?? row.medicine_code ?? null;
+  const medicineCode = medicineName
+    ? String(rawMedicineCode ?? "").trim() || null
+    : null;
   const medicineQuantity = toNumber(
     row.medQty ?? row.medicineQuantity ?? row.medicine_quantity,
   );
@@ -332,7 +340,7 @@ function normalizeVisitRow(
     notes: row.notes ?? null,
     interventions: Array.isArray(row.interventions) ? row.interventions : [],
     treatment_given: row.treatmentGiven ?? row.treatment_given ?? null,
-    medicine_code: row.medicineCode ?? row.medicine_code ?? null,
+    medicine_code: medicineCode,
     medicine_name: medicineName,
     medicine_quantity: medicineName ? medicineQuantity : null,
     supply_item_id: supplyItemId,
@@ -2030,7 +2038,7 @@ export async function PUT(request: Request) {
             return "The visit could not be saved.";
           }
         })();
-        const insufficientStock = /available|stock|inventory/i.test(message);
+        const insufficientStock = /available|stock|insufficient/i.test(message);
         return Response.json(
           { message },
           {
@@ -2134,7 +2142,7 @@ export async function PUT(request: Request) {
         return Response.json(
           { message },
           {
-            status: /inventory|stock|available/i.test(message) ? 409 : 400,
+            status: /available|stock|insufficient/i.test(message) ? 409 : 400,
             headers: { "Cache-Control": "no-store" },
           },
         );
