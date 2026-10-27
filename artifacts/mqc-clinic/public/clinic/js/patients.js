@@ -782,6 +782,20 @@ function openConsultationForm(student, existing = null) {
       f.medicineCode = medicine.code;
     }
   }
+  if (isEdit && (f.supplyUsed || f.supplyItemId)) {
+    const supply = EQUIPMENT.find(
+      (item) =>
+        item.category === "Medical Supplies" &&
+        !item.deleted &&
+        item.status === "Available" &&
+        (item.id === f.supplyItemId ||
+          item.name.trim().toLowerCase() ===
+            String(f.supplyUsed || "").trim().toLowerCase()),
+    );
+    f.supplyUsed = supply?.name || "";
+    f.supplyItemId = supply?.id || null;
+    if (!supply) f.supplyQty = 0;
+  }
   const allergyHistory = String(f.allergiesHistory || "");
   const allergyAnswer = /^yes\b/i.test(allergyHistory)
     ? "Yes"
@@ -794,21 +808,7 @@ function openConsultationForm(student, existing = null) {
   const returnedInventory = isEdit
     ? activeVisitInventoryTransactions(existing.id)
     : [];
-  const historicalEquipment = Array.isArray(f.equipmentUsed)
-    ? f.equipmentUsed
-    : f.equipmentUsed
-      ? [f.equipmentUsed]
-      : [];
-  const existingSupply =
-    f.supplyUsed ||
-    historicalEquipment.find((value) =>
-      EQUIPMENT.some(
-        (item) =>
-          (item.id === value || item.name === value) &&
-          item.category === "Medical Supplies",
-      ),
-    ) ||
-    "";
+  const existingSupply = f.supplyUsed || "";
   const returnedQuantity = (itemType, itemId) =>
     returnedInventory
       .filter((entry) => entry.itemType === itemType && entry.itemId === itemId)
@@ -831,9 +831,12 @@ function openConsultationForm(student, existing = null) {
       : null);
   const selectedSupply = EQUIPMENT.find(
     (item) =>
-      item.id === f.supplyItemId ||
-      item.id === existingSupply ||
-      item.name === existingSupply,
+      item.category === "Medical Supplies" &&
+      !item.deleted &&
+      item.status === "Available" &&
+      (item.id === f.supplyItemId ||
+        item.id === existingSupply ||
+        item.name === existingSupply),
   );
   const meds = MEDICINES.filter(
     (item) =>
@@ -993,7 +996,11 @@ function openConsultationForm(student, existing = null) {
       supplyQty = Number(document.getElementById("cf-supply-qty").value),
       supplyItem =
         EQUIPMENT.find(
-          (item) => item.id === supplyKey || item.name === supplyKey,
+          (item) =>
+            item.category === "Medical Supplies" &&
+            !item.deleted &&
+            item.status === "Available" &&
+            (item.id === supplyKey || item.name === supplyKey),
         ) || (isEdit && supplyKey === f.supplyItemId ? selectedSupply : null);
     const medName = med?.name || "",
       supplyName = supplyItem?.name || "";
@@ -1078,7 +1085,7 @@ function openConsultationForm(student, existing = null) {
       medicine: medName || null,
       medicineCode: med?.code || null,
       medQty,
-      supplyUsed: supplyName,
+      supplyUsed: supplyName || null,
       supplyItemId: supplyItem?.id || null,
       supplyQty,
       equipmentUsed: isEdit ? f.equipmentUsed || [] : [],
@@ -1099,11 +1106,7 @@ function openConsultationForm(student, existing = null) {
       createdAt: new Date().toISOString(),
     };
     rec.respiratoryRate = document.getElementById("cf-respiratory-rate").value;
-    rec.supplyUsed =
-      supplyName ||
-      (isEdit && !supplies.some((item) => item.name === existingSupply)
-        ? existingSupply
-        : "");
+    rec.supplyUsed = supplyName || null;
     const saveButton = document.getElementById("cf-save");
     const saveLabel = saveButton.innerHTML;
     let inventorySnapshot = null,

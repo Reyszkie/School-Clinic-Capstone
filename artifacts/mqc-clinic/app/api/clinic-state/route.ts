@@ -291,8 +291,15 @@ function normalizeVisitRow(
       "Medication quantity must be a positive whole number when a medication is selected.",
     );
   }
-  const supplyName = row.supplyUsed ?? row.supply_used ?? null;
-  const supplyItemId = row.supplyItemId ?? row.supply_item_id ?? null;
+  const rawSupplyName = row.supplyUsed ?? row.supply_used ?? null;
+  const supplyName =
+    typeof rawSupplyName === "string"
+      ? rawSupplyName.trim() || null
+      : null;
+  const rawSupplyItemId = row.supplyItemId ?? row.supply_item_id ?? null;
+  const supplyItemId = supplyName
+    ? String(rawSupplyItemId ?? "").trim() || null
+    : null;
   const supplyQuantity = toNumber(
     row.supplyQty ?? row.supplyQuantity ?? row.supply_quantity,
   );
