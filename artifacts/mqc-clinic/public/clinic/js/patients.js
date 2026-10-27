@@ -709,8 +709,20 @@ function openConsultationForm(student, existing = null) {
     );
     return;
   }
-  const isEdit = !!existing,
-    f = existing || {
+  const isEdit = !!existing;
+  let f;
+  if (isEdit) {
+    f = {
+      ...existing,
+      date: todayDateString(),
+      time: currentTimeString(),
+      nurse: state.currentUser.name,
+      nurseId: state.currentUser.id,
+      staffRecord: state.currentUser.name,
+      position: state.currentUser.role || "Staff Nurse",
+    };
+  } else {
+    f = {
       date: todayDateString(),
       time: currentTimeString(),
       nurse: state.currentUser.name,
@@ -753,6 +765,7 @@ function openConsultationForm(student, existing = null) {
       medicine: "",
       medQty: 1,
     };
+  }
   const allergyHistory = String(f.allergiesHistory || "");
   const allergyAnswer = /^yes\b/i.test(allergyHistory)
     ? "Yes"
@@ -823,7 +836,7 @@ function openConsultationForm(student, existing = null) {
   );
   if (selectedSupply && !supplies.includes(selectedSupply))
     supplies.push({ ...selectedSupply, unavailable: true });
-  const html = `<div class="modal-head"><h3>${isEdit ? "Edit" : "New"} Patient Visit — ${escapeHtml(student.name)}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
+  const html = `<div class="modal-head"><h3>${isEdit ? "Record Follow-up Visit" : "New Patient Visit"} — ${escapeHtml(student.name)}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body"><form id="consult-form" class="form-grid">
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
     <div class="f-field"><label>Visit Time <span class="req">*</span></label><input id="cf-time" value="${escapeHtml(f.time)}" required></div>
@@ -869,7 +882,7 @@ function openConsultationForm(student, existing = null) {
     </div></div>
     <div class="f-field"><label>Clinic Staff Record</label><input id="cf-staff" value="${escapeHtml(state.currentUser.name)}" readonly aria-readonly="true"></div>
     <div class="f-field"><label>Position</label><input id="cf-position" value="${escapeHtml(state.currentUser.role || "Staff Nurse")}" readonly aria-readonly="true"></div>
-  </form></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" id="cf-clear">Clear Form</button><button class="btn btn-dark" id="cf-save">${ICONS.check} ${isEdit ? "Save Changes" : "Save Visit"}</button></div>`;
+  </form></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" id="cf-clear">Clear Form</button><button class="btn btn-dark" id="cf-save">${ICONS.check} ${isEdit ? "Save New Visit Record" : "Save Visit"}</button></div>`;
   openModal(html);
   const complaintSelect = document.getElementById("cf-complaint");
   const allergySelect = document.getElementById("cf-allergies");
@@ -1018,14 +1031,14 @@ function openConsultationForm(student, existing = null) {
       );
       return;
     }
-    pendingVisitId = pendingVisitId || (isEdit ? existing.id : uid("CS"));
+    pendingVisitId = pendingVisitId || uid("CS");
     const rec = {
       ...f,
       id: pendingVisitId,
       date: document.getElementById("cf-date").value,
       time: document.getElementById("cf-time").value,
-      nurse: isEdit ? f.nurse : state.currentUser.name,
-      nurseId: isEdit ? f.nurseId : state.currentUser.id,
+      nurse: state.currentUser.name,
+      nurseId: state.currentUser.id,
       studentId: student.id,
       studentName: student.name,
       course: student.course,
@@ -1059,13 +1072,15 @@ function openConsultationForm(student, existing = null) {
       guardianContacted: document.getElementById("cf-guardian-contacted").value,
       guardianMethod: document.getElementById("cf-guardian-method").value,
       personContacted: document.getElementById("cf-person").value,
-      staffRecord: isEdit ? f.staffRecord : state.currentUser.name,
-      position: isEdit ? f.position : state.currentUser.role || "Staff Nurse",
+      staffRecord: state.currentUser.name,
+      position: state.currentUser.role || "Staff Nurse",
       followUp: "No",
       status: "Active",
       deleted: false,
-      revision: isEdit ? Number(f.revision) || 1 : 1,
-      createdAt: isEdit ? f.createdAt : new Date().toISOString(),
+      versionOf: isEdit ? f.versionOf || f.id : null,
+      revision: isEdit ? (Number(f.revision) || 1) + 1 : 1,
+      supersedesId: isEdit ? f.id : null,
+      createdAt: new Date().toISOString(),
     };
     rec.respiratoryRate = document.getElementById("cf-respiratory-rate").value;
     rec.supplyUsed =
@@ -1100,20 +1115,22 @@ function openConsultationForm(student, existing = null) {
               ? "No Known Allergies"
               : student.allergies;
       }
-      if (isEdit) Object.assign(previous, rec);
-      else CONSULTATIONS.unshift(rec);
+      if (isEdit) {
+        previous.status = "Superseded";
+        previous.supersededBy = rec.id;
+      }
+      CONSULTATIONS.unshift(rec);
       await saveVisitToClinicState(
         [rec.id],
         inventorySnapshot,
         [student.id],
-        isEdit,
       );
       pendingVisitId = "";
       let auditSucceeded = true;
       try {
         const auditActions = [
           {
-            action: `${isEdit ? "Patient Visit Updated" : "Patient Visit Created"} — ${rec.id}`,
+            action: `${isEdit ? "Patient Visit Revised" : "Patient Visit Created"} — ${rec.id}`,
             module: "Patient Visits",
             detail: rec.id,
           },
@@ -1137,7 +1154,8 @@ function openConsultationForm(student, existing = null) {
         auditSucceeded = false;
       }
       if (auditSucceeded) {
-        if (isEdit) toast("Visit updated", `Updated visit ${rec.id}.`, "ok");
+        if (isEdit)
+          toast("Follow-up visit recorded", `Added visit ${rec.id}.`, "ok");
         else toast("Visit saved", `Recorded visit for ${student.name}.`, "ok");
       } else
         toast(
