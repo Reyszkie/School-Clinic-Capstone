@@ -766,6 +766,22 @@ function openConsultationForm(student, existing = null) {
       medQty: 1,
     };
   }
+  if (isEdit && (f.medicine || f.medicineCode)) {
+    const medicine = MEDICINES.find(
+      (item) =>
+        item.code === f.medicineCode ||
+        item.name.trim().toLowerCase() ===
+          String(f.medicine || "").trim().toLowerCase(),
+    );
+    if (!medicine || medicine.deleted || medicineIsExpired(medicine)) {
+      f.medicine = "";
+      f.medicineCode = null;
+      f.medQty = 0;
+    } else {
+      f.medicine = medicine.name;
+      f.medicineCode = medicine.code;
+    }
+  }
   const allergyHistory = String(f.allergiesHistory || "");
   const allergyAnswer = /^yes\b/i.test(allergyHistory)
     ? "Yes"
