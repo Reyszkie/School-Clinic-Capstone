@@ -1958,6 +1958,48 @@ export async function PUT(request: Request) {
           { status: 400, headers: { "Cache-Control": "no-store" } },
         );
       }
+      if (
+        typeof normalizedVisit.medicine_name === "string" &&
+        normalizedVisit.medicine_name.trim()
+      ) {
+        const medicineRows = await readTable("medicines");
+        const submittedCode = String(
+          normalizedVisit.medicine_code ?? "",
+        ).trim();
+        const submittedName = normalizedVisit.medicine_name.trim();
+        const matchedMedicine =
+          medicineRows.find(
+            (medicine) => String(medicine.code) === submittedCode,
+          ) ??
+          (() => {
+            const matches = medicineRows.filter(
+              (medicine) =>
+                String(medicine.name ?? "")
+                  .trim()
+                  .toLowerCase() === submittedName.toLowerCase(),
+            );
+            return matches.length === 1 ? matches[0] : undefined;
+          })();
+        if (!matchedMedicine) {
+          return Response.json(
+            {
+              message:
+                "The selected medicine could not be matched to a unique inventory item. Choose a medicine from the inventory and try again.",
+            },
+            { status: 400, headers: { "Cache-Control": "no-store" } },
+          );
+        }
+        const matchedCode = String(matchedMedicine.code ?? "").trim();
+        const matchedName = String(matchedMedicine.name ?? "").trim();
+        if (!matchedCode || !matchedName) {
+          return Response.json(
+            { message: "The selected medicine has invalid inventory details." },
+            { status: 400, headers: { "Cache-Control": "no-store" } },
+          );
+        }
+        normalizedVisit.medicine_code = matchedCode;
+        normalizedVisit.medicine_name = matchedName;
+      }
       const patient = affectedPatients.find(
         (row) => String(row.id) === String(normalizedVisit.patient_id),
       );
