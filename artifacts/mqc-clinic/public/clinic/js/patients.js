@@ -1304,6 +1304,7 @@ function printConsultation(c) {
   const excludedPrintFields = new Set([
     "Nurse on Duty",
     "Nurse's Assessment",
+    "Nurse's Notes",
     "Medical Equipment",
     "Additional Treatment Details",
     "Time Released / Referred",
