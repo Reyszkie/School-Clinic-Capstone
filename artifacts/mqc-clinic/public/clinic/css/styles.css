@@ -2968,7 +2968,7 @@ tbody tr {
     display: block !important;
     width: 100%;
     box-sizing: border-box;
-    padding: 14mm;
+    padding: 12mm;
     -webkit-box-decoration-break: clone;
     box-decoration-break: clone;
     color: #111;
@@ -3043,7 +3043,7 @@ tbody tr {
   }
   .monthly-report-block {
     margin: 12px 0;
-    break-inside: avoid;
+    break-inside: auto;
   }
   .monthly-report-block h5 {
     font-size: 10pt;
@@ -3052,6 +3052,21 @@ tbody tr {
   .monthly-report-table th {
     font-size: 8pt;
     background: #eef1f3;
+  }
+  .monthly-report-table {
+    break-inside: auto;
+  }
+  .monthly-report-table thead {
+    display: table-header-group;
+  }
+  .monthly-report-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .monthly-report-block h5,
+  .monthly-report-block h6 {
+    break-after: avoid;
+    page-break-after: avoid;
   }
   .table-wrap {
     overflow: visible !important;
@@ -3244,7 +3259,7 @@ tbody tr {
     background: #fff;
   }
   .clinic-print-letterhead {
-    padding: 6mm 8mm 4mm;
+    padding: 4mm 0 3mm;
   }
   .clinic-print-logo {
     width: 100%;
@@ -3254,8 +3269,27 @@ tbody tr {
   .clinic-print-doc-title {
     font-size: 14pt;
   }
+  .clinic-print-divider {
+    margin: 0 0 4mm;
+  }
+  .clinic-print-title-block {
+    margin: 0 0 5mm;
+  }
+  .clinic-print-body {
+    margin: 0;
+  }
+  .clinic-print-footnote {
+    margin: 4mm 0 3mm;
+  }
+  .clinic-print-meta {
+    margin: 3mm 0 0;
+  }
   .clinic-print-table {
     font-size: 8pt;
+    break-inside: auto;
+  }
+  .clinic-print-table thead {
+    display: table-header-group;
   }
   .clinic-print-table th,
   .clinic-print-table td {
@@ -3267,7 +3301,11 @@ tbody tr {
     break-inside: avoid;
   }
   .clinic-print-section {
-    break-inside: avoid;
+    break-inside: auto;
+  }
+  .clinic-print-section h5,
+  .clinic-print-section h6 {
+    break-after: avoid;
   }
   .clinic-print-kpi {
     break-inside: avoid;

@@ -171,6 +171,7 @@ function printTemplate({
   subtitle,
   logoUrl = "assets/mqc-seal-transparent.png",
   clinicName = state.settings.clinicName,
+  clinicAddress = state.settings.address,
   body,
   footnote,
 }) {
@@ -186,7 +187,7 @@ function printTemplate({
         <div class="clinic-print-brand">
           <div class="clinic-print-clinic-name">${escapeHtml(clinicName)}</div>
           <div class="clinic-print-clinic-sub">School Clinic Management System</div>
-          <div class="clinic-print-clinic-address">Quezon City, Philippines</div>
+          <div class="clinic-print-clinic-address">${escapeHtml(clinicAddress || "—")}</div>
         </div>
       </div>
       <div class="clinic-print-divider"></div>
@@ -198,7 +199,6 @@ function printTemplate({
       ${footnote ? `<div class="clinic-print-footnote">${escapeHtml(footnote)}</div>` : ""}
       <div class="clinic-print-meta">
         <span class="clinic-print-meta-item">Printed: ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</span>
-        <span class="clinic-print-meta-item">MQC School Clinic · School Year 2026–2027</span>
       </div>
     </div>
   `;

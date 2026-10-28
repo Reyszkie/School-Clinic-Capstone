@@ -345,7 +345,7 @@ function printReports() {
     title: "MQCQC Clinic Report",
     subtitle: "School Clinic · Clinical Reports Summary",
     body: `<div class="clinic-print-kpis">${kpis.map(([label, value]) => `<div class="clinic-print-kpi"><div class="kpi-label">${escapeHtml(label)}</div><div class="kpi-value">${value}</div></div>`).join("")}</div>${html}`,
-    footnote: "Confidential clinic record — for authorized personnel only.",
+    footnote: `Confidential clinic record — for authorized personnel only.${clinicDataStatus === "stale" ? " The latest database refresh failed; data reflects the last successful synchronization." : ""}`,
   });
   logAudit("Clinic Report Printed", "Reports", "Success", false);
 }
@@ -372,6 +372,54 @@ function currentEquipmentInventory() {
     (item) => !item.deleted && item.category === "Medical Supplies",
   ).sort((a, b) => a.name.localeCompare(b.name));
 }
+function currentMedicalEquipmentInventory() {
+  return EQUIPMENT.filter(
+    (item) => !item.deleted && item.category !== "Medical Supplies",
+  ).sort((a, b) => a.name.localeCompare(b.name));
+}
+function reportInventoryQuantity(quantity) {
+  if (quantity === null || quantity === undefined || quantity === "") return "—";
+  const parsed = Number(quantity);
+  const isNumeric =
+    typeof quantity === "number" ||
+    (typeof quantity === "string" && quantity.trim() !== "");
+  return isNumeric && Number.isFinite(parsed) && parsed >= 0 ? parsed : "—";
+}
+function reportValues(value) {
+  if (Array.isArray(value)) return value;
+  return typeof value === "string" && value.trim() ? [value] : [];
+}
+function recordReportUsage(usage, name, quantity) {
+  if (!name) return;
+  const item = (usage[name] ||= {
+    quantity: 0,
+    quantityRecords: 0,
+    unquantified: 0,
+    records: 0,
+  });
+  item.records++;
+  const parsed = Number(quantity);
+  const isNumeric =
+    typeof quantity === "number" ||
+    (typeof quantity === "string" && quantity.trim() !== "");
+  if (
+    isNumeric &&
+    Number.isFinite(parsed) &&
+    parsed >= 0
+  ) {
+    item.quantity += parsed;
+    item.quantityRecords++;
+  } else {
+    item.unquantified++;
+  }
+}
+function reportUsageText(item) {
+  const values = [];
+  if (item.quantityRecords) values.push(String(item.quantity));
+  if (item.unquantified)
+    values.push(`${item.unquantified} record(s) without a recorded quantity`);
+  return values.join(" + ") || "—";
+}
 function monthlyReportData(month) {
   const visits = reportVisits().filter(
     (visit) =>
@@ -396,21 +444,18 @@ function monthlyReportData(month) {
           visit.complaint === "Other" && visit.reasonOther
             ? `Other: ${visit.reasonOther}`
             : visit.complaint,
-          ...(visit.symptoms || []),
+          ...reportValues(visit.symptoms),
         ].filter(Boolean),
       ),
     ].forEach((reason) => {
       reasons[reason] = (reasons[reason] || 0) + 1;
     });
     if (visit.medicine)
-      medicines[visit.medicine] =
-        (medicines[visit.medicine] || 0) + (Number(visit.medQty) || 1);
+      recordReportUsage(medicines, visit.medicine, visit.medQty);
     if (visit.supplyUsed)
-      equipment[visit.supplyUsed] =
-        (equipment[visit.supplyUsed] || 0) + (Number(visit.supplyQty) || 1);
-    [...new Set(visit.equipmentUsed || [])].forEach((tool) => {
-      equipment[tool] =
-        (equipment[tool] || 0) + (Number(visit.equipmentQty) || 1);
+      recordReportUsage(equipment, visit.supplyUsed, visit.supplyQty);
+    [...new Set(reportValues(visit.equipmentUsed))].forEach((tool) => {
+      recordReportUsage(equipment, tool, visit.equipmentQty);
     });
   });
   const inventoryAlerts = medicineAlertData();
@@ -423,13 +468,18 @@ function monthlyReportData(month) {
       (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
     ),
     medicines: Object.entries(medicines).sort(
-      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+      (a, b) =>
+        b[1].records - a[1].records ||
+        a[0].localeCompare(b[0]),
     ),
     equipment: Object.entries(equipment).sort(
-      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+      (a, b) =>
+        b[1].records - a[1].records ||
+        a[0].localeCompare(b[0]),
     ),
     medicineInventory: currentMedicineInventory(),
     equipmentInventory: currentEquipmentInventory(),
+    medicalEquipmentInventory: currentMedicalEquipmentInventory(),
     inventoryAlerts,
   };
 }
@@ -451,10 +501,12 @@ function monthlyReportHtml(month) {
       `<tr><td>${escapeHtml(reason)}</td><td>${count}</td></tr>`,
   );
   const medicineUse = data.medicines.map(
-    ([name, count]) => `<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`,
+    ([name, item]) =>
+      `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(reportUsageText(item))}</td></tr>`,
   );
   const equipmentUse = data.equipment.map(
-    ([name, count]) => `<tr><td>${escapeHtml(name)}</td><td>${count}</td></tr>`,
+    ([name, item]) =>
+      `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(reportUsageText(item))}</td></tr>`,
   );
   const referralRows = data.referrals.map(
     (visit) =>
@@ -462,16 +514,20 @@ function monthlyReportHtml(month) {
   );
   const medicineInventoryRows = data.medicineInventory.map(
     ({ item, status }) =>
-      `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category || "—")}</td><td>${Number(item.qty) || 0}</td><td>${escapeHtml(item.unit || "—")}</td><td>${escapeHtml(status)}</td></tr>`,
+      `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category || "—")}</td><td>${reportInventoryQuantity(item.qty)}</td><td>${escapeHtml(item.unit || "—")}</td><td>${escapeHtml(status)}</td></tr>`,
   );
   const equipmentInventoryRows = data.equipmentInventory.map(
     (item) =>
-      `<tr><td>${escapeHtml(item.name)}</td><td>${Number(item.qty) || 0}</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
+      `<tr><td>${escapeHtml(item.name)}</td><td>${reportInventoryQuantity(item.qty)}</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
+  );
+  const medicalEquipmentInventoryRows = data.medicalEquipmentInventory.map(
+    (item) =>
+      `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category || "—")}</td><td>${reportInventoryQuantity(item.qty)}</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
   );
   const alertMedicineRows = (list) =>
     list.map(
       (item) =>
-        `<tr><td class="mono">${escapeHtml(item.code)}</td><td>${escapeHtml(item.name)}</td><td class="mono">${Number(item.qty) || 0} ${escapeHtml(item.unit || "")}</td><td>${item.exp ? escapeHtml(fmtDate(item.exp)) : "—"}</td><td>${item.daysRemaining === undefined ? escapeHtml(medStatus(item).label) : item.daysRemaining === 0 ? "Expires today" : item.daysRemaining < 0 ? `Expired ${Math.abs(item.daysRemaining)} day(s) ago` : `In ${item.daysRemaining} day(s)`}</td></tr>`,
+        `<tr><td class="mono">${escapeHtml(item.code)}</td><td>${escapeHtml(item.name)}</td><td class="mono">${reportInventoryQuantity(item.qty)} ${escapeHtml(item.unit || "")}</td><td>${item.exp ? escapeHtml(fmtDate(item.exp)) : "—"}</td><td>${item.daysRemaining === undefined ? escapeHtml(medStatus(item).label) : item.daysRemaining === 0 ? "Expires today" : item.daysRemaining < 0 ? `Expired ${Math.abs(item.daysRemaining)} day(s) ago` : `In ${item.daysRemaining} day(s)`}</td></tr>`,
     );
   const alertHeaders = [
     "Code",
@@ -488,6 +544,7 @@ function monthlyReportHtml(month) {
     <section class="monthly-report-block"><h5>Recorded Referrals</h5>${monthlyTable(["Patient", "Date", "Disposition"], referralRows, "No referrals were recorded for this month.")}</section>
     <section class="monthly-report-block"><h5>Medicine Inventory</h5><p class="inventory-report-note">Current medicine stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Medicine", "Category", "Current Qty", "Unit", "Status"], medicineInventoryRows, "No medicine inventory records.")}</section>
     <section class="monthly-report-block"><h5>Medical Supplies Inventory</h5><p class="inventory-report-note">Current medical supplies stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Supply", "Current Qty", "Status"], equipmentInventoryRows, "No medical supplies inventory records.")}</section>
+    <section class="monthly-report-block"><h5>Medical Equipment Inventory</h5><p class="inventory-report-note">Current equipment stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Equipment", "Category", "Current Qty", "Status"], medicalEquipmentInventoryRows, "No medical equipment inventory records.")}</section>
     <section class="monthly-report-block"><h5>Most Frequently Used Medicines / Treatments</h5>${monthlyTable(["Medicine / Treatment", "Uses"], medicineUse)}</section>
     <section class="monthly-report-block"><h5>Most Frequently Recorded Supplies and Tools</h5>${monthlyTable(["Supply / Tool", "Uses"], equipmentUse)}</section>
     <p class="monthly-report-footnote">${monthLabel} · ${data.visits.length} active visit record(s)</p>
@@ -500,12 +557,11 @@ function renderMonthlyReportSection() {
 function printMonthlyReport() {
   const month = state.reportMonth || todayDateString().slice(0, 7),
     report = monthlyReportHtml(month);
-  const title = `${state.settings.clinicName} — Monthly Clinic Report`;
   printTemplate({
-    title: "Monthly Clinic Report",
-    subtitle: `${escapeHtml(reportMonthLabel(month))} · Generated ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}`,
+    title: "MQCQC Clinic Report",
+    subtitle: `Monthly Report · ${reportMonthLabel(month)} · Generated ${new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" })}`,
     body: `<h2 style="font-family:'Newsreader',Georgia,serif;font-size:13pt;font-weight:700;color:var(--navy-deep,#17375E);margin:0 0 2mm;">${escapeHtml(reportMonthLabel(month))} Monthly Report</h2>${report}`,
-    footnote: "Confidential clinic record — for authorized personnel only.",
+    footnote: `Confidential clinic record — for authorized personnel only.${clinicDataStatus === "stale" ? " The latest database refresh failed; data reflects the last successful synchronization." : ""}`,
   });
   logAudit(`Monthly Report Printed — ${month}`, "Reports", "Success", false);
 }

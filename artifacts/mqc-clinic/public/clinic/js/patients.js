@@ -1218,21 +1218,25 @@ function consultationRows(c) {
     ],
     [
       "Medical Supplies",
-      c.supplyUsed ? `${c.supplyUsed} × ${c.supplyQty || 1}` : "—",
+      c.supplyUsed
+        ? `${c.supplyUsed} × ${c.supplyQty ?? "Not recorded"}`
+        : "—",
     ],
     [
       "Medical Equipment",
       (c.equipmentUsed || [])
         .map(
           (value) =>
-            `${EQUIPMENT.find((item) => item.id === value || item.name === value)?.name || value} × ${c.equipmentQty || 1}`,
+            `${EQUIPMENT.find((item) => item.id === value || item.name === value)?.name || value} × ${c.equipmentQty ?? "Not recorded"}`,
         )
         .join(", ") || "—",
     ],
     ["Additional Treatment Details", c.treatmentGiven || "—"],
     [
       "Medicines",
-      c.medicine ? `${c.medicine} × ${c.medQty || 1} · ${c.dosage || ""}` : "—",
+      c.medicine
+        ? `${c.medicine} × ${c.medQty ?? "Not recorded"} · ${c.dosage || ""}`
+        : "—",
     ],
     ["Outcome", c.outcome || "—"],
     ["Time Released / Referred", c.releasedAt || "—"],
@@ -1284,9 +1288,9 @@ function printConsultation(c) {
     .join("");
   printTemplate({
     title: "Patient Visit Slip",
-    subtitle: `School Clinic · Patient Visit Record · ${escapeHtml(c.studentName || "")}`,
+    subtitle: `School Clinic · Patient Visit Record · ${c.studentName || ""}`,
     body: `<table class="clinic-print-table"><tbody>${rowHtml}</tbody></table>`,
-    footnote: "Confidential clinic record — for authorized personnel only.",
+    footnote: `Confidential clinic record — for authorized personnel only.${clinicDataStatus === "stale" ? " The latest database refresh failed; data reflects the last successful synchronization." : ""}`,
   });
   logAudit(
     `Patient Visit Printed — ${c.id}`,
