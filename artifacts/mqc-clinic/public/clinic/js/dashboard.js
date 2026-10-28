@@ -1,14 +1,7 @@
 /* ================= DASHBOARD ================= */
-function activeVisits(){return CONSULTATIONS.filter(c=>!c.deleted&&c.status!=="Deleted"&&c.status!=="Superseded"&&STUDENTS.some(s=>s.id===c.studentId));}
-const FREQUENT_VISIT_THRESHOLD=2;
 function dashboardMetrics(){
-  const visits=activeVisits(), today=todayDateString(), month=today.slice(0,7);
-  const monthVisits=visits.filter(c=>c.date?.slice(0,7)===month);
-  const counts={};visits.forEach(c=>counts[c.studentId]=(counts[c.studentId]||0)+1);
-  const returning=Object.values(counts).filter(n=>n>1).length;
-  const frequent=Object.values(counts).filter(n=>n>=FREQUENT_VISIT_THRESHOLD).length;
-  const referrals=visits.filter(visit=>/referred|referral/i.test(visit.outcome||"")).length;
-  return {students:new Set(visits.map(c=>c.studentId)).size,today:visits.filter(c=>c.date===today).length,month:monthVisits.length,returning,frequent,referrals};
+  const metrics=clinicMetrics();
+  return {students:metrics.patients.length,today:metrics.todayVisits.length,month:metrics.monthVisits.length,returning:metrics.returningPatients,frequent:metrics.frequentVisitors,referrals:metrics.referrals.length};
 }
 function renderDashboard(){
   if(!clinicDataLoaded){
@@ -22,7 +15,7 @@ function renderDashboard(){
   ];
   const expiring=medicineAlerts.expiring,expired=medicineAlerts.expired;
   const firstName=(state.currentUser?.name||"").split(" ")[0]||"there",m=dashboardMetrics();
-  const cards=[["Patients Served",m.students,"var(--blue)",ICONS.users],["Clinic Visits Today",m.today,"var(--teal)",ICONS.stethoscope],["Total Visits This Month",m.month,"var(--violet)",ICONS.report],["Returning Patients",m.returning,"var(--amber)",ICONS.users],["Frequent Visitors",m.frequent,"var(--coral)",ICONS.alert],["Referrals",m.referrals,"var(--red)",ICONS.alert]];
+  const cards=[["Total Patients",m.students,"var(--blue)",ICONS.users],["Clinic Visits Today",m.today,"var(--teal)",ICONS.stethoscope],["Total Visits This Month",m.month,"var(--violet)",ICONS.report],["Returning Patients",m.returning,"var(--amber)",ICONS.users],["Frequent Visitors",m.frequent,"var(--coral)",ICONS.alert],["Referrals",m.referrals,"var(--red)",ICONS.alert]];
   return `${clinicDataStatus==="stale"?'<div class="sync-warning">The latest database refresh failed. Figures may be out of date.</div>':""}<div class="greeting-banner"><h2>${greetingWord()}, ${escapeHtml(firstName)}!</h2><p>Here's what's going on in the clinic today.</p></div>
   <div class="grid grid-3">${cards.map(c=>`<div class="card stat-card"><div class="top-row"><div class="stat-label">${c[0]}</div><div class="stat-ic" style="background:${c[2]}18;color:${c[2]}">${c[3]}</div></div><div class="stat-value">${c[1]}</div></div>`).join("")}</div>
   <div class="dashboard-alerts" id="alerts-section"><div class="card"><div class="panel-title"><h4><span style="color:var(--amber);display:inline-flex">${ICONS.alert}</span> Low Stock Alert</h4></div>${lowStockAlertHtml(lowStock)}</div>
@@ -49,14 +42,14 @@ function dashSearchRows(list){
 }
 function openStudentRecordsModal(student){
   if(!student)return;
-  const records=activeVisits().filter(c=>c.studentId===student.id).sort((a,b)=>a.date+a.time<b.date+b.time?1:-1);
+  const records=activeClinicVisits().filter(c=>c.studentId===student.id);
   visitorRecordsModal({studentId:student.id,studentName:student.name,course:student.course,year:student.year,count:records.length,records});
 }
 function bindDashboard(){
   document.getElementById("dash-retry-load")?.addEventListener("click",async()=>{const loaded=await hydrateFromSharedStorage();if(loaded)render();});
   const input=document.getElementById("dash-search"),tbody=document.getElementById("dash-search-tbody");
   const bindRows=()=>document.querySelectorAll("[data-view-records]").forEach(b=>b.onclick=()=>openStudentRecordsModal(STUDENTS.find(s=>s.id===b.dataset.viewRecords)));
-  input?.addEventListener("input",()=>{const q=input.value.trim().toLowerCase();tbody.innerHTML=q?dashSearchRows(STUDENTS.filter(s=>[s.name,s.institutionalCategory||s.course,s.personnelType||s.year].join(" ").toLowerCase().includes(q))):`<tr><td colspan="4">${emptyState("Start typing a name, institutional category, or year to search.")}</td></tr>`;bindRows();});
+  input?.addEventListener("input",()=>{const q=input.value.trim().toLowerCase();tbody.innerHTML=q?dashSearchRows(activeClinicPatients().filter(s=>[s.name,s.institutionalCategory||s.course,s.personnelType||s.year].join(" ").toLowerCase().includes(q))):`<tr><td colspan="4">${emptyState("Start typing a name, institutional category, or year to search.")}</td></tr>`;bindRows();});
   document.querySelectorAll("[data-open-med5],[data-open-med6]").forEach(row=>{row.style.cursor="pointer";row.onclick=()=>{const med=MEDICINES.find(m=>m.code===(row.dataset.openMed5||row.dataset.openMed6));if(med)openMedicineForm(med);};});
   document.querySelectorAll("[data-open-eq]").forEach(row=>{row.style.cursor="pointer";row.onclick=()=>{const equipment=EQUIPMENT.find(e=>e.id===row.dataset.openEq);if(equipment)openEquipmentForm(equipment);};});
 }

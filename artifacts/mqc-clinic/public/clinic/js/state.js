@@ -1,201 +1,376 @@
 /* ================= STATE ================= */
-const CLINIC_THEMES=[
-  {id:"ocean",label:"Ocean"},
-  {id:"forest",label:"Forest"},
-  {id:"berry",label:"Berry"},
-  {id:"terracotta",label:"Terracotta"},
-  {id:"lagoon",label:"Lagoon"},
-  {id:"sage",label:"Sage"},
-  {id:"cobalt",label:"Cobalt"},
-  {id:"cranberry",label:"Cranberry"},
-  {id:"amber",label:"Amber"},
-  {id:"graphite",label:"Graphite"},
+const CLINIC_THEMES = [
+  { id: "ocean", label: "Ocean" },
+  { id: "forest", label: "Forest" },
+  { id: "berry", label: "Berry" },
+  { id: "terracotta", label: "Terracotta" },
+  { id: "lagoon", label: "Lagoon" },
+  { id: "sage", label: "Sage" },
+  { id: "cobalt", label: "Cobalt" },
+  { id: "cranberry", label: "Cranberry" },
+  { id: "amber", label: "Amber" },
+  { id: "graphite", label: "Graphite" },
 ];
 const state = {
-  loggedIn:false,
-  currentUser:null,
-  page:"dashboard",
-  sidebarOpen:false,
-  consultTab:"search",
-  selectedStudent:null,
-  departmentFilter:"",
-  invTab:"medicines",
-  adminTab:"users",
-  consultPage:1,
-  medPage:1,
-  eqPage:1,
-  auditPage:1,
-  users: NURSES.map(n=>({...n})),
+  loggedIn: false,
+  currentUser: null,
+  page: "dashboard",
+  sidebarOpen: false,
+  consultTab: "search",
+  selectedStudent: null,
+  departmentFilter: "",
+  invTab: "medicines",
+  adminTab: "users",
+  consultPage: 1,
+  medPage: 1,
+  eqPage: 1,
+  auditPage: 1,
+  users: NURSES.map((n) => ({ ...n })),
   settings: {
-    clinicName:"Mary the Queen College School Clinic", address:"Quezon City, Philippines",
-    contactNumber:"", email:"", clinicOpen:"07:00", clinicClose:"17:00",
-    clinicDays:["Monday","Tuesday","Wednesday","Thursday","Friday"],
-    logo:"", patientIdPrefix:"", lowStockThreshold:15, expirationAlertDays:14,
-    passwordMinLength:8, sessionTimeout:30, dateFormat:"MMM D, YYYY",
-    timeFormat:"12-hour", timezone:"Asia/Manila", language:"English",
-    appearanceTheme:"ocean",
+    clinicName: "Mary the Queen College School Clinic",
+    address: "Quezon City, Philippines",
+    contactNumber: "",
+    email: "",
+    clinicOpen: "07:00",
+    clinicClose: "17:00",
+    clinicDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+    logo: "",
+    patientIdPrefix: "",
+    lowStockThreshold: 15,
+    expirationAlertDays: 14,
+    passwordMinLength: 8,
+    sessionTimeout: 30,
+    dateFormat: "MMM D, YYYY",
+    timeFormat: "12-hour",
+    timezone: "Asia/Manila",
+    language: "English",
+    appearanceTheme: "ocean",
   },
 };
-try{
-  const savedTheme=window.localStorage.getItem("mqc_clinic_appearance_theme_v1");
-  if(CLINIC_THEMES.some(theme=>theme.id===savedTheme))state.settings.appearanceTheme=savedTheme;
-}catch{}
-function applyClinicTheme(theme=state.settings.appearanceTheme){
-  const selected=CLINIC_THEMES.some(option=>option.id===theme)?theme:"ocean";
-  state.settings.appearanceTheme=selected;
-  document.documentElement.dataset.theme=selected;
+function applyClinicTheme(theme = state.settings.appearanceTheme) {
+  const selected = CLINIC_THEMES.some((option) => option.id === theme)
+    ? theme
+    : "ocean";
+  state.settings.appearanceTheme = selected;
+  document.documentElement.dataset.theme = selected;
   return selected;
 }
 
 /* ================= UTIL ================= */
-function manilaNow(){
+function manilaNow() {
   const now = new Date();
   const manilaOffsetMinutes = 8 * 60;
   const localOffsetMinutes = now.getTimezoneOffset();
-  return new Date(now.getTime() + ((manilaOffsetMinutes + localOffsetMinutes) * 60000));
+  return new Date(
+    now.getTime() + (manilaOffsetMinutes + localOffsetMinutes) * 60000,
+  );
 }
-function manilaDateParts(date=new Date()){
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+function manilaDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
   });
   const parts = formatter.formatToParts(date);
-  const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
   return {
     date: `${values.year}-${values.month}-${values.day}`,
     time: `${values.hour}:${values.minute}:${values.second}`,
     iso: `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}+08:00`,
   };
 }
-function todayDateString(){ return manilaDateParts().date; }
-function currentTimeString(){
-  return new Intl.DateTimeFormat('en-PH', {
-    timeZone: 'Asia/Manila',
-    hour: 'numeric', minute: '2-digit', hour12: true,
+function todayDateString() {
+  return manilaDateParts().date;
+}
+function currentTimeString() {
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
   }).format(new Date());
 }
-function fmtDate(d){
-  if(!d) return "—";
+function fmtDate(d) {
+  if (!d) return "—";
   const dt = new Date(`${d}T00:00:00+08:00`);
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Manila',
-    month: 'short', day: 'numeric', year: 'numeric'
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   }).format(dt);
 }
-function clinicDateDaysUntil(dateStr,today=todayDateString()){
-  const parse=value=>{
-    if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
-    const [year,month,day]=value.split("-").map(Number),timestamp=Date.UTC(year,month-1,day);
-    const date=new Date(timestamp);
-    return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?timestamp:null;
+function clinicDateDaysUntil(dateStr, today = todayDateString()) {
+  const parse = (value) => {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+      return null;
+    const [year, month, day] = value.split("-").map(Number),
+      timestamp = Date.UTC(year, month - 1, day);
+    const date = new Date(timestamp);
+    return date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+      ? timestamp
+      : null;
   };
-  const target=parse(dateStr),reference=parse(today);
-  return target===null||reference===null?null:Math.floor((target-reference)/86400000);
+  const target = parse(dateStr),
+    reference = parse(today);
+  return target === null || reference === null
+    ? null
+    : Math.floor((target - reference) / 86400000);
 }
-function daysUntil(dateStr){return clinicDateDaysUntil(dateStr);}
-function uid(prefix){ return prefix+"-"+Math.floor(1000+Math.random()*9000); }
-function greetingWord(){ const h=new Date().getHours(); return h<12?"Good morning":h<18?"Good afternoon":"Good evening"; }
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function printInPlace(title,html){
+function daysUntil(dateStr) {
+  return clinicDateDaysUntil(dateStr);
+}
+function uid(prefix) {
+  return prefix + "-" + Math.floor(1000 + Math.random() * 9000);
+}
+function greetingWord() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+function escapeHtml(s) {
+  return String(s).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+}
+function printInPlace(title, html) {
   document.getElementById("clinic-print-root")?.remove();
-  const root=document.createElement("main");
-  root.id="clinic-print-root";
-  root.innerHTML=`<header class="clinic-print-header"><h1>${escapeHtml(state.settings.clinicName)}</h1><h2>${escapeHtml(title)}</h2></header>${html}`;
+  const root = document.createElement("main");
+  root.id = "clinic-print-root";
+  root.innerHTML = `<header class="clinic-print-header"><h1>${escapeHtml(state.settings.clinicName)}</h1><h2>${escapeHtml(title)}</h2></header>${html}`;
   document.body.appendChild(root);
-  const originalTitle=document.title;
-  const cleanup=()=>{root.remove();document.title=originalTitle;};
-  document.title=title.toUpperCase();
-  window.addEventListener("afterprint",cleanup,{once:true});
-  requestAnimationFrame(()=>{window.print();window.setTimeout(cleanup,60000);});
+  const originalTitle = document.title;
+  const cleanup = () => {
+    root.remove();
+    document.title = originalTitle;
+  };
+  document.title = title.toUpperCase();
+  window.addEventListener("afterprint", cleanup, { once: true });
+  requestAnimationFrame(() => {
+    window.print();
+    window.setTimeout(cleanup, 60000);
+  });
 }
 
-function ensureVisibleClinicUser(user){
-  if(!user?.id || !user?.username) return user;
-  const name=String(user.name||user.username);
-  const parts=name.split(",");
-  const normalized={
+function printTemplate({
+  title,
+  subtitle,
+  logoUrl = "assets/mqc-seal-transparent.png",
+  clinicName = state.settings.clinicName,
+  body,
+  footnote,
+}) {
+  document.getElementById("clinic-print-root")?.remove();
+  const root = document.createElement("main");
+  root.id = "clinic-print-root";
+  root.innerHTML = `
+    <div class="clinic-print-template">
+      <div class="clinic-print-letterhead">
+        <div class="clinic-print-logo-wrapper">
+          <img class="clinic-print-logo" src="${escapeHtml(logoUrl)}" alt="Mary the Queen College of Quezon City seal">
+        </div>
+        <div class="clinic-print-brand">
+          <div class="clinic-print-clinic-name">${escapeHtml(clinicName)}</div>
+          <div class="clinic-print-clinic-sub">School Clinic Management System</div>
+          <div class="clinic-print-clinic-address">Quezon City, Philippines</div>
+        </div>
+      </div>
+      <div class="clinic-print-divider"></div>
+      <div class="clinic-print-title-block">
+        <h2 class="clinic-print-doc-title">${escapeHtml(title)}</h2>
+        ${subtitle ? `<p class="clinic-print-doc-subtitle">${escapeHtml(subtitle)}</p>` : ""}
+      </div>
+      <div class="clinic-print-body">${body}</div>
+      ${footnote ? `<div class="clinic-print-footnote">${escapeHtml(footnote)}</div>` : ""}
+      <div class="clinic-print-meta">
+        <span class="clinic-print-meta-item">Printed: ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</span>
+        <span class="clinic-print-meta-item">MQC School Clinic · School Year 2026–2027</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(root);
+  const originalTitle = document.title;
+  const cleanup = () => {
+    root.remove();
+    document.title = originalTitle;
+  };
+  document.title = title.toUpperCase();
+  window.addEventListener("afterprint", cleanup, { once: true });
+  requestAnimationFrame(() => {
+    window.print();
+    window.setTimeout(cleanup, 60000);
+  });
+}
+
+function ensureVisibleClinicUser(user) {
+  if (!user?.id || !user?.username) return user;
+  const name = String(user.name || user.username);
+  const parts = name.split(",");
+  const normalized = {
     ...user,
     name,
-    lastName:user.lastName||parts[0].trim(),
-    firstName:user.firstName||(parts[1]||parts[0]).trim(),
-    middleInitial:user.middleInitial||"",
-    role:user.role||"Staff Nurse",
-    status:user.status||"Active",
+    lastName: user.lastName || parts[0].trim(),
+    firstName: user.firstName || (parts[1] || parts[0]).trim(),
+    middleInitial: user.middleInitial || "",
+    role: user.role || "Staff Nurse",
+    status: user.status || "Active",
   };
-  const index=state.users.findIndex(candidate=>candidate.id===normalized.id||candidate.username===normalized.username);
-  if(index<0) state.users.unshift(normalized);
-  else state.users[index]={...state.users[index],...normalized};
+  const index = state.users.findIndex(
+    (candidate) =>
+      candidate.id === normalized.id ||
+      candidate.username === normalized.username,
+  );
+  if (index < 0) state.users.unshift(normalized);
+  else state.users[index] = { ...state.users[index], ...normalized };
   return normalized;
 }
 
-function toast(title, msg, type="ok"){
-  const wrap=document.getElementById('toast-wrap');
-  const el=document.createElement('div');
-  el.className='toast'+(type==='warn'?' warn':type==='err'?' err':'');
-  const icon = type==='err' ? ICONS.x : type==='warn' ? ICONS.alert : ICONS.check;
-  const color = type==='err' ? 'var(--red)' : type==='warn' ? 'var(--amber)' : 'var(--green)';
+function toast(title, msg, type = "ok") {
+  const wrap = document.getElementById("toast-wrap");
+  const el = document.createElement("div");
+  el.className =
+    "toast" + (type === "warn" ? " warn" : type === "err" ? " err" : "");
+  const icon =
+    type === "err" ? ICONS.x : type === "warn" ? ICONS.alert : ICONS.check;
+  const color =
+    type === "err"
+      ? "var(--red)"
+      : type === "warn"
+        ? "var(--amber)"
+        : "var(--green)";
   el.innerHTML = `<div class="t-ic" style="color:${color}">${icon}</div><div class="t-body"><b>${escapeHtml(title)}</b><span>${escapeHtml(msg)}</span></div>`;
   wrap.appendChild(el);
-  setTimeout(()=>{ el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3400);
+  setTimeout(() => {
+    el.style.transition = "opacity .3s";
+    el.style.opacity = "0";
+    setTimeout(() => el.remove(), 300);
+  }, 3400);
 }
-function logAudit(action, module, status="Success", persist=true, throwOnFailure=false,detail=""){
-  const user=state.currentUser;
-  const auditWrite=fetch('/api/audit-logs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,module,status,detail})})
-    .then(async response=>{
-      const result=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(result.message||`Supabase returned ${response.status}`);
-      const createdAt=new Date(result.created_at);
-      const stamp=manilaDateParts(createdAt);
-      const entry={id:result.id,date:stamp.date,time:new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true}).format(createdAt),user:result.user_name||user?.name||"System",userId:result.user_id||user?.id||null,role:result.role||user?.role||"Unknown",action:result.action||action,module:result.module||module,status:result.status||status,timestamp:createdAt.toISOString()};
+function logAudit(
+  action,
+  module,
+  status = "Success",
+  persist = true,
+  throwOnFailure = false,
+  detail = "",
+) {
+  const user = state.currentUser;
+  const auditWrite = fetch("/api/audit-logs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, module, status, detail }),
+  })
+    .then(async (response) => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(
+          result.message || `Supabase returned ${response.status}`,
+        );
+      const createdAt = new Date(result.created_at);
+      const stamp = manilaDateParts(createdAt);
+      const entry = {
+        id: result.id,
+        date: stamp.date,
+        time: new Intl.DateTimeFormat("en-US", {
+          timeZone: "Asia/Manila",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        }).format(createdAt),
+        user: result.user_name || user?.name || "System",
+        userId: result.user_id || user?.id || null,
+        role: result.role || user?.role || "Unknown",
+        action: result.action || action,
+        module: result.module || module,
+        status: result.status || status,
+        timestamp: createdAt.toISOString(),
+      };
       AUDIT_LOGS.unshift(entry);
-      if(state.page==="admin"&&state.adminTab==="audit")renderAdminTabBody();
+      if (state.page === "admin" && state.adminTab === "audit")
+        renderAdminTabBody();
       return entry;
     })
-    .catch(error=>{
-      console.error('MQC Clinic: audit event was not saved to Supabase.',error);
-      setSyncStatus('Audit sync failed','error');
-      if(throwOnFailure)throw error;
-      toast('Audit log not synced','The activity could not be saved to Supabase. Please check the connection and try again.','err');
+    .catch((error) => {
+      console.error(
+        "MQC Clinic: audit event was not saved to Supabase.",
+        error,
+      );
+      setSyncStatus("Audit sync failed", "error");
+      if (throwOnFailure) throw error;
+      toast(
+        "Audit log not synced",
+        "The activity could not be saved to Supabase. Please check the connection and try again.",
+        "err",
+      );
       return null;
     });
-  if(persist)saveToClinicState();
+  if (persist) saveToClinicState();
   return auditWrite;
 }
-let modalStack=[];
-function openModal(html, size="", options={}){
+let modalStack = [];
+function openModal(html, size = "", options = {}) {
   const { closeOnBackdrop = false } = options;
-  const backdrop=document.createElement('div');
-  backdrop.className='modal-backdrop';
-  backdrop.innerHTML=`<div class="modal ${size}">${html}</div>`;
-  if(closeOnBackdrop){ backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeModal(); }); }
+  const backdrop = document.createElement("div");
+  backdrop.className = "modal-backdrop";
+  backdrop.innerHTML = `<div class="modal ${size}">${html}</div>`;
+  if (closeOnBackdrop) {
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) closeModal();
+    });
+  }
   document.body.appendChild(backdrop);
   modalStack.push(backdrop);
 }
-function closeModal(){
-  const b=modalStack.pop();
-  if(b) b.remove();
+function closeModal() {
+  const b = modalStack.pop();
+  if (b) b.remove();
 }
-function confirmDialog({title, msg, okLabel="Confirm", danger=true, loadingLabel="Processing...", onConfirm, onCancel}){
-  const html=`
+function confirmDialog({
+  title,
+  msg,
+  okLabel = "Confirm",
+  danger = true,
+  loadingLabel = "Processing...",
+  onConfirm,
+  onCancel,
+}) {
+  const html = `
     <div class="modal-body">
-      <div class="confirm-icon ${danger?'':'good'}">${danger?ICONS.alert:ICONS.check}</div>
+      <div class="confirm-icon ${danger ? "" : "good"}">${danger ? ICONS.alert : ICONS.check}</div>
       <h3 style="margin-bottom:8px;">${escapeHtml(title)}</h3>
       <p style="font-size:13.5px;color:var(--ink-soft);line-height:1.6;">${msg}</p>
     </div>
     <div class="modal-foot">
       <button class="btn" id="cf-cancel">Cancel</button>
-      <button class="btn ${danger?'btn-outline-red':'btn-teal'}" id="cf-ok" style="${danger?'background:var(--red);color:#fff;border-color:var(--red);':''}">${okLabel}</button>
+      <button class="btn ${danger ? "btn-outline-red" : "btn-teal"}" id="cf-ok" style="${danger ? "background:var(--red);color:#fff;border-color:var(--red);" : ""}">${okLabel}</button>
     </div>`;
-  openModal(html,"sm");
-  document.getElementById('cf-cancel').onclick=()=>{ onCancel?.(); closeModal(); };
-  document.getElementById('cf-ok').onclick=async()=>{
-    const button=document.getElementById('cf-ok');
-    button.disabled=true;
-    button.innerHTML=`<span class="button-spinner"></span>${escapeHtml(loadingLabel)}`;
-    try{
+  openModal(html, "sm");
+  document.getElementById("cf-cancel").onclick = () => {
+    onCancel?.();
+    closeModal();
+  };
+  document.getElementById("cf-ok").onclick = async () => {
+    const button = document.getElementById("cf-ok");
+    button.disabled = true;
+    button.innerHTML = `<span class="button-spinner"></span>${escapeHtml(loadingLabel)}`;
+    try {
       await onConfirm();
-    }finally{
+    } finally {
       closeModal();
     }
   };

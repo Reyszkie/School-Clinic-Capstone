@@ -61,7 +61,7 @@ function renderMedicinesTab(){
       <td><span class="chip ${st.chip}">${st.label}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>
-        <button class="mini-btn danger" data-del-med="${m.code}" title="Delete">${ICONS.trash_sm}</button>
+        ${canDeleteClinicRecords()?`<button class="mini-btn danger" data-del-med="${m.code}" title="Delete">${ICONS.trash_sm}</button>`:""}
       </div></td>
     </tr>`;}).join("");
   const deletedCount = MEDICINES.filter(m=>m.deleted).length;
@@ -136,7 +136,9 @@ function openMedicineForm(existing=null){
   </div>
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="mf-save">${ICONS.check} Save Medicine</button></div>`;
   openModal(html);
+  let saving=false;
   document.getElementById('mf-save').onclick=async()=>{
+    if(saving)return;
     const name=document.getElementById('mf-name').value.trim();
     if(!name){ toast('Missing information','Medicine name is required.','err'); return; }
     const rec={
@@ -148,8 +150,9 @@ function openMedicineForm(existing=null){
       deleted:false,
     };
     const saveButton=document.getElementById('mf-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
+    saving=true;
     try{const saved=await saveInventoryRecord({itemType:"medicine",records:MEDICINES,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
-    finally{if(document.body.contains(saveButton)){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
+    finally{saving=false;if(document.body.contains(saveButton)){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
   };
 }
 function bindMedicinesTab(){
@@ -171,6 +174,7 @@ function bindMedicinesTab(){
   document.querySelectorAll('[data-edit-med]').forEach(b=> b.onclick=()=>openMedicineForm(MEDICINES.find(m=>m.code===b.dataset.editMed)));
   document.querySelectorAll('[data-del-med]').forEach(b=>{
     b.onclick=()=>{
+      if(!canDeleteClinicRecords())return;
       const rec=MEDICINES.find(m=>m.code===b.dataset.delMed);
       if(!rec)return;
       confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
@@ -204,7 +208,7 @@ function renderEquipmentTab(){
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-eq="${e.id}" title="Edit">${ICONS.edit}</button>
-        <button class="mini-btn danger" data-del-eq="${e.id}" title="Delete">${ICONS.trash_sm}</button>
+        ${canDeleteClinicRecords()?`<button class="mini-btn danger" data-del-eq="${e.id}" title="Delete">${ICONS.trash_sm}</button>`:""}
       </div></td>
     </tr>`).join("");
   return `
@@ -243,15 +247,18 @@ function openEquipmentForm(existing=null){
   </div>
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="ef-save">${ICONS.check} Save ${itemLabel}</button></div>`;
   openModal(html);
+  let saving=false;
   document.getElementById('ef-save').onclick=async()=>{
+    if(saving)return;
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information',`${itemLabel} name is required.`,'err'); return; }
     const rec={ id:document.getElementById('ef-id').value, name, category:"Medical Supplies", qty:parseInt(document.getElementById('ef-qty').value)||0,
       condition:existing?.condition||"Good", lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
     const saveButton=document.getElementById('ef-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
+    saving=true;
     try{const saved=await saveInventoryRecord({itemType:"equipment",records:EQUIPMENT,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
-    finally{if(document.body.contains(saveButton)){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
+    finally{saving=false;if(document.body.contains(saveButton)){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
   };
 }
 function bindEquipmentTab(){
@@ -273,6 +280,7 @@ function bindEquipmentTab(){
   document.querySelectorAll('[data-edit-eq]').forEach(b=> b.onclick=()=>openEquipmentForm(EQUIPMENT.find(e=>e.id===b.dataset.editEq)));
   document.querySelectorAll('[data-del-eq]').forEach(b=>{
     b.onclick=()=>{
+      if(!canDeleteClinicRecords())return;
       const rec=EQUIPMENT.find(e=>e.id===b.dataset.delEq);
       if(!rec)return;
       confirmDialog({title:"Delete this supply?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{

@@ -71,14 +71,17 @@ function attachLoginFormEvents(){
   };
   document.getElementById('login-form').addEventListener('submit', async (e)=>{
     e.preventDefault();
-    const user=document.getElementById('login-user').value.trim();
-    const pass=document.getElementById('login-pass').value.trim();
+    const user=document.getElementById('login-user').value;
+    const pass=document.getElementById('login-pass').value;
     const errEl=document.getElementById('login-error');
     const loginButton=document.getElementById('login-btn');
     const spinner=document.getElementById('login-spinner');
     const btnText=document.getElementById('login-btn-text');
     errEl.style.display='none';
     if(!user || !pass){ errEl.textContent='Please enter both username and password.'; errEl.style.display='block'; return; }
+    if(/\s/.test(user)){errEl.textContent='Username cannot contain spaces.';errEl.style.display='block';return;}
+    if(!/^[A-Za-z0-9._-]{3,50}$/.test(user)){errEl.textContent='Username must be 3-50 letters, numbers, dots, underscores, or hyphens.';errEl.style.display='block';return;}
+    if(/\s/.test(pass)){errEl.textContent='Password cannot contain spaces.';errEl.style.display='block';return;}
     spinner.style.display='block';
     btnText.textContent='Signing in...';
     loginButton.disabled=true;
@@ -115,7 +118,7 @@ function attachLoginFormEvents(){
     }
     const visibleUser=ensureVisibleClinicUser(found);
     if((!hydrated&&sharedStorageMissing)||sharedStorageNeedsBootstrap){
-      try{await saveToClinicState(false,true,[],true);}
+      try{await saveToClinicState(true,[],true);}
       catch(error){
         await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
         spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
@@ -170,6 +173,7 @@ function openIdentityVerification(user,loginPassword=""){
       return;
     }
     state.currentUser=ensureVisibleClinicUser(user);
+    applyClinicTheme(user.appearanceTheme);
     state.loggedIn=true;
     startClinicRefresh();
     saveAuthSession(user);

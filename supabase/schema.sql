@@ -13,12 +13,16 @@ create table if not exists public.clinic_users (
   middle_initial text,
   role text not null check (role in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse')),
   username text not null unique,
+  appearance_theme text not null default 'ocean',
   password_hash text,
   status text not null default 'Active' check (status in ('Active', 'Disabled')),
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.clinic_users
+  add column if not exists appearance_theme text not null default 'ocean';
 
 create table if not exists public.patients (
   id text primary key,
@@ -60,7 +64,7 @@ create table if not exists public.medicines (
   category text not null default 'General',
   quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
-  -- Legacy fields remain nullable for existing rows; the clinic UI/API no longer use them.
+  -- Batch and supplier are retained for legacy rows; expiration_date is used by the current inventory workflows.
   batch_number text,
   expiration_date date,
   supplier text,
@@ -95,6 +99,24 @@ begin
   end if;
 end;
 $$;
+
+update public.equipment
+set category = 'Medical Supplies'
+where lower(btrim(name)) = any(array[
+  'cotton balls',
+  'elastic bandage',
+  'adhesive bandages (band-aids)',
+  'gauze pads',
+  'medical tape',
+  'disposable face masks',
+  'medical gloves',
+  'bandage',
+  'white flower oil',
+  'mupirocin',
+  'eye mo',
+  'alcohol',
+  'alcohol (70% isopropyl)'
+]);
 
 create table if not exists public.clinical_visits (
   id text primary key,
@@ -153,6 +175,40 @@ create table if not exists public.clinical_visits (
   updated_at timestamptz not null default now()
 );
 
+-- Visit outcome is optional clinical information; legacy rows remain unchanged.
+alter table public.clinical_visits
+  alter column outcome drop not null;
+
+create or replace function public.prevent_patient_delete_with_undeleted_visits()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if exists (
+    select 1
+    from public.clinical_visits
+    where patient_id = old.id
+      and deleted_at is null
+      and status <> 'Deleted'
+  ) then
+    raise exception 'Patient records with visits outside Deleted Records cannot be permanently removed.'
+      using errcode = '23503';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists patients_prevent_delete_with_undeleted_visits on public.patients;
+create trigger patients_prevent_delete_with_undeleted_visits
+before delete on public.patients
+for each row execute function public.prevent_patient_delete_with_undeleted_visits();
+
+-- Add the patient link when upgrading installations created before visits were
+-- normalized with a patient_id column.
+alter table public.clinical_visits
+  add column if not exists patient_id text;
+
 alter table public.clinical_visits
   add column if not exists respiratory_rate text,
   add column if not exists reason_other text,
@@ -161,6 +217,27 @@ alter table public.clinical_visits
   add column if not exists supply_used text,
   add column if not exists supply_item_id text references public.equipment(id) on delete set null,
   add column if not exists supply_quantity integer;
+
+update public.equipment as inventory
+set category = 'Medical Supplies'
+where inventory.category = 'Medical Equipment'
+  and exists (
+    select 1 from public.clinical_visits as visits
+    where visits.supply_item_id = inventory.id
+      or lower(btrim(visits.supply_used)) = lower(btrim(inventory.name))
+  );
+
+update public.clinical_visits
+set guardian_contacted = case lower(btrim(guardian_contacted))
+  when 'yes' then 'Yes'
+  when 'no' then 'No'
+  when 'not applical' then 'Not Applicable'
+  when 'not applicable' then 'Not Applicable'
+  when 'n/a' then 'Not Applicable'
+  when 'na' then 'Not Applicable'
+  else guardian_contacted
+end
+where lower(btrim(guardian_contacted)) in ('yes', 'no', 'not applical', 'not applicable', 'n/a', 'na');
 
 do $$
 begin
@@ -207,6 +284,16 @@ begin
   v_visit := jsonb_populate_record(null::public.clinical_visits, p_visit);
   if v_visit.id is null or v_visit.patient_id is null then
     raise exception 'A visit ID and patient ID are required.';
+  end if;
+  if v_visit.visit_date is null or nullif(btrim(v_visit.visit_time), '') is null then
+    raise exception 'A visit date and time are required.';
+  end if;
+  if nullif(btrim(v_visit.complaint), '') is null then
+    raise exception 'A reason for the clinic visit is required.';
+  end if;
+  if v_visit.guardian_contacted is not null
+    and v_visit.guardian_contacted not in ('Yes', 'No', 'Not Applicable') then
+    raise exception 'Parent / Guardian Contacted must be Yes, No, or Not Applicable.';
   end if;
   perform pg_advisory_xact_lock(hashtextextended(v_visit.id, 0));
 
@@ -282,7 +369,7 @@ begin
             update public.equipment
             set quantity = quantity + greatest(coalesce(v_previous.equipment_quantity, 1), 1)
             where id = (
-              select id from public.equipment where name = v_item_name order by id limit 1
+              select id from public.equipment where id = v_item_name or name = v_item_name order by id limit 1
             );
           end loop;
         end if;
@@ -356,7 +443,8 @@ begin
     loop
       select id into v_item_id
       from public.equipment
-      where name = v_item_name and status = 'Available' and deleted_at is null
+      where (id = v_item_name or name = v_item_name)
+        and category = 'Medical Equipment' and status = 'Available' and deleted_at is null
       order by id
       limit 1;
       v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
@@ -382,6 +470,280 @@ begin
   where id = v_visit.patient_id;
 end;
 $$;
+
+create or replace function public.update_clinical_visit_with_inventory(
+  p_visit jsonb,
+  p_patient_allergies text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_visit public.clinical_visits;
+  v_previous public.clinical_visits;
+  v_old_medicine_quantity integer;
+  v_old_supply_quantity integer;
+  v_old_supply_id text;
+  v_new_supply_id text;
+  v_delta integer;
+  v_deduction record;
+  v_item_id text;
+  v_requested_ids text[];
+  v_selected_values text[];
+begin
+  select * into v_previous
+  from public.clinical_visits
+  where id = p_visit->>'id'
+  for update;
+  if not found or v_previous.status <> 'Active' or v_previous.deleted_at is not null then
+    raise exception 'The active visit to update could not be found.';
+  end if;
+
+  v_visit := jsonb_populate_record(v_previous, p_visit);
+  if v_visit.patient_id is distinct from v_previous.patient_id then
+    raise exception 'A visit cannot be reassigned to a different patient.';
+  end if;
+  if v_visit.visit_date is null or nullif(btrim(v_visit.visit_time), '') is null then
+    raise exception 'A visit date and time are required.';
+  end if;
+  if nullif(btrim(v_visit.complaint), '') is null then
+    raise exception 'A reason for the clinic visit is required.';
+  end if;
+  if v_visit.medicine_name = '' then v_visit.medicine_name := null; end if;
+  if v_visit.medicine_name is not null and v_visit.medicine_code is null then
+    raise exception 'The selected medicine could not be matched to an inventory item.';
+  end if;
+  if v_visit.medicine_code is not null and (v_visit.medicine_quantity is null or v_visit.medicine_quantity <= 0) then
+    raise exception 'Medication quantity must be a positive whole number.';
+  end if;
+
+  v_old_supply_id := v_previous.supply_item_id;
+  if v_old_supply_id is null and v_previous.supply_used is not null then
+    select id into v_old_supply_id from public.equipment
+    where category = 'Medical Supplies'
+      and (id = v_previous.supply_used or lower(btrim(name)) = lower(btrim(v_previous.supply_used)))
+    order by (id = v_previous.supply_used) desc, id limit 1;
+  end if;
+  v_new_supply_id := v_visit.supply_item_id;
+  if v_new_supply_id is not null then
+    select id, name into v_new_supply_id, v_visit.supply_used
+    from public.equipment
+    where id = v_new_supply_id and category = 'Medical Supplies';
+    if not found then
+      raise exception 'The selected inventory record could not be matched to a medical supplies item.';
+    end if;
+  elsif v_visit.supply_used is not null then
+    select id, name into v_new_supply_id, v_visit.supply_used
+    from public.equipment
+    where category = 'Medical Supplies'
+      and (id = v_visit.supply_used or lower(btrim(name)) = lower(btrim(v_visit.supply_used)))
+    order by (id = v_visit.supply_used) desc, id limit 1;
+  end if;
+  if v_visit.supply_used is not null and v_new_supply_id is null then
+    raise exception 'The selected medical supply could not be matched to inventory.';
+  end if;
+  v_visit.supply_item_id := v_new_supply_id;
+  if v_new_supply_id is not null and (v_visit.supply_quantity is null or v_visit.supply_quantity <= 0) then
+    raise exception 'Supply quantity must be a positive whole number.';
+  end if;
+  if jsonb_typeof(v_visit.equipment_used) <> 'array' then
+    raise exception 'Medical equipment selections must be an array of inventory IDs.';
+  end if;
+  if jsonb_array_length(v_visit.equipment_used) > 0
+    and (v_visit.equipment_quantity is null or v_visit.equipment_quantity <= 0) then
+    raise exception 'Equipment quantity must be a positive whole number.';
+  end if;
+  select coalesce(array_agg(distinct value), array[]::text[])
+    into v_selected_values
+  from jsonb_array_elements_text(v_visit.equipment_used) as selections(value);
+  if exists (
+    select 1 from unnest(v_selected_values) as requested(item_id)
+    where not exists (
+      select 1 from public.equipment
+      where (id = requested.item_id or name = requested.item_id)
+        and category = 'Medical Equipment'
+    ) and not exists (
+      select 1 from jsonb_array_elements_text(v_previous.equipment_used) as previous_values(value)
+      where previous_values.value = requested.item_id
+    )
+  ) then
+    raise exception 'A selected item is not a medical equipment inventory record.';
+  end if;
+  select coalesce(array_agg(distinct equipment.id), array[]::text[])
+    into v_requested_ids
+  from unnest(v_selected_values) as requested(item_id)
+  join public.equipment on (equipment.id = requested.item_id or equipment.name = requested.item_id)
+    and equipment.category = 'Medical Equipment';
+
+  select coalesce(sum(quantity), 0)::integer into v_old_medicine_quantity
+  from public.clinical_visit_inventory_deductions
+  where visit_id = v_previous.id and item_type = 'medicine' and reversed_at is null;
+  if v_old_medicine_quantity = 0 then
+    v_old_medicine_quantity := case when v_previous.medicine_code is null then 0 else coalesce(v_previous.medicine_quantity, 0) end;
+  end if;
+  select coalesce(sum(quantity), 0)::integer into v_old_supply_quantity
+  from public.clinical_visit_inventory_deductions
+  where visit_id = v_previous.id and item_type = 'equipment'
+    and item_id = coalesce(v_old_supply_id, '') and reversed_at is null;
+  if v_old_supply_quantity = 0 then
+    v_old_supply_quantity := case when v_old_supply_id is null then 0 else coalesce(v_previous.supply_quantity, 0) end;
+  end if;
+
+  if v_previous.medicine_code is not distinct from v_visit.medicine_code then
+    v_delta := v_old_medicine_quantity - coalesce(v_visit.medicine_quantity, 0);
+    if v_delta > 0 then
+      if not exists (select 1 from public.medicines where code = v_previous.medicine_code) then
+        raise exception 'The historical medicine is no longer in inventory, so its recorded quantity cannot be changed.';
+      end if;
+      update public.medicines set quantity = quantity + v_delta where code = v_previous.medicine_code;
+    elsif v_delta < 0 then
+      update public.medicines
+      set quantity = quantity + v_delta
+      where code = v_visit.medicine_code and deleted_at is null
+        and (expiration_date is null or expiration_date >= current_date)
+        and quantity >= -v_delta;
+      if not found then raise exception 'The selected medicine is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  else
+    if v_previous.medicine_code is not null and v_old_medicine_quantity > 0 then
+      update public.medicines set quantity = quantity + v_old_medicine_quantity where code = v_previous.medicine_code;
+    end if;
+    if v_visit.medicine_code is not null then
+      update public.medicines
+      set quantity = quantity - v_visit.medicine_quantity
+      where code = v_visit.medicine_code and name = v_visit.medicine_name
+        and deleted_at is null and (expiration_date is null or expiration_date >= current_date)
+        and quantity >= v_visit.medicine_quantity;
+      if not found then raise exception 'The selected medicine is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  end if;
+
+  if v_old_supply_id is not distinct from v_new_supply_id then
+    v_delta := v_old_supply_quantity - coalesce(v_visit.supply_quantity, 0);
+    if v_delta > 0 then
+      update public.equipment set quantity = quantity + v_delta where id = v_old_supply_id;
+    elsif v_delta < 0 then
+      update public.equipment
+      set quantity = quantity + v_delta
+      where id = v_new_supply_id and category = 'Medical Supplies'
+        and status = 'Available' and deleted_at is null and quantity >= -v_delta;
+      if not found then raise exception 'The selected medical supply is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  else
+    if v_old_supply_id is not null and v_old_supply_quantity > 0 then
+      update public.equipment set quantity = quantity + v_old_supply_quantity where id = v_old_supply_id;
+    end if;
+    if v_new_supply_id is not null then
+      update public.equipment
+      set quantity = quantity - v_visit.supply_quantity
+      where id = v_new_supply_id and name = v_visit.supply_used
+        and category = 'Medical Supplies' and status = 'Available'
+        and deleted_at is null and quantity >= v_visit.supply_quantity;
+      if not found then raise exception 'The selected medical supply is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+    end if;
+  end if;
+
+  for v_deduction in
+    select * from public.clinical_visit_inventory_deductions
+    where visit_id = v_previous.id and item_type = 'equipment'
+      and item_id <> coalesce(v_old_supply_id, '') and reversed_at is null
+    for update
+  loop
+    if v_deduction.item_id = any(v_requested_ids) then
+      v_delta := v_deduction.quantity - v_visit.equipment_quantity;
+      if v_delta > 0 then
+        update public.equipment set quantity = quantity + v_delta where id = v_deduction.item_id;
+      elsif v_delta < 0 then
+        update public.equipment set quantity = quantity + v_delta
+        where id = v_deduction.item_id and category = 'Medical Equipment'
+          and status = 'Available' and deleted_at is null and quantity >= -v_delta;
+        if not found then raise exception 'The selected medical equipment is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+      end if;
+      update public.clinical_visit_inventory_deductions
+      set quantity = v_visit.equipment_quantity
+      where visit_id = v_previous.id and item_type = 'equipment' and item_id = v_deduction.item_id;
+    else
+      update public.equipment set quantity = quantity + v_deduction.quantity where id = v_deduction.item_id;
+      update public.clinical_visit_inventory_deductions
+      set reversed_at = now()
+      where visit_id = v_previous.id and item_type = 'equipment' and item_id = v_deduction.item_id;
+    end if;
+  end loop;
+
+  foreach v_item_id in array v_requested_ids
+  loop
+    if not exists (
+      select 1 from public.clinical_visit_inventory_deductions
+      where visit_id = v_previous.id and item_type = 'equipment'
+        and item_id = v_item_id and reversed_at is null
+    ) then
+      update public.equipment set quantity = quantity - v_visit.equipment_quantity
+      where id = v_item_id and category = 'Medical Equipment'
+        and status = 'Available' and deleted_at is null
+        and quantity >= v_visit.equipment_quantity;
+      if not found then raise exception 'The selected medical equipment is unavailable or has insufficient stock.' using errcode = 'P0001'; end if;
+      insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+      values (v_previous.id, 'equipment', v_item_id, v_visit.equipment_quantity, null)
+      on conflict (visit_id, item_type, item_id) do update
+      set quantity = excluded.quantity, reversed_at = null;
+    end if;
+  end loop;
+
+  update public.clinical_visit_inventory_deductions
+  set reversed_at = now()
+  where visit_id = v_previous.id and reversed_at is null
+    and ((item_type = 'medicine' and item_id = coalesce(v_previous.medicine_code, '') and v_previous.medicine_code is distinct from v_visit.medicine_code)
+      or (item_type = 'equipment' and item_id = coalesce(v_old_supply_id, '') and v_old_supply_id is distinct from v_new_supply_id));
+  if v_visit.medicine_code is not null then
+    insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+    values (v_visit.id, 'medicine', v_visit.medicine_code, v_visit.medicine_quantity, null)
+    on conflict (visit_id, item_type, item_id) do update
+    set quantity = excluded.quantity, reversed_at = null;
+  end if;
+  if v_new_supply_id is not null then
+    insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity, reversed_at)
+    values (v_visit.id, 'equipment', v_new_supply_id, v_visit.supply_quantity, null)
+    on conflict (visit_id, item_type, item_id) do update
+    set quantity = excluded.quantity, reversed_at = null;
+  end if;
+
+  v_visit.created_at := v_previous.created_at;
+  v_visit.updated_at := now();
+  v_visit.status := 'Active';
+  v_visit.deleted_at := null;
+  update public.clinical_visits set
+    nurse_id = v_visit.nurse_id, nurse_name = v_visit.nurse_name, visit_date = v_visit.visit_date,
+    visit_time = v_visit.visit_time, complaint = v_visit.complaint, reason_other = v_visit.reason_other,
+    description = v_visit.description, symptom_start = v_visit.symptom_start, pain_level = v_visit.pain_level,
+    pain_location = v_visit.pain_location, symptoms = v_visit.symptoms, known_conditions = v_visit.known_conditions,
+    allergies_history = v_visit.allergies_history, current_medication = v_visit.current_medication,
+    previous_similar = v_visit.previous_similar, last_meal = v_visit.last_meal, weight = v_visit.weight,
+    height = v_visit.height, temperature = v_visit.temperature, blood_pressure = v_visit.blood_pressure,
+    heart_rate = v_visit.heart_rate, respiratory_rate = v_visit.respiratory_rate,
+    oxygen_saturation = v_visit.oxygen_saturation, assessment = v_visit.assessment,
+    assessment_other = v_visit.assessment_other, notes = v_visit.notes, interventions = v_visit.interventions,
+    treatment_given = v_visit.treatment_given, medicine_code = v_visit.medicine_code,
+    medicine_name = v_visit.medicine_name, medicine_quantity = v_visit.medicine_quantity,
+    equipment_used = v_visit.equipment_used, equipment_quantity = v_visit.equipment_quantity,
+    supply_used = v_visit.supply_used, supply_item_id = v_visit.supply_item_id,
+    supply_quantity = v_visit.supply_quantity, dosage = v_visit.dosage, outcome = v_visit.outcome,
+    released_at = v_visit.released_at, remarks = v_visit.remarks,
+    guardian_contacted = v_visit.guardian_contacted, guardian_method = v_visit.guardian_method,
+    person_contacted = v_visit.person_contacted, staff_record = v_visit.staff_record,
+    position = v_visit.position, version_of = v_previous.version_of, revision = v_previous.revision,
+    supersedes_id = v_previous.supersedes_id, superseded_by = v_previous.superseded_by,
+    updated_at = v_visit.updated_at
+  where id = v_previous.id and patient_id = v_previous.patient_id and status = 'Active';
+
+  update public.patients set allergies = coalesce(p_patient_allergies, allergies)
+  where id = v_previous.patient_id;
+end;
+$$;
+
+-- Patient profiles are saved separately from clinical visits.
+drop function if exists public.save_new_patient_with_initial_visit(jsonb, jsonb, text);
 
 create or replace function public.set_clinical_visit_inventory_status(
   p_visit_id text,
@@ -412,7 +774,9 @@ begin
   end if;
 
   if p_deleted then
-    if v_visit.status = 'Deleted' then return; end if;
+    if v_visit.status = 'Deleted' then
+      raise exception 'The clinical visit is already deleted.';
+    end if;
     if v_visit.status <> 'Active' then
       raise exception 'Only an active clinical visit can be deleted.';
     end if;
@@ -453,7 +817,7 @@ begin
       if jsonb_typeof(v_visit.equipment_used) = 'array' then
         for v_item_name in select jsonb_array_elements_text(v_visit.equipment_used)
         loop
-          select id into v_item_id from public.equipment where name = v_item_name order by id limit 1;
+          select id into v_item_id from public.equipment where id = v_item_name or name = v_item_name order by id limit 1;
           if v_item_id is not null then
             v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
             update public.equipment set quantity = quantity + v_quantity where id = v_item_id;
@@ -465,7 +829,9 @@ begin
     end if;
     update public.clinical_visits set status = 'Deleted', deleted_at = now() where id = v_visit.id;
   else
-    if v_visit.status <> 'Deleted' then return; end if;
+    if v_visit.status <> 'Deleted' then
+      raise exception 'The clinical visit is no longer deleted.';
+    end if;
     select exists (
       select 1 from public.clinical_visit_inventory_deductions where visit_id = v_visit.id
     ) into v_has_deductions;
@@ -536,7 +902,7 @@ begin
       if jsonb_typeof(v_visit.equipment_used) = 'array' then
         for v_item_name in select jsonb_array_elements_text(v_visit.equipment_used)
         loop
-          select id into v_item_id from public.equipment where name = v_item_name order by id limit 1;
+          select id into v_item_id from public.equipment where id = v_item_name or name = v_item_name order by id limit 1;
           v_quantity := greatest(coalesce(v_visit.equipment_quantity, 1), 1);
           update public.equipment
           set quantity = quantity - v_quantity
@@ -563,15 +929,10 @@ $$;
 
 revoke all on function public.save_clinical_visit_with_inventory(jsonb, text) from public;
 grant execute on function public.save_clinical_visit_with_inventory(jsonb, text) to service_role;
+revoke all on function public.update_clinical_visit_with_inventory(jsonb, text) from public;
+grant execute on function public.update_clinical_visit_with_inventory(jsonb, text) to service_role;
 revoke all on function public.set_clinical_visit_inventory_status(text, boolean, boolean) from public;
 grant execute on function public.set_clinical_visit_inventory_status(text, boolean, boolean) to service_role;
-
--- Upgrade existing databases so deleting a patient also deletes that patient's visits.
-alter table public.clinical_visits
-  drop constraint if exists clinical_visits_patient_id_fkey;
-alter table public.clinical_visits
-  add constraint clinical_visits_patient_id_fkey
-  foreign key (patient_id) references public.patients(id) on delete cascade;
 
 create table if not exists public.audit_logs (
   id bigint generated by default as identity primary key,
@@ -629,6 +990,283 @@ create table if not exists public.clinic_sync_meta (
   normalized_ready boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+-- Migrate rows from installations that stored patient profiles in public.students.
+do $$
+begin
+  if to_regclass('public.students') is not null then
+    execute $migration$
+      insert into public.patients (
+        id, last_name, first_name, middle_initial, name, course, year_level,
+        institutional_category, personnel_type, gender, age, contact,
+        guardian_name, guardian_contact, allergies, medical_conditions, symptoms,
+        deleted_at, deleted_by, updated_at
+      )
+      select
+        patient_id,
+        coalesce(nullif(patient->>'lastName', ''), nullif(patient->>'last_name', ''),
+          split_part(coalesce(nullif(patient->>'name', ''), 'Unknown Patient'), ',', 1)),
+        coalesce(nullif(patient->>'firstName', ''), nullif(patient->>'first_name', ''),
+          case when position(',' in coalesce(patient->>'name', '')) > 0
+            then nullif(btrim(split_part(patient->>'name', ',', 2)), '')
+            else nullif(patient->>'name', '') end, 'Unknown'),
+        coalesce(nullif(patient->>'middleInitial', ''), nullif(patient->>'middle_initial', '')),
+        coalesce(nullif(patient->>'name', ''), 'Unknown Patient'),
+        coalesce(nullif(patient->>'course', ''), nullif(patient->>'institutionalCategory', ''),
+          nullif(patient->>'institutional_category', ''), 'Not recorded'),
+        coalesce(nullif(patient->>'year', ''), nullif(patient->>'yearLevel', ''),
+          nullif(patient->>'year_level', ''), nullif(patient->>'personnelType', ''),
+          nullif(patient->>'personnel_type', ''), 'Not recorded'),
+        coalesce(nullif(patient->>'institutionalCategory', ''),
+          nullif(patient->>'institutional_category', ''), nullif(patient->>'course', ''),
+          'Not recorded'),
+        coalesce(nullif(patient->>'personnelType', ''), nullif(patient->>'personnel_type', '')),
+        coalesce(nullif(patient->>'gender', ''), nullif(patient->>'sex', '')),
+        case when coalesce(patient->>'age', '') ~ '^[0-9]{1,3}$'
+          and (patient->>'age')::numeric between 0 and 120
+          then (patient->>'age')::integer else null end,
+        coalesce(nullif(patient->>'contact', ''), nullif(patient->>'phone', '')),
+        coalesce(nullif(patient->>'guardianName', ''), nullif(patient->>'guardian_name', '')),
+        coalesce(nullif(patient->>'guardianContact', ''), nullif(patient->>'guardian_contact', '')),
+        coalesce(nullif(patient->>'allergies', ''), 'Not Yet Assessed'),
+        coalesce(nullif(patient->>'conditions', ''), nullif(patient->>'medicalConditions', ''),
+          nullif(patient->>'medical_conditions', ''), 'None'),
+        case when jsonb_typeof(patient->'symptoms') = 'array'
+          then patient->'symptoms' else '[]'::jsonb end,
+        case when lower(coalesce(patient->>'deleted', 'false')) = 'true'
+          or patient->>'status' = 'Deleted' then now() else null end,
+        coalesce(nullif(patient->>'deletedBy', ''), nullif(patient->>'deleted_by', '')),
+        now()
+      from (
+        select to_jsonb(students) as patient,
+          coalesce(
+            nullif(to_jsonb(students)->>'id', ''),
+            nullif(to_jsonb(students)->>'patient_id', ''),
+            nullif(to_jsonb(students)->>'student_id', '')
+          ) as patient_id
+        from public.students as students
+      ) as legacy_students
+      where patient_id is not null
+      on conflict (id) do nothing
+    $migration$;
+  end if;
+end;
+$$;
+
+-- Restore patient profiles from the legacy snapshot before linking visits.
+with snapshot_patient_rows as (
+  select entries.patient
+  from public.clinic_state as snapshots
+  cross join lateral (
+    select value as patient
+    from jsonb_array_elements(
+      case when jsonb_typeof(snapshots.state->'students') = 'array'
+        then snapshots.state->'students' else '[]'::jsonb end
+    )
+    union all
+    select value as patient
+    from jsonb_array_elements(
+      case when jsonb_typeof(snapshots.state->'patients') = 'array'
+        then snapshots.state->'patients' else '[]'::jsonb end
+    )
+    union all
+    select value as patient
+    from jsonb_array_elements(
+      case when jsonb_typeof(snapshots.state->'deletedStudents') = 'array'
+        then snapshots.state->'deletedStudents' else '[]'::jsonb end
+    )
+  ) as entries
+),
+patient_rows as (
+  select distinct on (nullif(patient->>'id', ''))
+    patient,
+    coalesce(
+      nullif(patient->>'lastName', ''),
+      nullif(patient->>'last_name', ''),
+      split_part(coalesce(nullif(patient->>'name', ''), 'Unknown Patient'), ',', 1)
+    ) as last_name,
+    coalesce(
+      nullif(patient->>'firstName', ''),
+      nullif(patient->>'first_name', ''),
+      case
+        when position(',' in coalesce(patient->>'name', '')) > 0
+          then nullif(btrim(split_part(patient->>'name', ',', 2)), '')
+        else nullif(patient->>'name', '')
+      end,
+      'Unknown'
+    ) as first_name
+  from snapshot_patient_rows
+  where nullif(patient->>'id', '') is not null
+  order by nullif(patient->>'id', ''),
+    case when lower(coalesce(patient->>'deleted', 'false')) = 'true'
+      or patient->>'status' = 'Deleted' then 1 else 0 end desc
+)
+insert into public.patients (
+  id, last_name, first_name, middle_initial, name, course, year_level,
+  institutional_category, personnel_type, gender, age, contact,
+  guardian_name, guardian_contact, allergies, medical_conditions, symptoms,
+  deleted_at, deleted_by, updated_at
+)
+select
+  patient->>'id',
+  last_name,
+  first_name,
+  coalesce(nullif(patient->>'middleInitial', ''), nullif(patient->>'middle_initial', '')),
+  coalesce(nullif(patient->>'name', ''), concat_ws(', ', last_name, first_name)),
+  coalesce(
+    nullif(patient->>'course', ''),
+    nullif(patient->>'institutionalCategory', ''),
+    nullif(patient->>'institutional_category', ''),
+    'Not recorded'
+  ),
+  coalesce(
+    nullif(patient->>'year', ''),
+    nullif(patient->>'yearLevel', ''),
+    nullif(patient->>'year_level', ''),
+    nullif(patient->>'personnelType', ''),
+    nullif(patient->>'personnel_type', ''),
+    'Not recorded'
+  ),
+  coalesce(
+    nullif(patient->>'institutionalCategory', ''),
+    nullif(patient->>'institutional_category', ''),
+    nullif(patient->>'course', ''),
+    'Not recorded'
+  ),
+  coalesce(nullif(patient->>'personnelType', ''), nullif(patient->>'personnel_type', '')),
+  coalesce(nullif(patient->>'gender', ''), nullif(patient->>'sex', '')),
+  case
+    when coalesce(patient->>'age', '') ~ '^[0-9]{1,3}$'
+      and (patient->>'age')::numeric between 0 and 120
+      then (patient->>'age')::integer
+    else null
+  end,
+  coalesce(nullif(patient->>'contact', ''), nullif(patient->>'phone', '')),
+  coalesce(nullif(patient->>'guardianName', ''), nullif(patient->>'guardian_name', '')),
+  coalesce(nullif(patient->>'guardianContact', ''), nullif(patient->>'guardian_contact', '')),
+  coalesce(nullif(patient->>'allergies', ''), 'Not Yet Assessed'),
+  coalesce(
+    nullif(patient->>'conditions', ''),
+    nullif(patient->>'medicalConditions', ''),
+    nullif(patient->>'medical_conditions', ''),
+    'None'
+  ),
+  case when jsonb_typeof(patient->'symptoms') = 'array' then patient->'symptoms' else '[]'::jsonb end,
+  case
+    when lower(coalesce(patient->>'deleted', 'false')) = 'true'
+      or patient->>'status' = 'Deleted' then now()
+    else null
+  end,
+  coalesce(nullif(patient->>'deletedBy', ''), nullif(patient->>'deleted_by', '')),
+  now()
+from patient_rows
+on conflict (id) do nothing;
+
+-- Preserve patient links from older normalized schemas and the legacy snapshot.
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'clinical_visits'
+      and column_name = 'student_id'
+  ) then
+    execute '
+      update public.clinical_visits
+      set patient_id = student_id::text
+      where patient_id is null and student_id is not null
+    ';
+  end if;
+end;
+$$;
+
+update public.clinical_visits as visits
+set patient_id = coalesce(
+  nullif(entries.visit->>'studentId', ''),
+  nullif(entries.visit->>'patientId', ''),
+  nullif(entries.visit->>'patient_id', '')
+)
+from public.clinic_state as snapshot
+cross join lateral jsonb_array_elements(
+  case
+    when jsonb_typeof(snapshot.state->'consultations') = 'array'
+      then snapshot.state->'consultations'
+    else '[]'::jsonb
+  end
+) as entries(visit)
+where visits.patient_id is null
+  and visits.id::text = coalesce(
+    entries.visit->>'id',
+    entries.visit->>'visitId',
+    entries.visit->>'visit_id'
+  );
+
+-- Create placeholder patient profiles for visits that still lack one,
+-- so every visit has a valid patient link before the not-null constraint.
+insert into public.patients (
+  id, last_name, first_name, middle_initial, name, course, year_level,
+  institutional_category, personnel_type, gender, age, contact,
+  guardian_name, guardian_contact, allergies, medical_conditions, symptoms,
+  deleted_at, deleted_by, updated_at
+)
+select
+  visits.id,
+  'Unknown', 'Patient', null, 'Unknown Patient',
+  'Not recorded', 'Not recorded',
+  'Not recorded', null, null, null, null,
+  null, null, 'Not Yet Assessed', 'None', '[]'::jsonb,
+  null, null, now()
+from public.clinical_visits as visits
+left join public.patients as patients on patients.id = visits.patient_id
+where visits.patient_id is null or patients.id is null
+on conflict (id) do nothing;
+
+-- Link any remaining visits whose patient_id is still null or dangling
+-- to the placeholder patients just created (same id as the visit).
+update public.clinical_visits as visits
+set patient_id = visits.id
+where patient_id is null
+   or not exists (
+     select 1 from public.patients where id = visits.patient_id
+   );
+
+-- Final safety check: fail only if some visit still cannot be linked.
+do $$
+declare
+  v_unlinked_visits text;
+begin
+  select string_agg(
+    format('visit_id=%s, patient_id=%s', visit_id, patient_id),
+    '; ' order by visit_id
+  )
+  into v_unlinked_visits
+  from (
+    select
+      visits.id as visit_id,
+      coalesce(visits.patient_id, '<NULL>') as patient_id
+    from public.clinical_visits as visits
+    left join public.patients as patients on patients.id = visits.patient_id
+    where visits.patient_id is null or patients.id is null
+    order by visits.id
+    limit 20
+  ) as unlinked;
+
+  if v_unlinked_visits is not null then
+    raise exception 'Cannot migrate clinical visit patient links. First unresolved records (up to 20): %.', v_unlinked_visits;
+  end if;
+end;
+$$;
+
+alter table public.clinical_visits
+  alter column patient_id set not null;
+
+-- Upgrade existing databases so deleting a patient also deletes that patient's visits.
+alter table public.clinical_visits
+  drop constraint if exists clinical_visits_patient_id_fkey;
+alter table public.clinical_visits
+  add constraint clinical_visits_patient_id_fkey
+  foreign key (patient_id) references public.patients(id) on delete cascade;
 
 -- Add missing checks to existing installations without rejecting legacy rows.
 do $$
@@ -751,7 +1389,7 @@ create index if not exists medicines_expiration_idx
 create index if not exists audit_logs_created_at_idx
   on public.audit_logs (created_at desc);
 
--- Keep tables private to server-side code until Supabase Auth policies are added.
+-- RLS is enabled without client policies; access flows through the authenticated server API.
 alter table public.clinic_users enable row level security;
 
 -- Local test account for the clinic login endpoint.
@@ -908,6 +1546,36 @@ $$;
 
 revoke all on function public.authenticate_clinic_user(text, text) from public;
 grant execute on function public.authenticate_clinic_user(text, text) to service_role;
+
+create or replace function public.change_legacy_clinic_user_password(
+  p_username text,
+  p_current_password text,
+  p_new_password text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_updated integer;
+begin
+  update public.clinic_users
+  set password_hash = extensions.crypt(p_new_password, extensions.gen_salt('bf')),
+      updated_at = now()
+  where username = p_username
+    and role = 'Head Nurse'
+    and status = 'Active'
+    and deleted_at is null
+    and password_hash is not null
+    and extensions.crypt(p_current_password, password_hash) = password_hash;
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+revoke all on function public.change_legacy_clinic_user_password(text, text, text) from public;
+grant execute on function public.change_legacy_clinic_user_password(text, text, text) to service_role;
 
 alter table public.patients enable row level security;
 alter table public.medicines enable row level security;

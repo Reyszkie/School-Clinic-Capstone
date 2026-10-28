@@ -88,8 +88,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Add, select, edit, and delete patient actions.
 - Deleted patient recovery.
 - Patient initials avatar.
-- Name, course, year, sex, contact, guardian, allergies, medical conditions, and registration symptoms display.
-- Warning styling for known allergies and medical conditions.
+- Name, institutional category, year or personnel type, sex, and guardian contact display.
 - Required last name and given name validation.
 - Automatic internal patient record identifiers.
 - Duplicate patient matching to reuse the existing profile and its Clinical Visit Records.
@@ -99,7 +98,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Sex selection.
 - Contact number field.
 - Parent or guardian name and contact fields.
-- Symptom checklist with Other option on the patient registration form.
+- Add New Patient saves the patient profile only; clinical visits are created separately from the patient profile.
 - Patient save and update confirmations.
 - Patient audit entries for additions, updates, and deletions.
 - Clinical Visit Records section.
@@ -107,6 +106,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - View full clinical record action.
 - Edit visit record action.
 - New Patient Visit action.
+- Distinct visit records remain linked to the patient; later visits do not overwrite earlier encounters.
 - Visit date and time fields.
 - Nurse-on-duty field.
 - Reason selection with Other option.
@@ -195,20 +195,21 @@ The application is built with Next.js and deployed as one Vercel application. Th
 ### User Management
 
 - User Management tab.
-- User ID, name, role, and status display.
+- Name, role, and status display; internal user IDs remain available to application operations.
 - Active and Disabled statuses.
 - Add, edit, enable, disable, and delete user actions.
 - Deleted user recovery.
 - Last name, first name, and middle initial fields.
-- Head Nurse and Administrator role.
-- Head Nurse role.
+- Head Nurse role with full administrative permissions.
 - Staff Nurse role.
+- Existing legacy Head Nurse & Administrator accounts retain access; the legacy role is not offered for new accounts.
 - Username field.
 - Password and confirm-password fields.
 - Password show/hide controls.
 - Required name, username, and new-password validation.
 - Password confirmation validation.
-- Leave-blank password behavior when editing a user.
+- Head Nurses can change another user's password through Supabase Auth; Staff Nurses cannot use the interface or password API to do so.
+- Password changes require matching values and at least 8 characters; plaintext passwords are never written to clinic tables.
 - User audit entries.
 
 ### Audit Logs
@@ -230,8 +231,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Deleted medicines list.
 - Deleted inventory items list.
 - Deleted users list.
-- Restore actions for every record category.
-- Permanent delete actions.
+- Restore actions for every record category (Head Nurse and existing legacy administrators only).
+- Permanent delete actions (Head Nurse and existing legacy administrators only).
 - Permanent delete confirmation dialog.
 - Warning audit entry for permanent deletion.
 - Empty-state message for each category.
@@ -254,7 +255,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 - Supabase PostgreSQL persistence through authenticated Next.js REST API routes.
 - Normalized tables for patients, visits, inventory, users, settings, and audit logs, with `clinic_state` retained as a compatibility snapshot.
-- Server-side session and role checks for clinic data, account creation, and permanent deletion.
+- Server-side session and role checks for clinic data, account management, and deletion/restoration.
+- Staff Nurses can add and edit records but cannot delete or restore them, including through direct API requests.
 - `GET /api/healthz` health endpoint.
 - `GET /api/clinic-state` shared-state endpoint.
 - `PUT /api/clinic-state` shared-state update endpoint.
@@ -278,20 +280,27 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 The repository includes a normalized Supabase schema at `supabase/schema.sql`. It creates:
 
-- `clinic_users` for staff accounts and future Supabase Auth user links.
+- `clinic_users` for staff accounts, future Supabase Auth user links, and per-user appearance preferences.
 - `patients` for student and patient profiles.
 - `patients.institutional_category` and `patients.personnel_type` for student classifications and campus personnel records, while retaining legacy `course` and `year_level` columns.
-- `clinical_visits` for consultation records, vital signs, assessments, treatments, outcomes, and visit revisions.
+- `clinical_visits` for consultation records, vital signs, assessments, treatments, optional outcome details, and visit revisions.
 - `clinical_visit_inventory_deductions` for idempotent treatment stock deductions and reversals.
 - `medicines` for medicine stock, expiration dates, and soft deletion. Legacy batch and supplier columns are retained for existing records but are no longer used by the application.
 - `equipment` for medical supply quantities, maintenance dates, statuses, and soft deletion. Legacy equipment and condition data are retained for historical records.
 - `audit_logs` for user actions and module activity.
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
+- `clinic_sync_meta` for normalized-data migration and synchronization state.
 
+<<<<<<< HEAD
 Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields and the `register_clinic_patient`, `save_clinical_visit_with_inventory`, and `set_clinical_visit_inventory_status` database functions. Patient registration uses the transactional registration function to detect possible matches and prevent simultaneous duplicate submissions. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+=======
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations before deploying application changes that use it. It adds the patient classification fields, the per-user `clinic_users.appearance_theme` preference, and allows visit outcome details to be left blank; restores patient profiles from a legacy `students` table or the `clinic_state` snapshot; backfills a missing `clinical_visits.patient_id` from legacy visit links or the snapshot; normalizes known legacy guardian-contact values; and installs the `save_clinical_visit_with_inventory`, `update_clinical_visit_with_inventory`, and `set_clinical_visit_inventory_status` database functions used for separate visit records and inventory updates. A database trigger prevents a patient purge from cascading into visit rows that are not already in Deleted Records. If any visit still cannot be linked to an existing patient, the migration stops with the first 20 unresolved visit and patient IDs so they can be restored or corrected without discarding visits. It also removes the obsolete function that created a patient and initial visit together. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+>>>>>>> c3549fc25e3ba7d082d68597bc4a166788222749
 
-The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled; the API uses its server-side secret key, so that key must never be exposed to browser code.
+`supabase/reset_patient_records.sql` is a destructive reset script. Verify the Supabase project before running it. By default it requires an external backup reference and explicit operator confirmation; proceeding without a backup requires explicitly setting `operator_confirmed_without_backup` and `operator_confirmed` to `true`. That option is irreversible without another backup. The script preserves user accounts and inventory rows and checks their data before committing.
+
+The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled without client policies; data access is restricted to the authenticated server API, which uses its server-side secret key. That key must never be exposed to browser code.
 
 ## Technology
 
@@ -312,11 +321,11 @@ The clinic API reads normalized tables and uses `clinic_state` for compatibility
 3. Set `SUPABASE_URL` to the URL of that Supabase project.
 4. Set `SUPABASE_SECRET_KEY` to that project's server-side Secret key, or use `SUPABASE_SERVICE_ROLE_KEY` for a legacy project. Never expose this key to the browser.
 5. Optionally set `AUDIT_SESSION_SECRET` to a separate long random secret for signing clinic sessions. If omitted, the server-side Supabase key is used.
-6. Create the first administrator in the Supabase SQL Editor, replacing the sample username and password before running:
+6. Create the first Head Nurse in the Supabase SQL Editor, replacing the sample username and password before running:
 
 	```sql
 insert into public.clinic_users (id, name, last_name, first_name, role, username, password_hash, status)
-values ('NRS-ADMIN-001', 'Clinic Administrator', 'Administrator', 'Clinic', 'Head Nurse & Administrator', 'YOUR_ADMIN_USERNAME', extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')), 'Active');
+values ('NRS-ADMIN-001', 'Clinic Head Nurse', 'Nurse', 'Clinic', 'Head Nurse', 'YOUR_ADMIN_USERNAME', extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')), 'Active');
 	```
 
    The schema also creates a local test account (`testnurse` / `test12345`) with the Staff Nurse role. Change or remove it before production use.

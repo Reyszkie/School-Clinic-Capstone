@@ -49,16 +49,24 @@ function yearLevelOptionsHtml(selected){
   return YEAR_LEVEL_GROUPS.map(group=>`<optgroup label="${group.label}">${group.options.map(year=>`<option ${selected===year?"selected":""}>${year}</option>`).join("")}</optgroup>`).join("");
 }
 function yearOptionsForCategoryHtml(category,selected=""){
-  if(category==="Campus Personnel")return PERSONNEL_TYPES.map(type=>`<option ${selected===type?"selected":""}>${type}</option>`).join("");
+  const placeholder=`<option value="">Select ${category==="Campus Personnel"?"Personnel Type":"Year Level"}</option>`;
+  if(!category)return placeholder;
+  if(category==="Campus Personnel")return placeholder+PERSONNEL_TYPES.map(type=>`<option ${selected===type?"selected":""}>${type}</option>`).join("");
   const groupName=COLLEGE_COURSES.includes(category)?"College":
     ["HUMSS","GAS","ABM","STEM","ICT","HE"].includes(category)?"Senior High School":
     category==="James"?"Junior High School":
     category==="Job"?"Elementary":
     category==="John"?"Kindergarten":"";
   const group=YEAR_LEVEL_GROUPS.find(candidate=>candidate.label===groupName);
-  if(!group)return yearLevelOptionsHtml(selected);
-  const current=group.options.includes(selected)?selected:group.options[0];
-  return group.options.map(year=>`<option ${year===current?"selected":""}>${year}</option>`).join("");
+  if(!group)return placeholder+yearLevelOptionsHtml(selected);
+  return placeholder+group.options.map(year=>`<option ${selected===year?"selected":""}>${year}</option>`).join("");
+}
+function hasClinicAdminPrivileges(role){
+  const normalized=String(role||"").trim().toLowerCase();
+  return normalized==="head nurse"||normalized==="head nurse & administrator";
+}
+function canDeleteClinicRecords(){
+  return hasClinicAdminPrivileges(state.currentUser?.role);
 }
 function schoolLevelForYear(year){
   return YEAR_LEVEL_GROUPS.find(group=>group.options.includes(year))?.label||"College";
@@ -99,7 +107,6 @@ const REMOVED_MEDICAL_SUPPLY_NAMES=["Alcohol","Cotton Swabs","Hand Sanitizer"];
 const INVENTORY_CATALOG_VERSION=3;
 let MEDICINES = [];
 let EQUIPMENT = MEDICAL_SUPPLY_NAMES.map((name,index)=>({id:`EQP-DEFAULT-SUP-${String(index+1).padStart(2,"0")}`,name,category:"Medical Supplies"})).map(item=>({...item,qty:0,condition:"Good",lastMaint:"",status:"Available",deleted:false}));
-const VISIT_SUPPLY_NAMES=MEDICAL_SUPPLY_NAMES;
 const INVENTORY_ITEM_NAME_ALIASES={
   "Alcohol (70% Isopropyl)":"Alcohol",
   "Blood Pressure Monitor (Digital)":"Blood Pressure Monitor",
@@ -117,6 +124,47 @@ function seedConsultations(){
   return [];
 }
 let CONSULTATIONS = seedConsultations();
+
+function activeClinicPatients(){
+  const seen=new Set();
+  return STUDENTS.filter(patient=>{
+    if(!patient.id||patient.deleted||patient.status==="Deleted"||seen.has(patient.id))return false;
+    seen.add(patient.id);
+    return true;
+  });
+}
+function activeClinicVisits(includeSuperseded=false){
+  const patientIds=new Set(activeClinicPatients().map(patient=>patient.id));
+  const seen=new Set();
+  return CONSULTATIONS.filter(visit=>{
+    if(!visit.id||visit.deleted||visit.status==="Deleted"||(!includeSuperseded&&visit.status==="Superseded")||!patientIds.has(visit.studentId)||seen.has(visit.id))return false;
+    seen.add(visit.id);
+    return true;
+  });
+}
+function clinicPatientVisitHistory(patientId){
+  return activeClinicVisits(true).filter(visit=>visit.studentId===patientId)
+    .sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1));
+}
+const CLINIC_FREQUENT_VISIT_THRESHOLD=2;
+function clinicReferralVisits(visits){
+  return visits.filter(visit=>/(?:referred|referral)/i.test(visit.outcome||""));
+}
+function clinicMetrics(asOfDate=todayDateString()){
+  const patients=activeClinicPatients(),visits=activeClinicVisits();
+  const visitCounts=new Map();
+  visits.forEach(visit=>visitCounts.set(visit.studentId,(visitCounts.get(visit.studentId)||0)+1));
+  const month=asOfDate.slice(0,7);
+  return {
+    patients,
+    visits,
+    todayVisits:visits.filter(visit=>visit.date===asOfDate),
+    monthVisits:visits.filter(visit=>visit.date?.slice(0,7)===month),
+    returningPatients:[...visitCounts.values()].filter(count=>count>1).length,
+    frequentVisitors:[...visitCounts.values()].filter(count=>count>=CLINIC_FREQUENT_VISIT_THRESHOLD).length,
+    referrals:clinicReferralVisits(visits),
+  };
+}
 
 let AUDIT_LOGS = [];
 let INVENTORY_TRANSACTIONS = [];

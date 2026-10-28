@@ -1,4 +1,4 @@
-import { readActiveClinicSession } from "../../session";
+import { hasClinicAdminPrivileges, readActiveClinicSession } from "../../session";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const session = await readActiveClinicSession(request);
     if (!session) return Response.json({ message: "Sign in to manage clinic accounts." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-    if (session.role !== "Head Nurse & Administrator") return Response.json({ message: "Only the Head Nurse & Administrator can update clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    if (!hasClinicAdminPrivileges(session.role)) return Response.json({ message: "Only a Head Nurse or existing legacy administrator can update clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
 
     const { id } = await context.params;
     let body: unknown;
@@ -46,24 +46,28 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const lastName = typeof input.lastName === "string" ? input.lastName.trim() : "";
     const firstName = typeof input.firstName === "string" ? input.firstName.trim() : "";
     const middleInitial = typeof input.middleInitial === "string" ? input.middleInitial.trim() : "";
-    const username = typeof input.username === "string" ? input.username.trim() : "";
+    const username = typeof input.username === "string" ? input.username : "";
     const role = typeof input.role === "string" ? input.role : "";
     const status = input.status === "Disabled" ? "Disabled" : input.status === "Active" ? "Active" : "";
     if (!lastName || !firstName || !username || !status) return Response.json({ message: "Name, username, and status are required." }, { status: 400 });
     if (!/^[A-Za-z0-9._-]{3,50}$/.test(username)) return Response.json({ message: "Username must be 3-50 letters, numbers, dots, underscores, or hyphens." }, { status: 400 });
-    if (!["Head Nurse & Administrator", "Head Nurse", "Staff Nurse"].includes(role)) return Response.json({ message: "Invalid clinic role." }, { status: 400 });
+    if (!["Head Nurse", "Staff Nurse", "Head Nurse & Administrator"].includes(role)) return Response.json({ message: "Invalid clinic role." }, { status: 400 });
 
     const existingResponse = await supabaseRequest(`clinic_users?id=eq.${encodeURIComponent(id)}&select=id,auth_user_id,username,role,status,deleted_at&limit=1`);
     if (!existingResponse.ok) throw new Error(`clinic_users lookup returned ${existingResponse.status}`);
     const [existing] = await existingResponse.json() as Array<{ id: string; auth_user_id: string | null; username: string; role: string; status: string; deleted_at: string | null }>;
     if (!existing || existing.deleted_at) return Response.json({ message: "This user record is no longer available." }, { status: 404 });
+    if (role === "Head Nurse & Administrator" && existing.role !== role) {
+      return Response.json({ message: "The legacy administrator role cannot be assigned to another account." }, { status: 400 });
+    }
     if (id === session.userId && status !== "Active") return Response.json({ message: "You cannot disable your signed-in account." }, { status: 409 });
-    if (id === session.userId && role !== "Head Nurse & Administrator") return Response.json({ message: "You cannot remove administrator access from your signed-in account." }, { status: 409 });
+    if (id === session.userId && !hasClinicAdminPrivileges(role)) return Response.json({ message: "You cannot remove administrator access from your signed-in account." }, { status: 409 });
 
-    if (existing.role === "Head Nurse & Administrator" && existing.status === "Active" && (role !== existing.role || status !== "Active")) {
-      const remainingAdmins = await supabaseRequest(`clinic_users?role=eq.Head%20Nurse%20%26%20Administrator&status=eq.Active&deleted_at=is.null&id=neq.${encodeURIComponent(id)}&select=id&limit=1`);
+    if (hasClinicAdminPrivileges(existing.role) && existing.status === "Active" && (!hasClinicAdminPrivileges(role) || status !== "Active")) {
+      const remainingAdmins = await supabaseRequest(`clinic_users?status=eq.Active&deleted_at=is.null&id=neq.${encodeURIComponent(id)}&select=id,role&limit=1000`);
       if (!remainingAdmins.ok) throw new Error(`active administrator lookup returned ${remainingAdmins.status}`);
-      if (!(await remainingAdmins.json() as unknown[]).length) return Response.json({ message: "At least one active administrator account must remain." }, { status: 409 });
+      const remaining = await remainingAdmins.json() as Array<{ role?: string }>;
+      if (!remaining.some(user => user.role === "Head Nurse" || user.role === "Head Nurse & Administrator")) return Response.json({ message: "At least one active Head Nurse or legacy administrator account must remain." }, { status: 409 });
     }
 
     const name = `${lastName}, ${firstName}${middleInitial ? ` ${middleInitial.replace(/\.$/, "")}.` : ""}`;
