@@ -47,8 +47,7 @@ function renderStudentClinicalRecords(student) {
   const rows = visits.length
     ? visits
         .map((c) => {
-          const note =
-            c.description || c.notes || c.remarks || "No additional notes";
+          const note = c.remarks || "No additional notes";
           const reason =
             c.complaint === "Other" && c.reasonOther
               ? `Other: ${c.reasonOther}`
@@ -1254,7 +1253,17 @@ function viewConsultation(c) {
     "Success",
     false,
   );
-  const rows = consultationRows(c);
+  const hiddenVisitDetails = new Set([
+    "Nurse's Assessment",
+    "Nurse's Notes",
+    "Medical Equipment",
+    "Additional Treatment Details",
+    "Additional Treatment Given",
+    "Time Released / Referred",
+  ]);
+  const rows = consultationRows(c).filter(
+    ([label]) => !hiddenVisitDetails.has(label),
+  );
   const isSuperseded = c.status === "Superseded";
   openModal(`<div class="modal-head"><h3>${isSuperseded ? "Original" : "Clinical"} Visit Record</h3><button class="modal-close" onclick="closeModal()" aria-label="Close clinical visit record">${ICONS.x}</button></div>
      <div class="modal-body"><div class="visit-record-summary"><span>${isSuperseded ? "Original record · preserved for audit" : "Reason for clinic visit"}</span><strong>${escapeHtml(c.complaint || "Other")}</strong><small>${escapeHtml(c.studentName || "")} · ${escapeHtml(fmtDate(c.date))} at ${escapeHtml(c.time || "—")} · Revision ${c.revision || 1}${isSuperseded && c.supersededBy ? ` · Revised as ${escapeHtml(c.supersededBy)}` : ""}</small></div>
