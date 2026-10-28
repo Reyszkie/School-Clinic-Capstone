@@ -1191,9 +1191,7 @@ function consultationRows(c) {
         ? `Other: ${c.reasonOther}`
         : c.complaint || "—",
     ],
-    ["Detailed Description", c.description || "—"],
     ["Symptom Onset", c.symptomStart || "—"],
-    ["Symptoms", (c.symptoms || []).join(", ") || "—"],
     [
       "Pain",
       `${c.painLevel || "—"}${c.painLocation ? " · " + c.painLocation : ""}`,
@@ -1202,7 +1200,6 @@ function consultationRows(c) {
       "Medical History",
       `Conditions: ${c.knownConditions || "—"} · Allergies: ${c.allergiesHistory || "—"} · Current medication: ${c.currentMedication || "—"} · Previous similar symptoms: ${c.previousSimilar || "—"}`,
     ],
-    ["Last Meal / Food", c.lastMeal || "—"],
     [
       "Vital Signs",
       `Temp ${c.temp || "—"} °C · Pulse ${c.pulse || "—"} bpm · Respiratory rate ${c.respiratoryRate || "—"} breaths/min · BP ${c.bp || "—"} mmHg · SpO2 ${c.spo2 || "—"} % · Weight ${c.weight || "—"} · Height ${c.height || "—"}`,
@@ -1296,7 +1293,6 @@ function printConsultation(c) {
     ["Known Medical Conditions", c.knownConditions],
     ["Allergies", c.allergiesHistory],
     ["Current Medication", c.currentMedication],
-    ["Previous Similar Symptoms", c.previousSimilar],
   ];
   const vitalRows = [
     ["Blood Pressure", valueWithUnit(c.bp, "mmHg")],
@@ -1304,9 +1300,14 @@ function printConsultation(c) {
     ["Respiratory Rate", valueWithUnit(c.respiratoryRate, "breaths/min")],
     ["Body Temperature", valueWithUnit(c.temp, "°C")],
     ["Oxygen Saturation (SpO₂)", valueWithUnit(c.spo2, "%")],
-    ["Weight", c.weight],
-    ["Height", c.height],
   ];
+  const excludedPrintFields = new Set([
+    "Nurse on Duty",
+    "Nurse's Assessment",
+    "Medical Equipment",
+    "Additional Treatment Details",
+    "Time Released / Referred",
+  ]);
   const sectionRows = (title, rows) =>
     `<tr class="patient-visit-print-section-row"><th class="patient-visit-print-section-heading" colspan="2">${title}</th></tr>${rows
       .map(
@@ -1315,6 +1316,7 @@ function printConsultation(c) {
       )
       .join("")}`;
   const rowHtml = consultationRows(c)
+    .filter(([label]) => !excludedPrintFields.has(label))
     .flatMap(([label, value]) => {
       if (label === "Medical History")
         return [sectionRows("Medical History", historyRows)];
