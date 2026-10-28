@@ -2,86 +2,6 @@
 function reportVisits() {
   return activeClinicVisits();
 }
-<<<<<<< HEAD
-const REFERRAL_THRESHOLD=1;
-function recordedReferrals(visits=reportVisits()){return visits.filter(visit=>/referred|referral/i.test(visit.outcome||""));}
-function referralConcernList(){return frequentVisitors(recordedReferrals().filter(visit=>visit.date?.slice(0,7)===todayDateString().slice(0,7)),REFERRAL_THRESHOLD);}
-function reportData(){
-  const visits=reportVisits(),month=todayDateString().slice(0,7),reasons={},levels={},outcomes={};
-  visits.forEach(c=>{const reason=c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint||"Not recorded";reasons[reason]=(reasons[reason]||0)+1;levels[c.year||"Not recorded"]=(levels[c.year||"Not recorded"]||0)+1;outcomes[c.outcome||"Not recorded"]=(outcomes[c.outcome||"Not recorded"]||0)+1;});
-  return {visits,unique:new Set(visits.map(c=>c.studentId)).size,frequent:frequentVisitors(visits,FREQUENT_VISIT_THRESHOLD),referrals:recordedReferrals(visits),reasons,levels,outcomes,monthVisits:visits.filter(c=>c.date?.slice(0,7)===month)};
-}
-function summaryList(obj,kind){return Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([value,count])=>`<tr><td><button type="button" class="report-summary-drilldown" data-summary-kind="${kind}" data-summary-value="${escapeHtml(value)}">${escapeHtml(value)}</button></td><td class="report-count mono">${count}</td></tr>`).join("")||`<tr><td colspan="2">${emptyState("No visit data yet.")}</td></tr>`;}
-function renderReports(){
-  if(!clinicDataLoaded){const message=clinicDataStatus==="error"?"Clinic records could not be loaded from the database.":"Clinic records are loading from the database.";return `<div class="card dashboard-data-state"><h3>${message}</h3></div>`;}
-  const d=reportData(),flagged=referralConcernList();
-  const cards=[["Total Clinic Visits",d.visits.length,"all-visits"],["Unique Patients Served",d.unique,"unique-students"],["Frequent Clinic Visitors",d.frequent.length,"frequent-visitors"],["Recorded Referrals",d.referrals.length,"referrals"],["Common Reasons for Visits",Object.keys(d.reasons).length,"reasons"],["Visits by Grade Level / Section",Object.keys(d.levels).length,"levels"],["Clinic Visit Trends",d.monthVisits.length,"trends"],["Patient Disposition",Object.keys(d.outcomes).length,"disposition"]];
-  return `${clinicDataStatus==="stale"?'<div class="sync-warning">The latest database refresh failed. Report figures may be out of date.</div>':""}<div class="toolbar" style="justify-content:flex-end"><button class="btn btn-dark" id="print-reports">${ICONS.print} Print Report Copy</button></div>
-  <div class="grid grid-4">${cards.map(c=>`<button class="card stat-card report-card-clickable" data-report-detail="${c[2]}" style="text-align:left"><div class="stat-label">${c[0]}</div><div class="stat-value">${c[1]}</div><div style="font-size:11.5px;color:var(--blue);margin-top:auto">View details ${ICONS.chevright}</div></button>`).join("")}</div>
-  <div class="report-summary-grid">
-    <div class="card"><div class="panel-title"><h4>Common Reasons for Visits</h4></div><div class="table-wrap report-summary-table-wrap"><table class="report-summary-table"><colgroup><col><col class="report-summary-count-column"></colgroup><thead><tr><th>Reason</th><th class="report-count">Visits</th></tr></thead><tbody>${summaryList(d.reasons,"reason")}</tbody></table></div></div>
-    <div class="card"><div class="panel-title"><h4>Patient Disposition</h4></div><div class="table-wrap report-summary-table-wrap"><table class="report-summary-table"><colgroup><col><col class="report-summary-count-column"></colgroup><thead><tr><th>Outcome</th><th class="report-count">Visits</th></tr></thead><tbody>${summaryList(d.outcomes,"outcome")}</tbody></table></div></div>
-  </div>
-  <div class="card" style="margin-top:16px"><div class="panel-title"><h4>Visits by Grade Level / Section</h4></div><div class="table-wrap"><table><thead><tr><th>Year / Grade</th><th class="report-count">Visits</th></tr></thead><tbody>${summaryList(d.levels,"level")}</tbody></table></div></div>
-  <div class="card" style="margin-top:16px;border-left:3px solid var(--amber)"><div class="panel-title"><h4>${ICONS.alert} Frequent Clinic Visitors</h4></div>${d.frequent.length?`<div class="table-wrap"><table><thead><tr><th>Patient</th><th>Institutional Category / Year or Personnel Type</th><th class="report-count">Visits</th><th></th></tr></thead><tbody>${d.frequent.map(v=>`<tr><td>${escapeHtml(v.studentName)}</td><td>${escapeHtml(v.course||"—")} — ${escapeHtml(v.year||"—")}</td><td class="report-count">${v.count}</td><td><button class="mini-btn" data-view-visitor-btn="${v.studentId}" title="View visit history">${ICONS.search}</button></td></tr>`).join("")}</tbody></table></div>`:emptyState(`No patient has ${FREQUENT_VISIT_THRESHOLD} or more recorded visits.`)}</div>
-  <div class="card" style="margin-top:16px;border-left:3px solid var(--red)"><div class="panel-title"><h4>${ICONS.alert} Recorded Referrals</h4></div><p style="font-size:13px;color:var(--ink-soft);line-height:1.7">Referrals are counted from visit dispositions recorded this month.</p>${flagged.length?`<div class="table-wrap"><table><thead><tr><th>Patient</th><th class="report-count">Referrals This Month</th><th></th></tr></thead><tbody>${flagged.map(v=>`<tr><td>${escapeHtml(v.studentName)}</td><td class="report-count">${v.count}</td><td><button class="mini-btn" data-view-visitor-btn="${v.studentId}">${ICONS.search}</button></td></tr>`).join("")}</tbody></table></div>`:emptyState("No referrals were recorded this month.")}</div>`;
-}
-function detailModal(title,subtitle,tableHtml){openModal(`<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div><div class="modal-body">${subtitle?`<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px">${subtitle}</div>`:""}${tableHtml}</div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button></div>`,"record-detail-modal");}
-function reportSummaryVisits(kind,value){
-  const field={reason:"complaint",level:"year",outcome:"outcome"}[kind];
-  const records=reportVisits().filter(visit=>String(kind==="reason"?(visit.complaint==="Other"&&visit.reasonOther?`Other: ${visit.reasonOther}`:visit.complaint||"Not recorded"):kind==="outcome"?(visit[field]||"Not recorded"):visit[field]||"Not recorded")===value)
-    .sort((a,b)=>(a.date||"")+(a.time||"")<(b.date||"")+(b.time||"")?1:-1);
-  const rows=records.map(visit=>`<tr><td>${escapeHtml(visit.studentName||"—")}</td><td>${escapeHtml(visit.course||"—")} · ${escapeHtml(visit.year||"—")}</td><td>${escapeHtml(fmtDate(visit.date))}<br>${escapeHtml(visit.time||"")}</td><td>${escapeHtml(visit.complaint==="Other"&&visit.reasonOther?`Other: ${visit.reasonOther}`:visit.complaint||"—")}</td><td>${escapeHtml(visit.outcome||"Not recorded")}</td><td><button type="button" class="mini-btn" data-report-visit-print="${escapeHtml(visit.id)}" title="View full visit record">${ICONS.search}</button></td></tr>`).join("");
-  const label={reason:"Common Reason",level:"Year / Grade",outcome:"Patient Disposition"}[kind];
-  detailModal(`${label}: ${escapeHtml(value)}`,`${records.length} matching visit record(s)`,`<div class="table-wrap"><table class="report-summary-visits-table"><thead><tr><th>Patient</th><th>Institutional Category / Year or Personnel Type</th><th>Date / Time</th><th>Reason</th><th>Outcome</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="6">${emptyState("No matching visit records.")}</td></tr>`}</tbody></table></div>`);
-  document.querySelectorAll("[data-report-visit-print]").forEach(button=>button.onclick=()=>{const visit=CONSULTATIONS.find(record=>record.id===button.dataset.reportVisitPrint);if(visit){closeModal();printConsultation(visit);}});
-}
-function visitorRecordsModal(v){
-  const rows=v.records.sort((a,b)=>a.date+a.time<b.date+b.time?1:-1).map(c=>`<tr><td class="mono">${c.id}</td><td>${fmtDate(c.date)}<br><span style="font-size:11px;color:var(--ink-soft)">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint)}</td><td>${escapeHtml(c.outcome||"—")}</td><td><button class="mini-btn" data-open-slip-btn="${c.id}">${ICONS.print}</button></td></tr>`).join("");
-  detailModal(`Visit History — ${escapeHtml(v.studentName)}`,`${escapeHtml(v.course||"—")} — ${escapeHtml(v.year||"—")} · ${v.count} visit(s)`, `<div class="table-wrap"><table><thead><tr><th>Record</th><th>Date</th><th>Reason</th><th>Outcome</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`);
-  document.querySelectorAll("[data-open-slip-btn]").forEach(b=>b.onclick=()=>{closeModal();printConsultation(CONSULTATIONS.find(c=>c.id===b.dataset.openSlipBtn));});
-}
-function reportDetail(key){
-  const d=reportData();
-  if(key==="all-visits"||key==="trends"){const rows=d.visits.map(c=>`<tr><td class="mono">${c.id}</td><td>${fmtDate(c.date)}</td><td>${escapeHtml(c.studentName)}</td><td>${escapeHtml(c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint)}</td><td>${escapeHtml(c.outcome||"—")}</td></tr>`).join("");detailModal(key==="trends"?"Clinic Visit Trends":"Total Clinic Visits",`${d.visits.length} active record(s)`,`<div class="table-wrap"><table><thead><tr><th>Record</th><th>Date</th><th>Patient</th><th>Reason</th><th>Outcome</th></tr></thead><tbody>${rows||`<tr><td colspan="5">${emptyState("No visit data yet.")}</td></tr>`}</tbody></table></div>`);}
-  else if(key==="referrals"){const rows=d.referrals.map(visit=>`<tr><td>${escapeHtml(visit.studentName||"—")}</td><td>${escapeHtml(fmtDate(visit.date))}</td><td>${escapeHtml(visit.outcome||"—")}</td></tr>`).join("");detailModal("Recorded Referrals",`${d.referrals.length} referral visit(s)`,`<div class="table-wrap"><table><thead><tr><th>Patient</th><th>Date</th><th>Disposition</th></tr></thead><tbody>${rows||`<tr><td colspan="3">${emptyState("No referral records found.")}</td></tr>`}</tbody></table></div>`);}
-  else if(key==="unique-students"||key==="frequent-visitors"){const list=frequentVisitors(d.visits,1);detailModal(key==="unique-students"?"Unique Patients Served":"Frequent Clinic Visitors",`${list.length} patient(s) represented`, `<div class="table-wrap"><table><thead><tr><th>Patient</th><th>Institutional Category / Year or Personnel Type</th><th class="report-count">Visits</th></tr></thead><tbody>${list.map(v=>`<tr><td>${escapeHtml(v.studentName)}</td><td>${escapeHtml(v.course||"—")} — ${escapeHtml(v.year||"—")}</td><td class="report-count">${v.count}</td></tr>`).join("")||`<tr><td colspan="3">${emptyState("No visit data yet.")}</td></tr>`}</tbody></table></div>`);}
-  else {const kind={reasons:"reason",levels:"level",disposition:"outcome"}[key]||"outcome",obj=kind==="reason"?d.reasons:kind==="level"?d.levels:d.outcomes;detailModal(key==="reasons"?"Common Reasons for Visits":key==="levels"?"Visits by Grade Level / Section":"Patient Disposition","Summary of active clinic visits",`<div class="table-wrap"><table class="report-detail-summary-table"><colgroup><col><col class="report-detail-count-column"></colgroup><thead><tr><th>Category</th><th class="report-count">Visits</th></tr></thead><tbody>${summaryList(obj,kind)}</tbody></table></div>`);modalStack[modalStack.length-1]?.querySelectorAll("[data-summary-kind]").forEach(button=>button.onclick=()=>reportSummaryVisits(button.dataset.summaryKind,button.dataset.summaryValue));}
-}
-function printReports(){
-  const d=reportData(),flagged=referralConcernList();
-  const table=(title,headers,rows)=>`<h2>${title}</h2><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.length?rows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${headers.length}">No data</td></tr>`}</tbody></table>`;
-  const summaryRows=(obj)=>Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([key,value])=>[escapeHtml(key),value]);
-  const visitRows=d.monthVisits.sort((a,b)=>(a.date+a.time<b.date+b.time?1:-1)).map(c=>[escapeHtml(c.id),escapeHtml(fmtDate(c.date)),escapeHtml(c.studentName||"—"),escapeHtml(c.complaint==="Other"&&c.reasonOther?`Other: ${c.reasonOther}`:c.complaint||"—"),escapeHtml(c.outcome||"—")]);
-  const frequentRows=d.frequent.map(v=>[escapeHtml(v.studentName||"—"),escapeHtml(`${v.course||"—"} — ${v.year||"—"}`),v.count]);
-  const referralRows=flagged.map(v=>[escapeHtml(v.studentName||"—"),v.count]);
-  const html=`<p class="report-meta">Clinical reports · Printed ${escapeHtml(new Date().toLocaleString("en-PH",{timeZone:"Asia/Manila"}))}</p><p class="summary"><b>Total Clinic Visits:</b> ${d.visits.length}<br><b>Unique Patients Served:</b> ${d.unique}<br><b>Frequent Clinic Visitors:</b> ${d.frequent.length}<br><b>Common Reasons:</b> ${Object.keys(d.reasons).length}<br><b>Grade Levels / Sections:</b> ${Object.keys(d.levels).length}<br><b>Visits This Month:</b> ${d.monthVisits.length}<br><b>Patient Dispositions:</b> ${Object.keys(d.outcomes).length}</p>${table("Common Reasons for Visits",["Reason","Visits"],summaryRows(d.reasons))}${table("Patient Disposition",["Outcome","Visits"],summaryRows(d.outcomes))}${table("Visits by Grade Level / Section",["Year / Grade","Visits"],summaryRows(d.levels))}${table("Clinic Visit Trends",["Record","Date","Patient","Reason","Outcome"],visitRows)}${table("Frequent Clinic Visitors",["Patient","Institutional Category / Year or Personnel Type","Visits"],frequentRows)}${table("Recorded Referrals This Month",["Patient","Referral Visits"],referralRows)}`;
-  printInPlace("MQCQC Clinic Report",html);
-  logAudit("Clinic Report Printed","Reports","Success",false);
-}
-function previousMonthKey(month){
-  const [year,monthNumber]=month.split("-").map(Number);
-  return monthNumber===1?`${year-1}-12`:`${year}-${String(monthNumber-1).padStart(2,"0")}`;
-}
-function reportMonthLabel(month){
-  return new Intl.DateTimeFormat("en",{month:"long",year:"numeric",timeZone:"Asia/Manila"}).format(new Date(`${month}-01T00:00:00+08:00`));
-}
-function currentMedicineInventory(){
-  return MEDICINES.filter(item=>!item.deleted).map(item=>({item,status:medStatus(item).label})).sort((a,b)=>a.item.name.localeCompare(b.item.name));
-}
-function currentEquipmentInventory(){
-  return EQUIPMENT.filter(item=>!item.deleted&&item.category==="Medical Supplies").sort((a,b)=>a.name.localeCompare(b.name));
-}
-function monthlyReportData(month){
-  const visits=reportVisits().filter(visit=>!visit.deleted&&visit.status!=="Superseded"&&visit.date?.slice(0,7)===month);
-  const previousMonthVisits=reportVisits().filter(visit=>!visit.deleted&&visit.status!=="Superseded"&&visit.date?.slice(0,7)===previousMonthKey(month)).length;
-  const reasons={},medicines={},equipment={},referrals=recordedReferrals(visits);
-  visits.forEach(visit=>{
-    [...new Set([visit.complaint==="Other"&&visit.reasonOther?`Other: ${visit.reasonOther}`:visit.complaint,...(visit.symptoms||[])].filter(Boolean))].forEach(reason=>{reasons[reason]=(reasons[reason]||0)+1;});
-    if(visit.medicine)medicines[visit.medicine]=(medicines[visit.medicine]||0)+(Number(visit.medQty)||1);
-    if(visit.supplyUsed)equipment[visit.supplyUsed]=(equipment[visit.supplyUsed]||0)+(Number(visit.supplyQty)||1);
-    [...new Set(visit.equipmentUsed||[])].forEach(tool=>{equipment[tool]=(equipment[tool]||0)+(Number(visit.equipmentQty)||1);});
-=======
 function frequentVisitors(consults, minCount = 1) {
   const map = {};
   consults.forEach((c) => {
@@ -129,7 +49,6 @@ function reportData() {
       (levels[c.year || "Not recorded"] || 0) + 1;
     outcomes[c.outcome || "Not recorded"] =
       (outcomes[c.outcome || "Not recorded"] || 0) + 1;
->>>>>>> c3549fc25e3ba7d082d68597bc4a166788222749
   });
   return {
     metrics,
@@ -423,7 +342,7 @@ function printReports() {
   ];
   const html = `<p class="report-meta">Clinical reports · Printed ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</p><p class="summary"><b>Total Patients:</b> ${d.metrics.patients.length}<br><b>Clinic Visits Today:</b> ${d.metrics.todayVisits.length}<br><b>Total Visits This Month:</b> ${d.metrics.monthVisits.length}<br><b>Returning Patients:</b> ${d.metrics.returningPatients}<br><b>Frequent Visitors:</b> ${d.metrics.frequentVisitors}<br><b>Referrals:</b> ${d.metrics.referrals.length}<br><b>Total Clinic Visits:</b> ${d.visits.length}<br><b>Unique Patients Served:</b> ${d.unique}<br><b>Common Reasons:</b> ${Object.keys(d.reasons).length}<br><b>Grade Levels / Sections:</b> ${Object.keys(d.levels).length}<br><b>Patient Dispositions:</b> ${Object.keys(d.outcomes).length}</p>${table("Common Reasons for Visits", ["Reason", "Visits"], summaryRows(d.reasons))}${table("Patient Disposition", ["Outcome", "Visits"], summaryRows(d.outcomes))}${table("Visits by Grade Level / Section", ["Year / Grade", "Visits"], summaryRows(d.levels))}${table("Clinic Visit Trends", ["Record", "Date", "Patient", "Reason", "Outcome"], visitRows)}${table("Frequent Clinic Visitors", ["Patient", "Institutional Category / Year or Personnel Type", "Visits"], frequentRows)}${table("Recorded Referrals This Month", ["Patient", "Referral Visits"], referralRows)}`;
   printTemplate({
-    title: "MQC Clinic Report",
+    title: "MQCQC Clinic Report",
     subtitle: "School Clinic · Clinical Reports Summary",
     body: `<div class="clinic-print-kpis">${kpis.map(([label, value]) => `<div class="clinic-print-kpi"><div class="kpi-label">${escapeHtml(label)}</div><div class="kpi-value">${value}</div></div>`).join("")}</div>${html}`,
     footnote: "Confidential clinic record — for authorized personnel only.",

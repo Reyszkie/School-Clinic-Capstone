@@ -261,7 +261,6 @@ function openStudentForm(existing = null, returnToDetails = false) {
     updateGuardianContactValidity();
   });
   updateGuardianContactValidity();
-<<<<<<< HEAD
   let patientSaveInProgress=false;
   document.getElementById("sf-save").onclick=async()=>{
     if(patientSaveInProgress)return;
@@ -270,11 +269,13 @@ function openStudentForm(existing = null, returnToDetails = false) {
     const symptoms=selectedChecks('[data-check-group="patient-symptom"]');
     const symptomOther=document.querySelector('[data-free-text="patient-symptom-other"]')?.value.trim();
     if(symptomOther)symptoms.push(`Other: ${symptomOther}`);
-    const course=categorySelect.value,year=yearSelect.value;
-    const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
     guardianContactTouched=true;
+    updateGuardianContactValidity();
+    if(!document.getElementById("stu-form").reportValidity())return;
+    const course=categorySelect.value,year=yearSelect.value;
+    const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+"." : ""}`;
     if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
-    const rec={id:isEdit?editingStudent.id:newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,institutionalCategory:course,year,personnelType:course==="Campus Personnel"?year:null,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms};
+    const rec={...f,id:isEdit?editingStudent.id:newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,institutionalCategory:course,year,personnelType:course==="Campus Personnel"?year:null,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms:Array.isArray(f.symptoms)?f.symptoms:symptoms};
     const wasEdit=isEdit,index=wasEdit?STUDENTS.findIndex(s=>s.id===editingStudent.id):-1,previous=index>=0?STUDENTS[index]:null;
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
@@ -309,175 +310,15 @@ function openStudentForm(existing = null, returnToDetails = false) {
       }
     }catch(error){toast("Patient not saved",error.message||"Unable to register this patient.","err");}
     finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
-    if(saved)closeModal();
-=======
-  let patientSaveInProgress = false;
-  document.getElementById("sf-save").onclick = async () => {
-    if (patientSaveInProgress) return;
-    const last = document.getElementById("sf-lastname").value.trim(),
-      first = document.getElementById("sf-firstname").value.trim(),
-      middle = document.getElementById("sf-middle").value.trim();
-    if (!last || !first) {
-      toast(
-        "Missing information",
-        "Last name and given name are required.",
-        "err",
-      );
-      return;
-    }
-    guardianContactTouched = true;
-    updateGuardianContactValidity();
-    if (!document.getElementById("stu-form").reportValidity()) return;
-    const course = categorySelect.value,
-      year = yearSelect.value;
-    const guardianContactValue = guardianContact.value.trim();
-    const name = `${last}, ${first}${middle ? " " + middle.replace(/\.$/, "") + "." : ""}`;
-    const matchingPatient =
-      !isEdit &&
-      STUDENTS.find(
-        (patient) =>
-          patient.lastName?.trim().toLowerCase() === last.toLowerCase() &&
-          patient.firstName?.trim().toLowerCase() === first.toLowerCase() &&
-          String(patient.middleInitial || "")
-            .trim()
-            .replace(/\.$/, "")
-            .toLowerCase() === middle.replace(/\.$/, "").toLowerCase() &&
-          (((patient.institutionalCategory || patient.course) === course &&
-            (patient.personnelType || patient.year) === year) ||
-            Boolean(
-              guardianContactValue &&
-              String(patient.guardianContact || "").replace(/\D/g, "") ===
-                guardianContactValue,
-            )),
-      );
-    if (matchingPatient) {
+    if(saved){
       closeModal();
-      openStudentDetailModal(matchingPatient);
-      return;
-    }
-    if (!updateGuardianContactValidity()) {
-      guardianContact.focus();
-      toast(
-        "Invalid contact number",
-        "Enter exactly 11 digits using numbers only.",
-        "err",
-      );
-      return;
-    }
-    const rec = {
-      ...f,
-      id: isEdit ? editingStudent.id : newPatientRecordId(),
-      name,
-      lastName: last,
-      firstName: first,
-      middleInitial: middle,
-      course,
-      institutionalCategory: course,
-      year,
-      personnelType: course === "Campus Personnel" ? year : null,
-      gender: document.getElementById("sf-gender").value,
-      sex: document.getElementById("sf-gender").value,
-      guardianName: document.getElementById("sf-guardian").value,
-      guardianContact: guardianContact.value,
-      emergency: document.getElementById("sf-guardian").value,
-      allergies: f.allergies || "Not Yet Assessed",
-      conditions: f.conditions || "None",
-      symptoms: Array.isArray(f.symptoms) ? f.symptoms : [],
-    };
-    const wasEdit = isEdit,
-      index = wasEdit
-        ? STUDENTS.findIndex((s) => s.id === editingStudent.id)
-        : -1,
-      previous = index >= 0 ? STUDENTS[index] : null;
-    const previousVisits = CONSULTATIONS.map((visit) => ({
-      visit,
-      studentName: visit.studentName,
-      course: visit.course,
-      year: visit.year,
-    }));
-    const newPatient = !wasEdit && !matchingPatient;
-    const saveButton = document.getElementById("sf-save"),
-      saveLabel = saveButton.innerHTML;
-    patientSaveInProgress = true;
-    saveButton.disabled = true;
-    saveButton.innerHTML = '<span class="button-spinner"></span> Saving...';
-    let saved = false;
-    try {
-      saved = await commitClinicRecordMutation({
-        apply: () => {
-          if (wasEdit) {
-            if (index < 0)
-              throw new Error("This patient record is no longer available.");
-            STUDENTS[index] = { ...previous, ...rec };
-            const updated = STUDENTS[index];
-            CONSULTATIONS.forEach((visit) => {
-              if (visit.studentId === updated.id) {
-                visit.studentName = updated.name;
-                visit.course = updated.course;
-                visit.year = updated.year;
-              }
-            });
-            editingStudent = updated;
-            state.selectedStudent = updated;
-          } else if (newPatient) {
-            STUDENTS.unshift(rec);
-            editingStudent = rec;
-            state.selectedStudent = rec;
-          }
-        },
-        rollback: () => {
-          if (wasEdit && previous) {
-            STUDENTS[index] = previous;
-            previousVisits.forEach((row) =>
-              Object.assign(row.visit, {
-                studentName: row.studentName,
-                course: row.course,
-                year: row.year,
-              }),
-            );
-            editingStudent = previous;
-            state.selectedStudent = previous;
-          } else if (newPatient) {
-            const patientIndex = STUDENTS.findIndex(
-              (patient) => patient.id === rec.id,
-            );
-            if (patientIndex >= 0) STUDENTS.splice(patientIndex, 1);
-            state.selectedStudent = null;
-          }
-        },
-        save: () => saveToClinicState(true),
-        auditAction: `${wasEdit ? "Patient Record Updated" : "Patient Added"} — ${rec.id}`,
-        module: "Patients",
-        detail: rec.id,
-        successTitle: wasEdit ? "Patient updated" : "Patient added",
-        successMessage: wasEdit
-          ? `${rec.name}'s profile has been updated.`
-          : `Welcome, ${rec.name}! Added to patient records.`,
-        refresh: renderConsultTabBody,
-      });
-    } finally {
-      patientSaveInProgress = false;
-      if (saveButton.isConnected) {
-        saveButton.disabled = false;
-        saveButton.innerHTML = saveLabel;
+      if(wasEdit&&returnToDetails){
+        const updated=STUDENTS.find(patient=>patient.id===rec.id)||rec;
+        const detailsModal=modalStack.find(backdrop=>backdrop.querySelector("#student-detail-modal-title"));
+        const detailsBody=detailsModal?.querySelector(".modal-body");
+        if(detailsBody){detailsBody.innerHTML=renderStudentDetail(updated,true);bindStudentDetailActions(updated,detailsModal);}
       }
     }
-    if (saved) {
-      closeModal();
-      if (wasEdit && returnToDetails) {
-        const updated =
-          STUDENTS.find((patient) => patient.id === rec.id) || rec;
-        const detailsModal = modalStack.find((backdrop) =>
-          backdrop.querySelector("#student-detail-modal-title"),
-        );
-        const detailsBody = detailsModal?.querySelector(".modal-body");
-        if (detailsBody) {
-          detailsBody.innerHTML = renderStudentDetail(updated, true);
-          bindStudentDetailActions(updated, detailsModal);
-        }
-      }
-    }
->>>>>>> c3549fc25e3ba7d082d68597bc4a166788222749
   };
 }
 
@@ -495,7 +336,6 @@ function newPatientRecordId() {
   return id;
 }
 
-<<<<<<< HEAD
 async function registerPatientProfile(patient,confirmedDistinctIds=[],selectedPatientId=null){
   const response=await fetch("/api/patients/register",{
     method:"POST",
@@ -584,25 +424,6 @@ function showPatientMatchOptions(patient,matches){
 function bindSelectButtons(){
   document.querySelectorAll("[data-select-stu]").forEach(b=>b.onclick=()=>openStudentDetailModal(STUDENTS.find(s=>s.id===b.dataset.selectStu)));
   document.querySelectorAll("[data-del-stu]").forEach(b=>b.onclick=()=>deleteStudent(STUDENTS.find(s=>s.id===b.dataset.delStu)));
-=======
-function bindSelectButtons() {
-  document
-    .querySelectorAll("[data-select-stu]")
-    .forEach(
-      (b) =>
-        (b.onclick = () =>
-          openStudentDetailModal(
-            STUDENTS.find((s) => s.id === b.dataset.selectStu),
-          )),
-    );
-  document
-    .querySelectorAll("[data-del-stu]")
-    .forEach(
-      (b) =>
-        (b.onclick = () =>
-          deleteStudent(STUDENTS.find((s) => s.id === b.dataset.delStu))),
-    );
->>>>>>> c3549fc25e3ba7d082d68597bc4a166788222749
 }
 
 function openStudentDetailModal(student) {

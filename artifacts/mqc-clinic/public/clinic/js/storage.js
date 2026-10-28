@@ -829,7 +829,7 @@ async function restoreAuthSession() {
       window.localStorage.removeItem(AUTH_SESSION_KEY);
     }
     const response = await fetch("/api/auth/session", { cache: "no-store" });
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
       clearAuthSession();
       return false;
     }

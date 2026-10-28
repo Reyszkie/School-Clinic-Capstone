@@ -2533,30 +2533,6 @@ tbody tr {
   }
 }
 
-<<<<<<< HEAD
-#clinic-print-root{display:none;}
-@media print{
-  @page{size:A4 portrait;margin:0;}
-  body{margin:0!important;background:#fff!important;color:#111!important;font:10pt/1.4 Arial,sans-serif!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  body>*:not(#clinic-print-root){display:none!important;}
-  #clinic-print-root{display:block!important;width:100%;box-sizing:border-box;padding:14mm;-webkit-box-decoration-break:clone;box-decoration-break:clone;color:#111;background:#fff;font:10pt/1.4 Arial,sans-serif;}
-  .clinic-print-header{text-align:center;border-bottom:1px solid #777;padding-bottom:8px;margin-bottom:12px;}
-  .clinic-print-header h1{font-size:16pt;margin:0 0 4px;}
-  .clinic-print-header h2{font-size:12pt;margin:0;}
-  .print-subtitle,.report-meta{font-size:9pt;margin:4px 0 10px;text-align:center;}
-  #clinic-print-root table{min-width:0;width:100%;border-collapse:collapse;table-layout:fixed;font-size:8.5pt;}
-  .clinic-print-table,.monthly-report-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:8.5pt;}
-  .clinic-print-table th,.clinic-print-table td,.monthly-report-table th,.monthly-report-table td{border:1px solid #aab2b8;padding:5px 6px;text-align:left;vertical-align:top;overflow-wrap:anywhere;}
-  .clinic-print-table th{width:34%;font-weight:700;}
-  .monthly-report-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0 12px;}
-  .monthly-report-stat{min-width:0;min-height:0;border:1px solid #aab2b8;padding:7px 10px;}
-  .monthly-report-stat span,.monthly-report-stat strong{display:block;}
-  .monthly-report-block{margin:12px 0;break-inside:avoid;}
-  .monthly-report-block h5{font-size:10pt;margin:0 0 6px;}
-  .monthly-report-table th{font-size:8pt;background:#eef1f3;}
-  .table-wrap{overflow:visible!important;}
-  tr,img{break-inside:avoid;}
-=======
 .settings-appearance {
   margin-bottom: 16px;
 }
@@ -2973,7 +2949,7 @@ tbody tr {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 14mm;
+    margin: 0;
   }
   body {
     margin: 0 !important;
@@ -2991,6 +2967,10 @@ tbody tr {
   #clinic-print-root {
     display: block !important;
     width: 100%;
+    box-sizing: border-box;
+    padding: 14mm;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
     color: #111;
     background: #fff;
     font:
@@ -3292,7 +3272,6 @@ tbody tr {
   .clinic-print-kpi {
     break-inside: avoid;
   }
->>>>>>> c3549fc25e3ba7d082d68597bc4a166788222749
 }
 
 /* ---------- Spacious clinic workspace refresh ---------- */
