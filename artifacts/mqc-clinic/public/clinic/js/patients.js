@@ -1279,17 +1279,56 @@ function viewConsultation(c) {
 
 function printConsultation(c) {
   if (!c) return;
-  const rows = consultationRows(c);
-  const rowHtml = rows
-    .map(
-      (row) =>
-        `<tr><th>${escapeHtml(row[0])}</th><td>${escapeHtml(row[1] || "—")}</td></tr>`,
+  const printValue = (value) =>
+    value === null || value === undefined || String(value).trim() === ""
+      ? "—"
+      : String(value);
+  const valueWithUnit = (value, unit) => {
+    const recorded = printValue(value);
+    return (
+      recorded === "—" ||
+      recorded.trimEnd().toLowerCase().endsWith(unit.toLowerCase())
     )
+      ? recorded
+      : `${recorded} ${unit}`;
+  };
+  const historyRows = [
+    ["Known Medical Conditions", c.knownConditions],
+    ["Allergies", c.allergiesHistory],
+    ["Current Medication", c.currentMedication],
+    ["Previous Similar Symptoms", c.previousSimilar],
+  ];
+  const vitalRows = [
+    ["Blood Pressure", valueWithUnit(c.bp, "mmHg")],
+    ["Heart Rate / Pulse Rate", valueWithUnit(c.pulse, "bpm")],
+    ["Respiratory Rate", valueWithUnit(c.respiratoryRate, "breaths/min")],
+    ["Body Temperature", valueWithUnit(c.temp, "°C")],
+    ["Oxygen Saturation (SpO₂)", valueWithUnit(c.spo2, "%")],
+    ["Weight", c.weight],
+    ["Height", c.height],
+  ];
+  const sectionRows = (title, rows) =>
+    `<tr class="patient-visit-print-section-row"><th class="patient-visit-print-section-heading" colspan="2">${title}</th></tr>${rows
+      .map(
+        ([label, value]) =>
+          `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(printValue(value))}</td></tr>`,
+      )
+      .join("")}`;
+  const rowHtml = consultationRows(c)
+    .flatMap(([label, value]) => {
+      if (label === "Medical History")
+        return [sectionRows("Medical History", historyRows)];
+      if (label === "Vital Signs")
+        return [sectionRows("Vital Signs", vitalRows)];
+      return [
+        `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(printValue(value))}</td></tr>`,
+      ];
+    })
     .join("");
   printTemplate({
     title: "Patient Visit Slip",
-    subtitle: `School Clinic · Patient Visit Record · ${c.studentName || ""}`,
-    body: `<table class="clinic-print-table"><tbody>${rowHtml}</tbody></table>`,
+    subtitle: `School Clinic · Patient Visit Record · ${escapeHtml(c.studentName || "")}`,
+    body: `<table class="clinic-print-table patient-visit-print-table"><tbody>${rowHtml}</tbody></table>`,
     footnote: `Confidential clinic record — for authorized personnel only.${clinicDataStatus === "stale" ? " The latest database refresh failed; data reflects the last successful synchronization." : ""}`,
   });
   logAudit(

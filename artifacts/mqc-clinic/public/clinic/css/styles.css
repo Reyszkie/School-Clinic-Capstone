@@ -3205,6 +3205,25 @@ tbody tr {
 .clinic-print-table tr {
   break-inside: avoid;
 }
+.patient-visit-print-table th,
+.patient-visit-print-table td {
+  padding: 5px 7px;
+}
+.patient-visit-print-table th:not(.patient-visit-print-section-heading) {
+  width: 34%;
+}
+.patient-visit-print-table .patient-visit-print-section-row th {
+  width: auto;
+  padding-top: 8px;
+  border-top: 1.5pt solid #17375e;
+  background: #eaf0f3;
+  color: #17375e;
+  font-size: 8pt;
+}
+.patient-visit-print-table td {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
 .clinic-print-kpis {
   display: flex;
   flex-wrap: wrap;
@@ -3295,6 +3314,14 @@ tbody tr {
   .clinic-print-table td {
     border: 0.75pt solid #aab2b8;
     padding: 4px 6px;
+  }
+  .patient-visit-print-table th,
+  .patient-visit-print-table td {
+    padding: 5px 7px;
+  }
+  .patient-visit-print-table .patient-visit-print-section-row {
+    break-after: avoid;
+    page-break-after: avoid;
   }
   tr,
   img {
