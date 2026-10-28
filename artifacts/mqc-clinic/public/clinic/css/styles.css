@@ -731,10 +731,10 @@ tbody tr{transition:background-color .14s ease;}
 
 #clinic-print-root{display:none;}
 @media print{
-  @page{size:A4 portrait;margin:14mm;}
+  @page{size:A4 portrait;margin:0;}
   body{margin:0!important;background:#fff!important;color:#111!important;font:10pt/1.4 Arial,sans-serif!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   body>*:not(#clinic-print-root){display:none!important;}
-  #clinic-print-root{display:block!important;width:100%;color:#111;background:#fff;font:10pt/1.4 Arial,sans-serif;}
+  #clinic-print-root{display:block!important;width:100%;box-sizing:border-box;padding:14mm;-webkit-box-decoration-break:clone;box-decoration-break:clone;color:#111;background:#fff;font:10pt/1.4 Arial,sans-serif;}
   .clinic-print-header{text-align:center;border-bottom:1px solid #777;padding-bottom:8px;margin-bottom:12px;}
   .clinic-print-header h1{font-size:16pt;margin:0 0 4px;}
   .clinic-print-header h2{font-size:12pt;margin:0;}

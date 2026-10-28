@@ -165,32 +165,7 @@ function openStudentForm(existing=null){
     const symptomOther=document.querySelector('[data-free-text="patient-symptom-other"]')?.value.trim();
     if(symptomOther)symptoms.push(`Other: ${symptomOther}`);
     const course=categorySelect.value,year=yearSelect.value;
-    const guardianContactValue=guardianContact.value.trim();
     const name=`${last}, ${first}${middle?" "+middle.replace(/\.$/,"")+".":""}`;
-    const matchingPatient=!isEdit&&STUDENTS.find(patient=>
-      patient.lastName?.trim().toLowerCase()===last.toLowerCase()&&
-      patient.firstName?.trim().toLowerCase()===first.toLowerCase()&&
-      String(patient.middleInitial||"").trim().replace(/\.$/,"").toLowerCase()===middle.replace(/\.$/,"").toLowerCase()&&
-      ((patient.institutionalCategory||patient.course)===course&&(patient.personnelType||patient.year)===year||Boolean(guardianContactValue&&String(patient.guardianContact||"").replace(/\D/g,"")===guardianContactValue))
-    );
-    if(matchingPatient){
-      const previousSymptoms=matchingPatient.symptoms||[];
-      const mergedSymptoms=[...new Set([...previousSymptoms,...symptoms])];
-      const symptomsChanged=mergedSymptoms.length!==previousSymptoms.length||mergedSymptoms.some((symptom,index)=>symptom!==previousSymptoms[index]);
-      const saved=!symptomsChanged
-        ? true
-        : await commitClinicRecordMutation({
-          apply:()=>{matchingPatient.symptoms=mergedSymptoms;},
-          rollback:()=>{matchingPatient.symptoms=previousSymptoms;},
-          auditAction:`Patient Registration Symptoms Updated — ${matchingPatient.id}`,
-          module:"Patients",detail:matchingPatient.id,
-          successTitle:"Existing patient found",
-          successMessage:`Symptoms were added to ${matchingPatient.name}'s profile. Open the existing patient record to add a visit.`,
-          refresh:renderConsultTabBody,
-        });
-      if(saved){closeModal();openStudentDetailModal(matchingPatient);}
-      return;
-    }
     guardianContactTouched=true;
     if(!updateGuardianContactValidity()){guardianContact.focus();toast("Invalid contact number","Enter exactly 11 digits using numbers only.","err");return;}
     const rec={id:isEdit?editingStudent.id:newPatientRecordId(),name,lastName:last,firstName:first,middleInitial:middle,course,institutionalCategory:course,year,personnelType:course==="Campus Personnel"?year:null,gender:document.getElementById("sf-gender").value,sex:document.getElementById("sf-gender").value,guardianName:document.getElementById("sf-guardian").value,guardianContact:guardianContact.value,emergency:document.getElementById("sf-guardian").value,allergies:f.allergies||"Not Yet Assessed",conditions:f.conditions||"None",symptoms};
@@ -198,14 +173,36 @@ function openStudentForm(existing=null){
     const previousVisits=CONSULTATIONS.map(visit=>({visit,studentName:visit.studentName,course:visit.course,year:visit.year}));
     const saveButton=document.getElementById("sf-save"),saveLabel=saveButton.innerHTML;patientSaveInProgress=true;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     let saved=false;
-    try{saved=await commitClinicRecordMutation({
-      apply:()=>{
-        if(wasEdit){if(index<0)throw new Error("This patient record is no longer available.");STUDENTS[index]={...previous,...rec};const updated=STUDENTS[index];CONSULTATIONS.forEach(visit=>{if(visit.studentId===updated.id){visit.studentName=updated.name;visit.course=updated.course;visit.year=updated.year;}});editingStudent=updated;state.selectedStudent=updated;}
-        else{STUDENTS.unshift(rec);editingStudent=rec;state.selectedStudent=rec;}
-      },
-      rollback:()=>{if(wasEdit&&previous){STUDENTS[index]=previous;previousVisits.forEach(row=>Object.assign(row.visit,{studentName:row.studentName,course:row.course,year:row.year}));editingStudent=previous;state.selectedStudent=previous;}else{const patientIndex=STUDENTS.findIndex(patient=>patient.id===rec.id);if(patientIndex>=0)STUDENTS.splice(patientIndex,1);state.selectedStudent=null;}},
-      auditAction:`${wasEdit?"Patient Record Updated":"Patient Added"} — ${rec.id}`,module:"Patients",detail:rec.id,successTitle:wasEdit?"Patient updated":"Patient added",successMessage:wasEdit?`${rec.name}'s record has been updated.`:`Welcome, ${rec.name}! Added to patient records.`,refresh:renderConsultTabBody,
-    });}finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
+    try{
+      if(!wasEdit){
+        const registration=await registerPatientProfile(rec);
+        if(registration.status==="possible_matches"){
+          showPatientMatchOptions(rec,registration.matches);
+          return;
+        }
+        if(registration.status!=="created")throw new Error("Patient registration could not be completed.");
+        saved=await saveRegisteredPatient(registration.patient||rec);
+      }else{
+        saved=await commitClinicRecordMutation({
+          apply:()=>{
+            if(index<0)throw new Error("This patient record is no longer available.");
+            STUDENTS[index]={...previous,...rec};
+            const updated=STUDENTS[index];
+            CONSULTATIONS.forEach(visit=>{if(visit.studentId===updated.id){visit.studentName=updated.name;visit.course=updated.course;visit.year=updated.year;}});
+            editingStudent=updated;state.selectedStudent=updated;
+          },
+          rollback:()=>{
+            if(previous){
+              STUDENTS[index]=previous;
+              previousVisits.forEach(row=>Object.assign(row.visit,{studentName:row.studentName,course:row.course,year:row.year}));
+              editingStudent=previous;state.selectedStudent=previous;
+            }
+          },
+          auditAction:`Patient Record Updated — ${rec.id}`,module:"Patients",detail:rec.id,successTitle:"Patient updated",successMessage:`${rec.name}'s record has been updated.`,refresh:renderConsultTabBody,
+        });
+      }
+    }catch(error){toast("Patient not saved",error.message||"Unable to register this patient.","err");}
+    finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
     if(saved)closeModal();
   };
 }
@@ -217,6 +214,91 @@ function newPatientRecordId(){
     id=`PT-${uniqueId}`;
   }while(STUDENTS.some(patient=>patient.id===id)||DELETED_STUDENTS.some(patient=>patient.id===id));
   return id;
+}
+
+async function registerPatientProfile(patient,confirmedDistinctIds=[],selectedPatientId=null){
+  const response=await fetch("/api/patients/register",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({patient,confirmedDistinctIds,selectedPatientId}),
+  });
+  const result=await response.json().catch(()=>({}));
+  if(response.status===409&&result.status==="possible_matches")return result;
+  if(!response.ok)throw new Error(result.message||`Patient registration returned ${response.status}.`);
+  return result;
+}
+
+async function saveRegisteredPatient(patient){
+  const record=patient||{};
+  let saved=false;
+  saved=await commitClinicRecordMutation({
+    apply:()=>{
+      if(STUDENTS.some(existing=>existing.id===record.id))throw new Error("This patient profile is already active. Refresh the patient list before continuing.");
+      STUDENTS.unshift(record);state.selectedStudent=record;
+    },
+    rollback:()=>{
+      const index=STUDENTS.findIndex(existing=>existing.id===record.id);
+      if(index>=0)STUDENTS.splice(index,1);
+      state.selectedStudent=null;
+    },
+    save:()=>Promise.resolve(),
+    auditAction:`Patient Added — ${record.id}`,module:"Patients",detail:record.id,
+    successTitle:"Patient added",successMessage:`Welcome, ${record.name}! Added to patient records.`,
+    refresh:renderConsultTabBody,
+  });
+  if(saved)closeModal();
+  return saved;
+}
+
+function showPatientMatchOptions(patient,matches){
+  closeModal();
+  const candidateRows=matches.map(match=>{
+    const category=match.institutionalCategory||match.course||"—";
+    const year=match.personnelType||match.year||"—";
+    const middle=match.middleInitial?` · M.I. ${escapeHtml(match.middleInitial)}`:"";
+    const visitStatus=match.hasVisits?"Previous visits on file":"No previous visits on file";
+    const matchedOn=[match.nameMatches?"name":null,match.guardianContactMatches?"guardian contact":null].filter(Boolean).join(" and ");
+    return `<article class="card" style="margin:10px 0;padding:14px"><div style="font-weight:700">${escapeHtml(match.name||"Patient profile")}${middle}</div><div style="font-size:12px;color:var(--ink-soft);margin:5px 0 10px">${escapeHtml(category)} · ${escapeHtml(year)} · ${visitStatus} · Profile ${escapeHtml(match.id)}${matchedOn?` · Matched on ${escapeHtml(matchedOn)}`:""}</div><button class="btn btn-teal" type="button" data-use-patient-profile="${escapeHtml(match.id)}">Use this profile and proceed to New Patient Visit</button></article>`;
+  }).join("");
+  openModal(`<div class="modal-head"><h3>Possible Existing Patient</h3><button class="modal-close" onclick="closeModal()" aria-label="Close possible patient matches">${ICONS.x}</button></div>
+    <div class="modal-body"><p>Possible matches were found by patient name and/or parent or guardian contact. Similar names and shared contact numbers can belong to different people, so review the details and confirm the correct profile. Selecting a profile will open New Patient Visit without changing the patient's details or previous visits.</p>${candidateRows}</div>
+    <div class="modal-foot"><button class="btn" type="button" onclick="closeModal()">Cancel</button><button class="btn" type="button" id="create-distinct-patient">These are different people — create a separate profile</button></div>`,"lg");
+  document.querySelectorAll("[data-use-patient-profile]").forEach(button=>button.onclick=async()=>{
+    button.disabled=true;
+    try{
+      const result=await registerPatientProfile(null,[],button.dataset.usePatientProfile);
+      if(result.status!=="selected")throw new Error("That patient profile is no longer active. Refresh the patient list and try again.");
+      const selected=result.patient;
+      const localIndex=STUDENTS.findIndex(record=>record.id===selected.id);
+      const deletedIndex=DELETED_STUDENTS.findIndex(record=>record.id===selected.id);
+      if(deletedIndex>=0)DELETED_STUDENTS.splice(deletedIndex,1);
+      if(localIndex>=0)STUDENTS[localIndex]={...STUDENTS[localIndex],...selected};
+      else STUDENTS.unshift(selected);
+      const existing=localIndex>=0?STUDENTS[localIndex]:selected;
+      closeModal();
+      toast("Existing patient found","This patient already has a profile. Proceed to New Patient Visit; no duplicate profile will be created.","warn");
+      openConsultationForm(existing);
+    }catch(error){button.disabled=false;toast("Unable to open patient profile",error.message||"Refresh the patient list and try again.","err");}
+  });
+  const createButton=document.getElementById("create-distinct-patient");
+  createButton.onclick=async()=>{
+    if(createButton.disabled)return;
+    createButton.disabled=true;
+    createButton.innerHTML='<span class="button-spinner"></span> Checking...';
+    try{
+      const result=await registerPatientProfile(patient,matches.map(match=>match.id));
+      if(result.status==="possible_matches"){
+        showPatientMatchOptions(patient,result.matches);
+        return;
+      }
+      if(result.status!=="created")throw new Error("Patient registration could not be completed.");
+      await saveRegisteredPatient(result.patient||patient);
+    }catch(error){
+      createButton.disabled=false;
+      createButton.textContent="These are different people — create a separate profile";
+      toast("Patient not saved",error.message||"Unable to register this patient.","err");
+    }
+  };
 }
 
 function bindSelectButtons(){

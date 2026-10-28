@@ -289,7 +289,7 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_settings` for clinic configuration and alert thresholds.
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields and the `save_clinical_visit_with_inventory` / `set_clinical_visit_inventory_status` database functions used to save treatments and prevent concurrent overselling. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations. It adds the patient classification fields and the `register_clinic_patient`, `save_clinical_visit_with_inventory`, and `set_clinical_visit_inventory_status` database functions. Patient registration uses the transactional registration function to detect possible matches and prevent simultaneous duplicate submissions. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
 The clinic API reads normalized tables and uses `clinic_state` for compatibility fields and migration metadata. Row-level security is enabled; the API uses its server-side secret key, so that key must never be exposed to browser code.
 

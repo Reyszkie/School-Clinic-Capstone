@@ -57,7 +57,7 @@ function printReports(){
   const frequentRows=d.frequent.map(v=>[escapeHtml(v.studentName||"—"),escapeHtml(`${v.course||"—"} — ${v.year||"—"}`),v.count]);
   const referralRows=flagged.map(v=>[escapeHtml(v.studentName||"—"),v.count]);
   const html=`<p class="report-meta">Clinical reports · Printed ${escapeHtml(new Date().toLocaleString("en-PH",{timeZone:"Asia/Manila"}))}</p><p class="summary"><b>Total Clinic Visits:</b> ${d.visits.length}<br><b>Unique Patients Served:</b> ${d.unique}<br><b>Frequent Clinic Visitors:</b> ${d.frequent.length}<br><b>Common Reasons:</b> ${Object.keys(d.reasons).length}<br><b>Grade Levels / Sections:</b> ${Object.keys(d.levels).length}<br><b>Visits This Month:</b> ${d.monthVisits.length}<br><b>Patient Dispositions:</b> ${Object.keys(d.outcomes).length}</p>${table("Common Reasons for Visits",["Reason","Visits"],summaryRows(d.reasons))}${table("Patient Disposition",["Outcome","Visits"],summaryRows(d.outcomes))}${table("Visits by Grade Level / Section",["Year / Grade","Visits"],summaryRows(d.levels))}${table("Clinic Visit Trends",["Record","Date","Patient","Reason","Outcome"],visitRows)}${table("Frequent Clinic Visitors",["Patient","Institutional Category / Year or Personnel Type","Visits"],frequentRows)}${table("Recorded Referrals This Month",["Patient","Referral Visits"],referralRows)}`;
-  printInPlace("MQC Clinic Report",html);
+  printInPlace("MQCQC Clinic Report",html);
   logAudit("Clinic Report Printed","Reports","Success",false);
 }
 function previousMonthKey(month){

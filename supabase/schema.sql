@@ -917,3 +917,150 @@ alter table public.audit_logs enable row level security;
 alter table public.clinic_settings enable row level security;
 alter table public.clinic_state enable row level security;
 alter table public.clinic_sync_meta enable row level security;
+
+create or replace function public.register_clinic_patient(
+  p_patient jsonb,
+  p_confirmed_distinct_ids text[] default '{}',
+  p_selected_patient_id text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_patient public.patients;
+  v_match_ids text[];
+  v_matches jsonb;
+  v_last_name text;
+  v_first_name text;
+  v_middle_initial text;
+  v_course text;
+  v_year_level text;
+  v_guardian_contact text;
+begin
+  perform pg_advisory_xact_lock(7401842, 1);
+
+  if p_selected_patient_id is not null then
+    select patient.* into v_patient
+    from public.patients as patient
+    where patient.id = p_selected_patient_id
+      and patient.deleted_at is null;
+
+    if not found then
+      return jsonb_build_object('status', 'not_found');
+    end if;
+
+    return jsonb_build_object(
+      'status', 'selected',
+      'patient', to_jsonb(v_patient),
+      'hasVisits', exists (
+        select 1
+        from public.clinical_visits as visit
+        where visit.patient_id = v_patient.id
+      )
+    );
+  end if;
+
+  if p_patient is null then
+    raise exception 'Patient details are required.';
+  end if;
+
+  v_last_name := nullif(btrim(p_patient ->> 'lastName'), '');
+  v_first_name := nullif(btrim(p_patient ->> 'firstName'), '');
+  v_middle_initial := nullif(btrim(p_patient ->> 'middleInitial'), '');
+  v_course := nullif(btrim(p_patient ->> 'course'), '');
+  v_year_level := nullif(btrim(p_patient ->> 'year'), '');
+  v_guardian_contact := nullif(btrim(p_patient ->> 'guardianContact'), '');
+  if v_last_name is null or v_first_name is null or v_course is null or v_year_level is null then
+    raise exception 'Last name, given name, category, and year level are required.';
+  end if;
+  if v_guardian_contact is null or v_guardian_contact !~ '^[0-9]{11}$' then
+    raise exception 'Parent / Guardian Contact must contain exactly 11 digits.';
+  end if;
+
+  select
+    coalesce(array_agg(patient.id order by patient.created_at, patient.id), '{}'),
+    coalesce(jsonb_agg(jsonb_build_object(
+      'id', patient.id,
+      'name', patient.name,
+      'lastName', patient.last_name,
+      'firstName', patient.first_name,
+      'middleInitial', patient.middle_initial,
+      'course', patient.course,
+      'institutionalCategory', patient.institutional_category,
+      'personnelType', patient.personnel_type,
+      'year', patient.year_level,
+      'gender', patient.gender,
+      'guardianName', patient.guardian_name,
+      'guardianContact', patient.guardian_contact,
+      'allergies', patient.allergies,
+      'conditions', patient.medical_conditions,
+      'symptoms', patient.symptoms,
+      'nameMatches',
+        lower(regexp_replace(btrim(patient.last_name), '[[:space:]]+', ' ', 'g')) =
+          lower(regexp_replace(v_last_name, '[[:space:]]+', ' ', 'g'))
+        and lower(regexp_replace(btrim(patient.first_name), '[[:space:]]+', ' ', 'g')) =
+          lower(regexp_replace(v_first_name, '[[:space:]]+', ' ', 'g')),
+      'guardianContactMatches',
+        regexp_replace(coalesce(patient.guardian_contact, ''), '[^0-9]', '', 'g') = v_guardian_contact,
+      'hasVisits', exists (
+        select 1
+        from public.clinical_visits as visit
+        where visit.patient_id = patient.id
+      )
+    ) order by patient.created_at, patient.id), '[]'::jsonb)
+  into v_match_ids, v_matches
+  from public.patients as patient
+  where patient.deleted_at is null
+    and (
+      (
+        lower(regexp_replace(btrim(patient.last_name), '[[:space:]]+', ' ', 'g')) =
+          lower(regexp_replace(v_last_name, '[[:space:]]+', ' ', 'g'))
+        and lower(regexp_replace(btrim(patient.first_name), '[[:space:]]+', ' ', 'g')) =
+          lower(regexp_replace(v_first_name, '[[:space:]]+', ' ', 'g'))
+      )
+      or regexp_replace(coalesce(patient.guardian_contact, ''), '[^0-9]', '', 'g') = v_guardian_contact
+    );
+
+  if cardinality(v_match_ids) > 0
+    and not (v_match_ids <@ coalesce(p_confirmed_distinct_ids, '{}')) then
+    return jsonb_build_object('status', 'possible_matches', 'matches', v_matches);
+  end if;
+
+  insert into public.patients (
+    id, last_name, first_name, middle_initial, name, course, year_level,
+    institutional_category, personnel_type, gender, guardian_name, guardian_contact,
+    allergies, medical_conditions, symptoms
+  ) values (
+    nullif(btrim(p_patient ->> 'id'), ''),
+    v_last_name,
+    v_first_name,
+    v_middle_initial,
+    coalesce(nullif(btrim(p_patient ->> 'name'), ''), v_last_name || ', ' || v_first_name),
+    v_course,
+    v_year_level,
+    coalesce(nullif(btrim(p_patient ->> 'institutionalCategory'), ''), v_course),
+    nullif(btrim(p_patient ->> 'personnelType'), ''),
+    nullif(btrim(p_patient ->> 'gender'), ''),
+    nullif(btrim(p_patient ->> 'guardianName'), ''),
+    v_guardian_contact,
+    coalesce(nullif(btrim(p_patient ->> 'allergies'), ''), 'Not Yet Assessed'),
+    coalesce(nullif(btrim(p_patient ->> 'conditions'), ''), 'None'),
+    case
+      when jsonb_typeof(p_patient -> 'symptoms') = 'array' then p_patient -> 'symptoms'
+      else '[]'::jsonb
+    end
+  )
+  returning * into v_patient;
+
+  return jsonb_build_object(
+    'status', 'created',
+    'patient', to_jsonb(v_patient),
+    'hasVisits', false
+  );
+end;
+$$;
+
+revoke all on function public.register_clinic_patient(jsonb, text[], text) from public, anon, authenticated;
+grant execute on function public.register_clinic_patient(jsonb, text[], text) to service_role;
