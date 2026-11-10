@@ -82,7 +82,7 @@ function renderMedicinesTab(){
       </table>
     </div>
     <div class="pagination">
-      <span>Page ${state.medPage} of ${totalPages} · ${list.length} items ${deletedCount?`· ${deletedCount} in Deleted Records`:''}</span>
+      <span>Page ${state.medPage} of ${totalPages} · ${list.length} items ${deletedCount?`· ${deletedCount} in Archive`:''}</span>
       <div class="page-btns"><button data-mpage="prev">${ICONS.chevleft}</button><button data-mpage="next">${ICONS.chevright}</button></div>
     </div>
   </div>`;
@@ -177,9 +177,9 @@ function bindMedicinesTab(){
       if(!canDeleteClinicRecords())return;
       const rec=MEDICINES.find(m=>m.code===b.dataset.delMed);
       if(!rec)return;
-      confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
+      confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to the Archive.`, okLabel:"Delete Item", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("medicine",rec.code,true),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Medicines",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.code,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("medicine",rec.code,true),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Medicines",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to the Archive.`,detail:rec.code,refresh:rerender});
       }});
     };
   });
@@ -283,9 +283,9 @@ function bindEquipmentTab(){
       if(!canDeleteClinicRecords())return;
       const rec=EQUIPMENT.find(e=>e.id===b.dataset.delEq);
       if(!rec)return;
-      confirmDialog({title:"Delete this supply?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to Deleted Records.`, okLabel:"Delete Item", onConfirm:async()=>{
+      confirmDialog({title:"Delete this supply?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to the Archive.`, okLabel:"Delete Item", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("equipment",rec.id,true),auditAction:`Record Deleted — Medical Supply ${rec.name}`,module:"Medical Supplies",status:"Warning",successTitle:"Supply deleted",successMessage:`${rec.name} moved to Deleted Records.`,detail:rec.id,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("equipment",rec.id,true),auditAction:`Record Deleted — Medical Supply ${rec.name}`,module:"Medical Supplies",status:"Warning",successTitle:"Supply deleted",successMessage:`${rec.name} moved to the Archive.`,detail:rec.id,refresh:rerender});
       }});
     };
   });

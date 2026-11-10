@@ -4,9 +4,6 @@ const NAV = [
   {group:"Clinical", items:[{key:"consultation", label:"Patients", icon:ICONS.stethoscope, color:"var(--teal)"}]},
   {group:"Inventory", items:[{key:"inventory", label:"Medicines & Supplies", icon:ICONS.pill, color:"var(--amber)"}]},
   {group:"Insights", items:[{key:"reports", label:"Reports", icon:ICONS.report, color:"var(--violet)"}]},
-  {group:"Administration", items:[
-    {key:"admin", label:"Users, Audit & Deleted", icon:ICONS.users, color:"var(--coral)"},
-  ]},
 ];
 let clockTimer = null;
 let logoutConfirmationOpen = false;
@@ -79,11 +76,11 @@ function pageTitle(){
 }
 function pageSub(){
   return {
-    dashboard:"Medicine alerts and quick student record search",
+    dashboard:"Clinic metrics and medicine alerts",
      consultation:"View patient profiles, clinical records, and visit history",
     inventory:"Medicines and medical supplies tracking",
     reports:"Generate and export clinic reports",
-    admin:"Users, audit logs, and deleted records",
+    admin:"User management, audit logs, and archive",
     settings:"Preferences and system configuration",
   }[state.page]||"";
 }

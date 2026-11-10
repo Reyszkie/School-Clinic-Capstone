@@ -2533,26 +2533,14 @@ tbody tr {
   }
 }
 
-.settings-appearance {
+.settings-admin-entry {
   margin-bottom: 16px;
 }
-.appearance-setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-.appearance-setting b {
-  font-size: 13px;
-  color: var(--navy-deep);
-}
-.appearance-setting p,
 .monthly-report-header p {
   font-size: 12.5px;
   color: var(--ink-soft);
   margin: 4px 0 0;
 }
-.appearance-setting select,
 .monthly-report-actions input {
   min-width: 200px;
   padding: 9px 11px;
@@ -2875,13 +2863,9 @@ tbody tr {
   width: 100%;
 }
 @media (max-width: 760px) {
-  .appearance-setting,
   .monthly-report-header {
     align-items: stretch;
     flex-direction: column;
-  }
-  .appearance-setting select {
-    width: 100%;
   }
   .report-summary-grid {
     grid-template-columns: 1fr;
@@ -3988,8 +3972,7 @@ tbody tr:hover {
   .modal-foot .btn {
     flex: 1 1 120px;
   }
-  .monthly-report-header,
-  .appearance-setting {
+  .monthly-report-header {
     align-items: flex-start;
     flex-direction: column;
   }

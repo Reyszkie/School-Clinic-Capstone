@@ -3,12 +3,9 @@ function settingField(label,id,value,type="text"){
   return `<div class="f-field"><label>${label}</label><input type="${type}" id="${id}" value="${escapeHtml(value??"")}"></div>`;
 }
 function renderSettings(){
-  const u=state.currentUser;
-  const appearanceTheme=state.settings.appearanceTheme||"ocean";
-  return `<div class="card settings-appearance"><div class="panel-title"><h4>Theme &amp; Appearance</h4></div>
-      <div class="appearance-setting"><div><b>Color theme</b><p>Choose a readable color palette for the clinic workspace.</p></div>
-        <select id="appearance-theme" aria-label="Color theme">${CLINIC_THEMES.map(theme=>`<option value="${theme.id}" ${appearanceTheme===theme.id?"selected":""}>${theme.label}</option>`).join("")}</select>
-      </div>
+  return `<div class="card settings-admin-entry"><div class="panel-title"><h4>Administration</h4></div>
+      <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Manage users, review audit logs, and restore or permanently remove archived records.</p>
+      <button class="btn btn-dark" id="settings-admin-btn">${ICONS.users} Open Administration</button>
     </div><div class="grid grid-2">
     <div class="card"><div class="panel-title"><h4>Backup & Restore</h4></div>
       <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Download a copy of the clinic records saved in this browser, or restore a previous JSON backup.</p>
@@ -19,23 +16,7 @@ function renderSettings(){
   </div>`;
 }
 function bindSettings(){
-  document.getElementById("appearance-theme")?.addEventListener("change",async event=>{
-    const select=event.target,previousTheme=state.settings.appearanceTheme,nextTheme=select.value;
-    applyClinicTheme(nextTheme);
-    try{
-      const response=await fetch("/api/auth/session",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({appearanceTheme:nextTheme})});
-      const result=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(result.message||"Unable to save the selected theme.");
-      state.currentUser.appearanceTheme=result.appearanceTheme;
-    }catch(error){
-      applyClinicTheme(previousTheme);
-      select.value=previousTheme;
-      toast("Theme not saved",error.message||"Unable to save the selected theme.","err");
-      return;
-    }
-    try{await logAudit(`Appearance Theme Changed — ${nextTheme}`,"Settings","Success",false,true);toast("Appearance updated","Your color theme has been saved to your account.","ok");}
-    catch{toast("Appearance saved; audit sync failed","The theme was saved, but its audit entry could not be recorded.","err");}
-  });
+  document.getElementById("settings-admin-btn")?.addEventListener("click",()=>{state.page="admin";render();});
   document.getElementById("backup-btn")?.addEventListener("click",async()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);try{await logAudit("Clinic Data Backup Exported","Settings","Success",false,true);toast("Backup created","A JSON backup of clinic records was downloaded.","ok");}catch{toast("Backup created; audit sync failed","The backup downloaded, but its audit entry could not be recorded.","err");}});
   document.getElementById("restore-file")?.addEventListener("change",event=>{
     const file=event.target.files[0];

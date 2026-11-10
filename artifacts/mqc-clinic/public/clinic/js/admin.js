@@ -10,7 +10,7 @@ function renderAdmin() {
   <div class="subtabs">
     <button class="subtab ${state.adminTab === "users" ? "active" : ""}" data-atab="users">User Management</button>
     <button class="subtab ${state.adminTab === "audit" ? "active" : ""}" data-atab="audit">Audit Logs</button>
-    <button class="subtab ${state.adminTab === "deleted" ? "active" : ""}" data-atab="deleted">Deleted Records</button>
+    <button class="subtab ${state.adminTab === "deleted" ? "active" : ""}" data-atab="deleted">Archive</button>
   </div>
   <div id="admin-body"></div>`;
 }
@@ -570,7 +570,7 @@ function bindUsersTab() {
         deleted = { ...u, deleted: true, deletedAt: new Date().toISOString() };
       confirmDialog({
         title: "Delete this user?",
-        msg: `<b>${escapeHtml(u.name)}</b> will be moved to Deleted Records.`,
+        msg: `<b>${escapeHtml(u.name)}</b> will be moved to the Archive.`,
         okLabel: "Delete User",
         onConfirm: async () => {
           await commitClinicRecordMutation({
@@ -588,7 +588,7 @@ function bindUsersTab() {
             status: "Warning",
             detail: u.id,
             successTitle: "User deleted",
-            successMessage: `${u.name} moved to Deleted Records.`,
+            successMessage: `${u.name} moved to the Archive.`,
             refresh: renderAdminTabBody,
           });
         },
@@ -697,7 +697,7 @@ function renderDeletedTab() {
         .join("")}</tbody>`
     : "";
   const studentRows = delStudents.length
-    ? `<thead><tr><th>Name</th><th>Institutional Category / Personnel Type</th><th>Deleted</th><th></th></tr></thead><tbody>${delStudents
+    ? `<thead><tr><th>Name</th><th>Institutional Category / Personnel Type</th><th>Archived</th><th></th></tr></thead><tbody>${delStudents
         .map(
           (
             s,
@@ -707,7 +707,7 @@ function renderDeletedTab() {
         .join("")}</tbody>`
     : "";
   const medRows = delMeds.length
-    ? `<thead><tr><th>Code</th><th>Name</th><th>Deleted</th><th></th></tr></thead><tbody>${delMeds
+    ? `<thead><tr><th>Code</th><th>Name</th><th>Archived</th><th></th></tr></thead><tbody>${delMeds
         .map(
           (
             m,
@@ -717,7 +717,7 @@ function renderDeletedTab() {
         .join("")}</tbody>`
     : "";
   const eqRows = delEq.length
-    ? `<thead><tr><th>ID</th><th>Name</th><th>Deleted</th><th></th></tr></thead><tbody>${delEq
+    ? `<thead><tr><th>ID</th><th>Name</th><th>Archived</th><th></th></tr></thead><tbody>${delEq
         .map(
           (
             e,
@@ -727,7 +727,7 @@ function renderDeletedTab() {
         .join("")}</tbody>`
     : "";
   const userRows = delUsers.length
-    ? `<thead><tr><th>ID</th><th>Name</th><th>Deleted</th><th></th></tr></thead><tbody>${delUsers
+    ? `<thead><tr><th>ID</th><th>Name</th><th>Archived</th><th></th></tr></thead><tbody>${delUsers
         .map(
           (
             u,
@@ -738,14 +738,14 @@ function renderDeletedTab() {
     : "";
   return (
     section(
-      "Deleted Patient Visits",
+      "Archive Patient Visit",
       consultRows,
-      "No deleted patient visits.",
+      "No archived patient visits.",
     ) +
-    section("Deleted Patients", studentRows, "No deleted patients.") +
-    section("Deleted Medicines", medRows, "No deleted medicines.") +
-    section("Deleted Inventory Items", eqRows, "No deleted inventory items.") +
-    section("Deleted Users", userRows, "No deleted users.")
+    section("Archive Patients", studentRows, "No archived patients.") +
+    section("Archive Medicines", medRows, "No archived medicines.") +
+    section("Archive Medical Supplies", eqRows, "No archived medical supplies.") +
+    section("Archive Users", userRows, "No archived users.")
   );
 }
 async function commitDeletedRecordChange({
@@ -1146,7 +1146,7 @@ function bindDeletedTab() {
         ) {
           toast(
             "Patient cannot be permanently deleted",
-            "Move all linked clinical visits to Deleted Records first so active clinical history is not removed.",
+            "Move all linked clinical visits to the Archive first so active clinical history is not removed.",
             "err",
           );
           return;
@@ -1262,7 +1262,7 @@ function renderAdminTabBody() {
     } catch (error) {
       console.error("Unable to render deleted clinic records.", error);
       body.innerHTML = [
-        "Patient Visits",
+        "Patient Visit",
         "Patients",
         "Medicines",
         "Medical Supplies",
@@ -1271,8 +1271,8 @@ function renderAdminTabBody() {
         .map(
           (category) => `
         <div class="card" style="margin-bottom:16px;">
-          <div class="panel-title"><h4>Deleted ${category}</h4></div>
-          ${emptyState("Deleted records could not be loaded. Check the clinic sync status and reload this page.")}
+          <div class="panel-title"><h4>Archive ${category}</h4></div>
+          ${emptyState("Archived records could not be loaded. Check the clinic sync status and reload this page.")}
         </div>`,
         )
         .join("");

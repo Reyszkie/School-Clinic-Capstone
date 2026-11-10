@@ -484,7 +484,7 @@ function deleteStudent(s) {
   if (!s || !canDeleteClinicRecords()) return;
   confirmDialog({
     title: "Delete this patient?",
-    msg: `<b>${escapeHtml(s.name)}</b> will be moved to Deleted Records and can be restored later.`,
+    msg: `<b>${escapeHtml(s.name)}</b> will be moved to the Archive and can be restored later.`,
     okLabel: "Delete Patient",
     onConfirm: async () => {
       const index = STUDENTS.findIndex((x) => x.id === s.id);
@@ -511,7 +511,7 @@ function deleteStudent(s) {
         status: "Warning",
         detail: s.id,
         successTitle: "Patient deleted",
-        successMessage: `${s.name} moved to Deleted Records.`,
+        successMessage: `${s.name} moved to the Archive.`,
         refresh: renderConsultTabBody,
       });
     },
@@ -822,7 +822,7 @@ function openConsultationForm(student, existing = null) {
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
     <div class="f-field"><label>Visit Time <span class="req">*</span></label><input id="cf-time" value="${escapeHtml(f.time)}" required></div>
     <div class="f-field"><label>Nurse on Duty</label><input value="${escapeHtml(f.nurse || state.currentUser.name)}" readonly style="background:#F7FAFD"></div>
-    <div class="f-field full"><label for="cf-complaint">Reason for Clinic Visit <span class="req">*</span></label><input id="cf-complaint" list="cf-reasons" value="${escapeHtml(reasonInputValue)}" maxlength="300" placeholder="Select or enter a reason" required><datalist id="cf-reasons">${COMPLAINTS.map((reason) => `<option value="${escapeHtml(reason)}">`).join("")}<option value="Other"></datalist></div>
+    <div class="f-field"><label for="cf-complaint">Reason for Clinic Visit <span class="req">*</span></label><input id="cf-complaint" list="cf-reasons" value="${escapeHtml(reasonInputValue)}" maxlength="300" placeholder="Select or enter a reason" required><datalist id="cf-reasons">${COMPLAINTS.map((reason) => `<option value="${escapeHtml(reason)}">`).join("")}<option value="Other"></datalist></div>
     <div class="f-field"><label>When did symptoms start?</label><input id="cf-start" value="${escapeHtml(f.symptomStart || "")}" placeholder="e.g. this morning"></div>
     <div class="f-field"><label>Pain Level</label><select id="cf-pain">${["0 – No pain", "1–3 – Mild", "4–6 – Moderate", "7–9 – Severe", "10 – Worst possible pain"].map((x) => `<option ${f.painLevel === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
     <div class="f-field full"><label>Medical History</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
@@ -1455,7 +1455,7 @@ function bindConsultHistory() {
         if (!c) return;
         confirmDialog({
           title: "Delete this patient visit?",
-          msg: `Record <b>${c.id}</b> will be moved to Deleted Records and can be restored later.`,
+          msg: `Record <b>${c.id}</b> will be moved to the Archive and can be restored later.`,
           okLabel: "Delete Record",
           onConfirm: async () => {
             const snapshot = captureInventoryState(),
@@ -1491,7 +1491,7 @@ function bindConsultHistory() {
               ],
               module: "Patient Visits",
               successTitle: "Visit deleted",
-              successMessage: `Record ${c.id} moved to Deleted Records; used inventory was restored.`,
+              successMessage: `Record ${c.id} moved to the Archive; used inventory was restored.`,
               refresh: rerender,
             });
           },
