@@ -124,76 +124,254 @@ function attachLoginFormEvents(){
 }
 
 function buildLoginAlerts() {
+  const threshold = Number(state.settings.lowStockThreshold ?? 15);
   const currentMonth = todayDateString().slice(0, 7);
-  const lowStock = [];
+  const monthDate = new Date(`${currentMonth}-01T00:00:00+08:00`);
+  const monthLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    month: "long",
+    year: "numeric",
+  }).format(monthDate);
+
+  const sections = [
+    {
+      id: "low-stock-medicines",
+      title: "Low Stock Medicines",
+      empty: "No low-stock medicines require attention.",
+      route: "inventory",
+      badge: "Low Stock",
+      items: [],
+    },
+    {
+      id: "low-stock-supplies",
+      title: "Low Stock Medical Supplies",
+      empty: "No low-stock medical supplies require attention.",
+      route: "inventory",
+      badge: "Low Stock",
+      items: [],
+    },
+    {
+      id: "expired-medicines",
+      title: "Expired Medicines",
+      empty: "No expired medicines are on record.",
+      route: "inventory",
+      badge: "Expired",
+      items: [],
+    },
+    {
+      id: "expired-supplies",
+      title: "Expired Medical Supplies",
+      empty: "No expired medical supplies are on record.",
+      route: "inventory",
+      badge: "Expired",
+      items: [],
+    },
+    {
+      id: "expiring-medicines",
+      title: "Expiring Medicines",
+      empty: "No medicines are expiring within the next 30 days.",
+      route: "inventory",
+      badge: "Expiring",
+      items: [],
+    },
+    {
+      id: "expiring-supplies",
+      title: "Expiring Medical Supplies",
+      empty: "No medical supplies are expiring within the next 30 days.",
+      route: "inventory",
+      badge: "Expiring",
+      items: [],
+    },
+    {
+      id: "frequent-visitors",
+      title: "Frequently Visited Patients",
+      empty: `No patients have reached the current monthly alert threshold for ${monthLabel}.`,
+      route: "consultation",
+      badge: "Frequent Visitor",
+      items: [],
+    },
+  ];
+
   MEDICINES.filter((medicine) => !medicine.deleted).forEach((medicine) => {
-    if (Number(medicine.qty) <= Number(state.settings.lowStockThreshold ?? 15)) {
-      lowStock.push({ name: medicine.name, qty: medicine.qty, date: null, label: "Medicine" });
+    const qty = Number(medicine.qty) || 0;
+    if (qty <= threshold) {
+      sections[0].items.push({
+        name: medicine.name,
+        currentQuantity: qty,
+        minimumStock: threshold,
+        stockStatus: qty === 0 ? "Out of Stock" : "Low Stock",
+        route: "inventory",
+      });
     }
-  });
-  EQUIPMENT.filter((item) => !item.deleted && item.category === "Medical Supplies").forEach((item) => {
-    if (Number(item.qty) <= Number(state.settings.lowStockThreshold ?? 15)) {
-      lowStock.push({ name: item.name, qty: item.qty, date: null, label: "Supply" });
-    }
-  });
-  const expired = [];
-  const expiring = [];
-  MEDICINES.filter((medicine) => !medicine.deleted && medicine.exp).forEach((medicine) => {
+
+    if (!medicine.exp) return;
     const remaining = clinicDateDaysUntil(medicine.exp);
     if (remaining === null) return;
     if (remaining < 0) {
-      expired.push({ name: medicine.name, qty: medicine.qty, date: medicine.exp, label: "Medicine" });
+      sections[2].items.push({
+        name: medicine.name,
+        availableQuantity: qty,
+        expirationDate: medicine.exp,
+        expirationStatus: "Expired",
+        route: "inventory",
+      });
     } else if (remaining <= MEDICINE_EXPIRY_ALERT_DAYS) {
-      expiring.push({ name: medicine.name, qty: medicine.qty, date: medicine.exp, label: "Medicine" });
+      sections[4].items.push({
+        name: medicine.name,
+        availableQuantity: qty,
+        expirationDate: medicine.exp,
+        daysRemaining: remaining,
+        expirationStatus: "Expiring Soon",
+        route: "inventory",
+      });
     }
   });
+
+  EQUIPMENT.filter((item) => !item.deleted && item.category === "Medical Supplies").forEach((item) => {
+    const qty = Number(item.qty) || 0;
+    if (qty <= threshold) {
+      sections[1].items.push({
+        name: item.name,
+        currentQuantity: qty,
+        minimumStock: threshold,
+        stockStatus: qty === 0 ? "Out of Stock" : "Low Stock",
+        route: "inventory",
+      });
+    }
+
+    const expirationDate = item.exp || item.expirationDate || item.expiryDate || item.expiration;
+    if (!expirationDate) return;
+    const remaining = clinicDateDaysUntil(expirationDate);
+    if (remaining === null) return;
+    if (remaining < 0) {
+      sections[3].items.push({
+        name: item.name,
+        availableQuantity: qty,
+        expirationDate,
+        expirationStatus: "Expired",
+        route: "inventory",
+      });
+    } else if (remaining <= MEDICINE_EXPIRY_ALERT_DAYS) {
+      sections[5].items.push({
+        name: item.name,
+        availableQuantity: qty,
+        expirationDate,
+        daysRemaining: remaining,
+        expirationStatus: "Expiring Soon",
+        route: "inventory",
+      });
+    }
+  });
+
   const visitsByPatient = new Map();
   CONSULTATIONS.filter((visit) => !visit.deleted && visit.date && visit.date.startsWith(currentMonth)).forEach((visit) => {
     const key = visit.studentId || visit.studentName || "unknown";
-    const entry = visitsByPatient.get(key) || { name: visit.studentName || "Unknown patient", count: 0 };
+    const entry = visitsByPatient.get(key) || {
+      id: visit.studentId || null,
+      name: visit.studentName || "Unknown patient",
+      count: 0,
+    };
     entry.count += 1;
     entry.name = visit.studentName || entry.name;
     visitsByPatient.set(key, entry);
   });
-  const frequent = [...visitsByPatient.values()]
-    .filter((entry) => entry.count >= (CLINIC_FREQUENT_VISIT_THRESHOLD || 3))
-    .sort((a, b) => b.count - a.count);
 
-  const categories = [
-    { id: "low-stock", title: "Low Stock Medicines and Supplies", items: lowStock, empty: "No low-stock medicine or supply items require attention." },
-    { id: "expired", title: "Expired Medicines and Supplies", items: expired, empty: "No expired medicines or supplies are on record." },
-    { id: "expiring", title: "Expiring Medicines and Supplies", items: expiring, empty: "No medicines are expiring within the next 30 days." },
-    { id: "frequent", title: "Frequently Visited Patients", items: frequent, empty: "No patients have reached the current monthly visit alert threshold." },
-  ];
-  return { categories, hasAlerts: categories.some((category) => category.items.length > 0) };
+  sections[6].items = [...visitsByPatient.values()]
+    .filter((entry) => entry.count >= (CLINIC_FREQUENT_VISIT_THRESHOLD || 2))
+    .sort((a, b) => b.count - a.count)
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      totalVisits: entry.count,
+      monthLabel,
+      route: "consultation",
+    }));
+
+  return {
+    sections,
+    hasAlerts: sections.some((section) => section.items.length > 0),
+  };
 }
 
 function openLoginAlertsModal() {
   const alerts = buildLoginAlerts();
-  const sectionHtml = (category) => {
-    if (!category.items.length) return `<div class="empty-state-box"><strong>${escapeHtml(category.empty)}</strong></div>`;
-    return `<ul class="clinic-alert-list">${category.items.map((item) => {
-      if (category.id === "frequent") return `<li><span>${escapeHtml(item.name)}</span><strong>${item.count} visits</strong></li>`;
-      return `<li><span>${escapeHtml(item.name)}</span><strong>${item.qty} left${item.date ? ` · ${fmtDate(item.date)}` : ""}</strong></li>`;
-    }).join("")}</ul>`;
+  const renderAlertItem = (section, item) => {
+    const commonHtml = `
+      <button type="button" class="clinic-alert-item" data-alert-route="${section.route}" data-alert-id="${escapeHtml(section.id)}-${escapeHtml(String(item.name || item.id || "item")).replace(/[^a-z0-9_-]+/gi, "-").toLowerCase()}">
+        <div class="clinic-alert-header">
+          <div>
+            <div class="clinic-alert-tag">${escapeHtml(section.badge)}</div>
+            <strong>${escapeHtml(item.name || item.patientName || "Unnamed record")}</strong>
+          </div>
+          <span class="chip ${section.id.includes("expired") ? "chip-expired" : section.id.includes("expiring") ? "chip-expiring" : section.id.includes("low") ? "chip-low" : "chip-available"}">${section.title}</span>
+        </div>
+        <div class="clinic-alert-details">
+    `;
+
+    if (section.id.includes("low-stock")) {
+      return `${commonHtml}
+        <div><span>Current quantity</span><strong>${Number(item.currentQuantity ?? 0)}</strong></div>
+        <div><span>Minimum stock</span><strong>${Number(item.minimumStock ?? 0)}</strong></div>
+        <div><span>Stock status</span><strong>${escapeHtml(item.stockStatus || "Low Stock")}</strong></div>
+      </div></button>`;
+    }
+
+    if (section.id.includes("expired")) {
+      return `${commonHtml}
+        <div><span>Available quantity</span><strong>${Number(item.availableQuantity ?? 0)}</strong></div>
+        <div><span>Expiration date</span><strong>${fmtDate(item.expirationDate)}</strong></div>
+        <div><span>Expiration status</span><strong>${escapeHtml(item.expirationStatus || "Expired")}</strong></div>
+      </div></button>`;
+    }
+
+    if (section.id.includes("expiring")) {
+      return `${commonHtml}
+        <div><span>Available quantity</span><strong>${Number(item.availableQuantity ?? 0)}</strong></div>
+        <div><span>Expiration date</span><strong>${fmtDate(item.expirationDate)}</strong></div>
+        <div><span>Days remaining</span><strong>${Number(item.daysRemaining ?? 0)} day${Number(item.daysRemaining ?? 0) === 1 ? "" : "s"}</strong></div>
+      </div></button>`;
+    }
+
+    return `${commonHtml}
+      <div><span>Patient name</span><strong>${escapeHtml(item.name)}</strong></div>
+      <div><span>Total clinic visits</span><strong>${Number(item.totalVisits ?? 0)}</strong></div>
+      <div><span>Month & year</span><strong>${escapeHtml(item.monthLabel)}</strong></div>
+    </div></button>`;
   };
+
+  const body = alerts.hasAlerts
+    ? alerts.sections.filter((section) => section.items.length > 0).map((section) => `
+      <div class="clinic-alert-section">
+        <div class="panel-title clinic-alert-title">
+          <h4>${escapeHtml(section.title)}</h4>
+          <span class="chip ${section.id.includes("expired") ? "chip-expired" : section.id.includes("expiring") ? "chip-expiring" : section.id.includes("low") ? "chip-low" : "chip-available"}">${section.items.length}</span>
+        </div>
+        <div class="clinic-alert-list">${section.items.map((item) => renderAlertItem(section, item)).join("")}</div>
+      </div>
+    `).join("")
+    : `<div class="empty-state-box"><strong>There are currently no important clinic alerts.</strong></div>`;
+
   const html = `
     <div class="modal-head">
       <div><div class="eyebrow">CLINIC ALERTS</div><h3>Important clinic alerts</h3></div>
       <button class="modal-close" id="login-alerts-close" aria-label="Close clinic alerts">${ICONS.x}</button>
     </div>
-    <div class="modal-body" style="max-height:70vh;overflow:auto;padding-right:8px;">
-      ${alerts.hasAlerts ? alerts.categories.map((category) => `
-        <div class="alert-panel" style="margin-bottom:16px;">
-          <div class="panel-title" style="margin-bottom:8px;"><h4>${escapeHtml(category.title)}</h4><span class="chip ${category.id === "low-stock" ? "chip-low" : category.id === "expired" ? "chip-expired" : category.id === "expiring" ? "chip-expiring" : "chip-available"}">${category.items.length}</span></div>
-          ${sectionHtml(category)}
-        </div>
-      `).join("") : `<div class="empty-state-box"><strong>There are currently no important clinic alerts.</strong></div>`}
-    </div>
+    <div class="modal-body clinic-alert-modal-body">${body}</div>
     <div class="modal-foot"><button class="btn btn-dark" id="login-alerts-done">Close</button></div>`;
-  openModal(html, "sm");
+
+  openModal(html, "md");
   document.getElementById("login-alerts-close").onclick = closeModal;
   document.getElementById("login-alerts-done").onclick = closeModal;
+  document.querySelectorAll("[data-alert-route]").forEach((button) => {
+    button.onclick = () => {
+      const route = button.getAttribute("data-alert-route");
+      if (route) {
+        state.page = route;
+      }
+      closeModal();
+      render();
+    };
+  });
 }
 
 function openIdentityVerification(user,loginPassword=""){

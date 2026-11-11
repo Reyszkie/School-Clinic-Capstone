@@ -1199,6 +1199,94 @@ textarea {
 .panel-title h4 {
   font-size: 14.5px;
 }
+.clinic-alert-modal-body {
+  max-height: 70vh;
+  overflow: auto;
+  padding-right: 8px;
+}
+.clinic-alert-section {
+  padding: 14px 14px 0;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(42, 115, 217, 0.03), rgba(42, 115, 217, 0.01));
+}
+.clinic-alert-title {
+  margin-bottom: 12px;
+}
+.clinic-alert-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.clinic-alert-item {
+  width: 100%;
+  display: block;
+  text-align: left;
+  padding: 12px 12px 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 4px 18px -14px rgba(13, 30, 54, 0.22);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.clinic-alert-item:hover,
+.clinic-alert-item:focus-visible {
+  border-color: rgba(42, 115, 217, 0.45);
+  box-shadow: 0 10px 20px -16px rgba(16, 61, 121, 0.28);
+  transform: translateY(-1px);
+  outline: none;
+}
+.clinic-alert-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.clinic-alert-header strong {
+  display: block;
+  font-size: 13px;
+  color: var(--navy-deep);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.clinic-alert-tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blue);
+  background: rgba(42, 115, 217, 0.08);
+  border-radius: 999px;
+  padding: 5px 8px;
+  margin-bottom: 6px;
+}
+.clinic-alert-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.clinic-alert-details div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.clinic-alert-details span {
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.clinic-alert-details strong {
+  color: var(--navy-deep);
+  font-size: 12.5px;
+  line-height: 1.35;
+  word-break: break-word;
+}
 .chip {
   font-size: 10.5px;
   padding: 2px 9px;
