@@ -317,19 +317,6 @@ textarea {
   position: relative;
   overflow: hidden;
 }
-.login-page:before {
-  content: "";
-  position: absolute;
-  width: min(72vw, 900px);
-  aspect-ratio: 1;
-  right: -120px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: url("../assets/mqc-seal-transparent.png") center/contain no-repeat;
-  opacity: 0.17;
-  filter: saturate(0.85);
-  pointer-events: none;
-}
 .login-page:after {
   content: "";
   position: absolute;
