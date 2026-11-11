@@ -224,6 +224,15 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 body {
   font-family: "Plus Jakarta Sans", sans-serif;
@@ -336,8 +345,9 @@ textarea {
   align-items: center;
   justify-content: space-between;
   background: var(--login-topbar);
+  border: none !important;
   border-bottom: none;
-  box-shadow: none;
+  box-shadow: none !important;
   position: relative;
   z-index: 2;
 }
@@ -353,8 +363,8 @@ textarea {
   border-radius: 50%;
   overflow: hidden;
   background: transparent;
-  border: none;
-  box-shadow: none;
+  border: none !important;
+  box-shadow: none !important;
   flex-shrink: 0;
 }
 .login-seal img {
@@ -400,9 +410,9 @@ textarea {
   margin: 0;
   padding: 36px;
   background: rgba(255, 255, 255, 0.96);
-  border: none;
+  border: none !important;
   border-radius: 20px;
-  box-shadow: none;
+  box-shadow: none !important;
 }
 .login-panel .eyebrow {
   color: var(--blue);
@@ -428,7 +438,7 @@ textarea {
   justify-content: space-between;
   font-size: 11.5px;
   color: var(--login-muted);
-  border-top: none;
+  border-top: none !important;
   position: relative;
   z-index: 2;
 }
