@@ -4,10 +4,10 @@ function renderLogin(){
   <div class="login-page">
     <header class="login-topbar">
       <div class="login-brand">
-         <div class="login-seal"><img src="assets/mqc-seal.jpg" alt="Mary the Queen College seal"></div>
+         <div class="login-seal"><img src="assets/mqc-seal-transparent.png" alt="Mary the Queen College seal"></div>
         <div><strong>Mary the Queen College</strong><span>of Quezon City</span></div>
       </div>
-      <div class="login-topbar-label">School Clinic Management System</div>
+      <div class="login-topbar-label">School Clinical Records and Inventory Management System</div>
     </header>
     <main class="login-main">
       <section class="login-panel" id="auth-card">
