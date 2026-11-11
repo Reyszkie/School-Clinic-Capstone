@@ -306,6 +306,20 @@ textarea {
 }
 
 /* ---------- Login ---------- */
+html,
+body,
+#app,
+.login-page,
+.login-main,
+.login-topbar,
+.login-panel,
+.login-footer {
+  border: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
 .login-page {
   min-height: 100vh;
   background:
