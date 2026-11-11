@@ -39,11 +39,20 @@ function renderInventory(){
 function renderMedicinesTab(){
   const perPage=8;
   const rawQ=document.getElementById('med-search')?.value||"";
-  const q=rawQ.toLowerCase();
+  const q=rawQ.trim().toLowerCase();
   const statusF=document.getElementById('med-status')?.value||"";
   let list = MEDICINES.filter(m=>!m.deleted).filter(m=>{
-    const matchQ=!q || m.name.toLowerCase().includes(q) || m.code.toLowerCase().includes(q) || m.category.toLowerCase().includes(q);
     const st=medStatus(m).label;
+    const matchQ=!q || [
+      m.code,
+      m.name,
+      m.category,
+      m.qty,
+      m.unit,
+      m.exp,
+      fmtDate(m.exp),
+      st,
+    ].some(value=>String(value??"").toLowerCase().includes(q));
     const matchStatus = !statusF || st===statusF;
     return matchQ && matchStatus;
   });
@@ -68,7 +77,7 @@ function renderMedicinesTab(){
   return `
   <div class="card">
     <div class="toolbar">
-      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="med-search" placeholder="Search medicines by name, code, or category..." value="${escapeHtml(rawQ)}"></div>
+      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="med-search" placeholder="Search medicines by code, name, category, quantity, expiration, or status..." value="${escapeHtml(rawQ)}"></div>
       <select class="select-sm" id="med-status">
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Low Stock","Out of Stock","Expiring Soon","Expired"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
@@ -187,10 +196,17 @@ function bindMedicinesTab(){
 function renderEquipmentTab(){
   const perPage=8;
   const rawQ=document.getElementById('eq-search')?.value||"";
-  const q=rawQ.toLowerCase();
+  const q=rawQ.trim().toLowerCase();
   const statusF=document.getElementById('eq-status')?.value||"";
   let list = EQUIPMENT.filter(e=>!e.deleted&&e.category==="Medical Supplies").filter(e=>{
-    const matchQ=!q || e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q);
+    const matchQ=!q || [
+      e.id,
+      e.name,
+      e.qty,
+      e.lastMaint,
+      fmtDate(e.lastMaint),
+      e.status,
+    ].some(value=>String(value??"").toLowerCase().includes(q));
     const matchStatus = !statusF || e.status===statusF;
     return matchQ && matchStatus;
   });
@@ -214,7 +230,7 @@ function renderEquipmentTab(){
   return `
   <div class="card">
     <div class="toolbar">
-      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="eq-search" placeholder="Search items by name or ID..." value="${escapeHtml(rawQ)}"></div>
+      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="eq-search" placeholder="Search supplies by ID, name, quantity, maintenance date, or status..." value="${escapeHtml(rawQ)}"></div>
       <select class="select-sm" id="eq-status">
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Under Maintenance","Damaged","Replacement Needed"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}

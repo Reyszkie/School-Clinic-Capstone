@@ -8,7 +8,7 @@ function renderConsultation() {
 
 function renderConsultSearchTab() {
   return `<div class="card"><div class="toolbar">
-    <div class="search-box"><span class="ic">${ICONS.search}</span><input id="stu-search" type="text" placeholder="Search by patient name, institutional category, or year/grade..."></div>
+    <div class="search-box"><span class="ic">${ICONS.search}</span><input id="stu-search" type="text" placeholder="Search by name, category, year/personnel type, or sex..."></div>
     <select class="select-sm patient-level-filter" id="stu-department-filter" aria-label="Filter by education level">
       <option value="">All education levels</option>
       <option value="College" ${state.departmentFilter === "College" ? "selected" : ""}>College</option>
@@ -129,7 +129,15 @@ function filterStudents() {
   return activeClinicPatients().filter((s) => {
     const category = s.institutionalCategory || s.course,
       year = s.personnelType || s.year;
-    const searchable = [s.name, category, year, s.lastName, s.firstName]
+    const searchable = [
+      s.name,
+      category,
+      year,
+      s.gender || s.sex,
+      s.lastName,
+      s.firstName,
+    ]
+      .filter(Boolean)
       .join(" ")
       .toLowerCase();
     return (
