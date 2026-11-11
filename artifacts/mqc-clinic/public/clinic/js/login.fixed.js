@@ -237,7 +237,7 @@ function openIdentityVerification(user,loginPassword=""){
   };
   document.getElementById("identity-verification-form").onsubmit=(e)=>{
     e.preventDefault();
-    const password=document.getElementById("verification-password").value;
+    const password = document.getElementById("verification-password").value;
     const error=document.getElementById("verification-error");
     if(password!==(user.password||loginPassword)){
       error.textContent="That password does not match this clinic account.";
