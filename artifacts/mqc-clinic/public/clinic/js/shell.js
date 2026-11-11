@@ -47,7 +47,6 @@ function renderShell(){
          <div class="user-chip">
             <div class="avatar">${initials}</div>
             <div class="u-txt"><b>${escapeHtml(u?.name||"Authorized staff")}</b>${escapeHtml(u?.role||"Clinic access")}</div>
-          <button class="logout-btn" id="logout-btn" title="Log out">${ICONS.logout}</button>
         </div>
       </div>
     </aside>
@@ -65,6 +64,7 @@ function renderShell(){
            <div class="datetime-chip mono" id="clock" aria-label="Current date and time">${manilaDateTime()}</div>
           <button class="icon-btn" id="alert-btn" title="Alerts" aria-label="Alerts">${ICONS.bell}${hasClinicAlerts?'<span class="dot-alert"></span>':''}</button>
           <button class="icon-btn settings-btn" id="settings-btn" title="Settings" aria-label="Settings"><span class="settings-icon">${ICONS.settings}</span><span class="settings-label">Settings</span></button>
+          <button class="logout-btn" id="logout-btn" type="button" aria-label="Log out">Logout</button>
         </div>
       </div>
       <div class="content" id="content"></div>
