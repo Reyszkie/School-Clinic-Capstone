@@ -890,32 +890,42 @@ function openConsultationForm(student, existing = null) {
   let visitSaveInProgress = false;
   let pendingVisitId = "";
   document.getElementById("cf-clear").onclick = () => {
-    const form = document.getElementById("consult-form");
-    form.reset();
-    form.querySelectorAll("input:not([readonly]),textarea").forEach((field) => {
-      if (field.type === "checkbox") field.checked = false;
-      else field.value = "";
-      field.setCustomValidity("");
-      field.setAttribute("aria-invalid", "false");
-    });
-    form.querySelectorAll("select").forEach((select) => {
-      if (select.multiple)
-        [...select.options].forEach((option) => {
-          option.selected = false;
+    confirmDialog({
+      title: "Clear this form?",
+      msg: "Do you want to proceed with clearing all form fields?",
+      okLabel: "Yes, Clear Form",
+      cancelLabel: "No, Cancel",
+      danger: false,
+      loadingLabel: "Clearing form...",
+      onConfirm: () => {
+        const form = document.getElementById("consult-form");
+        form.reset();
+        form.querySelectorAll("input:not([readonly]),textarea").forEach((field) => {
+          if (field.type === "checkbox") field.checked = false;
+          else field.value = "";
+          field.setCustomValidity("");
+          field.setAttribute("aria-invalid", "false");
         });
-      else select.selectedIndex = 0;
+        form.querySelectorAll("select").forEach((select) => {
+          if (select.multiple)
+            [...select.options].forEach((option) => {
+              option.selected = false;
+            });
+          else select.selectedIndex = 0;
+        });
+        document.getElementById("cf-date").value = todayDateString();
+        document.getElementById("cf-time").value = currentTimeString();
+        document.getElementById("cf-medqty").value = "0";
+        document.getElementById("cf-supply-qty").value = "0";
+        form.querySelectorAll(".field-error").forEach((error) => {
+          error.textContent = "";
+          error.classList.add("hidden");
+        });
+        syncInterventionFreeText?.();
+        updateMedicineCard?.();
+        updateSupplyCard?.();
+      },
     });
-    document.getElementById("cf-date").value = todayDateString();
-    document.getElementById("cf-time").value = currentTimeString();
-    document.getElementById("cf-medqty").value = "0";
-    document.getElementById("cf-supply-qty").value = "0";
-    form.querySelectorAll(".field-error").forEach((error) => {
-      error.textContent = "";
-      error.classList.add("hidden");
-    });
-    syncInterventionFreeText?.();
-    updateMedicineCard?.();
-    updateSupplyCard?.();
   };
   document.getElementById("cf-save").onclick = async () => {
     if (visitSaveInProgress) return;
