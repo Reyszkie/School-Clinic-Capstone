@@ -423,10 +423,10 @@ body,
   max-width: 440px;
   margin: 0;
   padding: 36px;
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 20px;
+  box-shadow: 0 14px 38px -24px rgba(8, 37, 84, 0.38);
 }
 .login-panel .eyebrow {
   color: var(--blue);
