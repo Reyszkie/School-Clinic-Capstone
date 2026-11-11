@@ -3598,11 +3598,12 @@ button:disabled {
   gap: 12px;
   margin-bottom: 18px;
 }
-.admin-page-actions {
+.admin-back-actions {
+  display: flex;
   justify-content: flex-end;
-  margin: 0 0 14px;
+  margin-top: 16px;
 }
-.admin-page-actions .btn {
+.admin-back-actions .btn {
   min-width: 104px;
 }
 .search-box {

@@ -12,11 +12,8 @@ function renderAdmin() {
     <button class="subtab ${state.adminTab === "audit" ? "active" : ""}" data-atab="audit">Audit Logs</button>
     <button class="subtab ${state.adminTab === "deleted" ? "active" : ""}" data-atab="deleted">Archive</button>
   </div>
-  <div class="toolbar admin-page-actions">
-    ${state.adminTab === "users" && canManageClinicAccounts() ? `<button class="btn btn-coral" id="add-user-btn">${ICONS.plus} Add User</button>` : ""}
-    <button class="btn admin-back-btn" id="admin-back-btn" type="button">Back</button>
-  </div>
-  <div id="admin-body"></div>`;
+  <div id="admin-body"></div>
+  <div class="admin-back-actions"><button class="btn admin-back-btn" id="admin-back-btn" type="button">Back</button></div>`;
 }
 function renderUsersTab() {
   const canManageAccounts = canManageClinicAccounts();
@@ -41,6 +38,7 @@ function renderUsersTab() {
     .join("");
   return `
   <div class="card">
+    ${canManageAccounts ? `<div class="toolbar" style="justify-content:flex-end;"><button class="btn btn-coral" id="add-user-btn">${ICONS.plus} Add User</button></div>` : ""}
     <div class="table-wrap">
        <table><thead><tr><th>Name</th><th>Role</th><th>Status</th>${canManageAccounts ? "<th></th>" : ""}</tr></thead>
       <tbody>${rows}</tbody></table>
