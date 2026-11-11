@@ -1,27 +1,27 @@
 :root {
-  --navy: #17375e;
-  --navy-deep: #0d1e36;
-  --blue: #2f6fad;
-  --teal: #178d86;
-  --paper: #f0f4f7;
-  --panel: #fcfdfd;
-  --ink: #172536;
-  --ink-soft: #5d6c7d;
-  --line: #d8e2ed;
+  --navy: #0f5bbd;
+  --navy-deep: #0b2542;
+  --blue: #2a73d9;
+  --teal: #0ea5e9;
+  --paper: #f3f8ff;
+  --panel: #ffffff;
+  --ink: #16263d;
+  --ink-soft: #5e718a;
+  --line: #dfeafc;
   --red: #c34a4b;
   --amber: #d18a24;
   --green: #2f8e63;
   --violet: #7564b8;
   --coral: #c96b52;
-  --login-start: #062b61;
-  --login-mid: #0a4d98;
-  --login-end: #1477c9;
-  --login-topbar: rgba(3, 30, 70, 0.72);
-  --login-overlay-start: rgba(6, 43, 97, 0.88);
-  --login-overlay-mid: rgba(6, 43, 97, 0.56);
-  --login-overlay-end: rgba(6, 43, 97, 0.08);
-  --login-highlight: #a8e8ff;
-  --login-muted: #bfd7f5;
+  --login-start: #083a7a;
+  --login-mid: #1267c3;
+  --login-end: #2a8ee8;
+  --login-topbar: rgba(5, 32, 71, 0.78);
+  --login-overlay-start: rgba(8, 58, 122, 0.9);
+  --login-overlay-mid: rgba(18, 103, 195, 0.62);
+  --login-overlay-end: rgba(18, 103, 195, 0.08);
+  --login-highlight: #d7f0ff;
+  --login-muted: #d6ebff;
   --radius: 18px;
   --radius-sm: 12px;
   --shadow:
@@ -398,105 +398,24 @@ textarea {
 }
 .login-main {
   flex: 1;
-  width: min(1160px, 86vw);
+  width: min(100%, 540px);
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
-  gap: clamp(48px, 8vw, 120px);
-  align-items: start;
-  padding: clamp(48px, 8vh, 88px) 0 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(36px, 7vh, 72px) 0 42px;
   position: relative;
   z-index: 2;
-}
-.login-intro {
-  padding-top: 4px;
-  max-width: 560px;
-}
-.intro-seal {
-  width: 108px;
-  height: 108px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: transparent;
-  padding: 6px;
-  margin-bottom: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  box-shadow: 0 12px 28px rgba(0, 25, 65, 0.3);
-}
-.intro-seal img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-  border-radius: 50%;
-}
-.intro-kicker {
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  font-weight: 800;
-  color: var(--login-highlight);
-  margin-bottom: 18px;
-}
-.login-intro h1 {
-  font-size: clamp(42px, 5vw, 70px);
-  line-height: 1.02;
-  letter-spacing: -0.035em;
-  max-width: 540px;
-  color: #fff;
-}
-.login-intro > p {
-  font-size: 16px;
-  color: var(--login-muted);
-  line-height: 1.7;
-  max-width: 500px;
-  margin: 24px 0 38px;
-}
-.login-feature-list {
-  display: grid;
-  gap: 16px;
-  max-width: 440px;
-}
-.login-feature-list > div {
-  display: flex;
-  align-items: flex-start;
-  gap: 13px;
-  padding: 14px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-}
-.feature-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--login-highlight) 16%, transparent);
-  color: var(--login-highlight);
-  font:
-    700 10px/30px "IBM Plex Mono",
-    monospace;
-  text-align: center;
-  flex-shrink: 0;
-}
-.login-feature-list b,
-.login-feature-list small {
-  display: block;
-}
-.login-feature-list b {
-  font-size: 13.5px;
-  color: #fff;
-}
-.login-feature-list small {
-  font-size: 12.5px;
-  color: var(--login-muted);
-  margin-top: 3px;
 }
 .login-panel {
   width: 100%;
   max-width: 440px;
   margin: 0;
   padding: 36px;
-  background: color-mix(in srgb, var(--panel) 96%, transparent);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 20px;
-  box-shadow: 0 20px 50px -18px rgba(18, 42, 78, 0.25);
+  box-shadow: 0 20px 50px -18px rgba(8, 37, 84, 0.3);
 }
 .login-panel .eyebrow {
   color: var(--blue);
@@ -555,20 +474,8 @@ textarea {
     letter-spacing: 0.1em;
   }
   .login-main {
-    width: min(94vw, 620px);
-    grid-template-columns: 1fr;
-    gap: 28px;
+    width: min(94vw, 520px);
     padding: 30px 0 36px;
-  }
-  .login-intro {
-    max-width: none;
-    padding-top: 0;
-  }
-  .login-intro h1 {
-    font-size: clamp(32px, 9vw, 52px);
-  }
-  .login-feature-list {
-    max-width: 100%;
   }
   .login-panel {
     max-width: 100%;
@@ -599,17 +506,6 @@ textarea {
   .login-main {
     width: min(92vw, 540px);
     padding: 22px 0 28px;
-  }
-  .login-intro h1 {
-    font-size: clamp(28px, 11vw, 42px);
-  }
-  .login-intro > p {
-    font-size: 14px;
-    line-height: 1.6;
-    margin: 16px 0 24px;
-  }
-  .login-feature-list > div {
-    padding: 10px 0;
   }
   .login-panel {
     padding: 22px 16px;

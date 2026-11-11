@@ -10,17 +10,6 @@ function renderLogin(){
       <div class="login-topbar-label">School Clinic Management System</div>
     </header>
     <main class="login-main">
-      <section class="login-intro">
-         <div class="intro-seal"><img src="assets/mqc-seal.jpg" alt="Mary the Queen College seal"></div>
-        <div class="intro-kicker">MARY THE QUEEN COLLEGE</div>
-        <h1>Care that keeps our community well.</h1>
-        <p>A dependable clinic workspace for student consultations, medicine inventory, and the people who make everyday care possible.</p>
-        <div class="login-feature-list">
-          <div><span class="feature-icon">01</span><span><b>Student-first records</b><small>Keep every clinic visit clear and organized.</small></span></div>
-          <div><span class="feature-icon">02</span><span><b>Ready clinic inventory</b><small>See what is available before care begins.</small></span></div>
-          <div><span class="feature-icon">03</span><span><b>Trusted access</b><small>Support safe, accountable clinic operations.</small></span></div>
-        </div>
-      </section>
       <section class="login-panel" id="auth-card">
         ${renderLoginCard()}
       </section>
