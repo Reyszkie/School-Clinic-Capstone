@@ -2195,15 +2195,14 @@ tbody tr:hover {
 }
 .report-card-clickable {
   cursor: pointer;
-  transition:
-    transform 0.15s,
-    box-shadow 0.15s,
-    border-color 0.15s;
+  transition: none;
 }
-.report-card-clickable:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px -4px rgba(18, 42, 78, 0.22);
-  border-color: #c7d6e8;
+.report-card-clickable:hover,
+.report-card-clickable:focus,
+.report-card-clickable:active {
+  transform: none !important;
+  box-shadow: var(--shadow) !important;
+  border-color: var(--line) !important;
 }
 .report-card-clickable:focus {
   outline: none;
@@ -2478,10 +2477,9 @@ button,
 .stat-card {
   min-height: 126px;
 }
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 30px -18px rgba(13, 30, 54, 0.34);
-  border-color: #c7d8e8;
+.stat-card {
+  transform: none !important;
+  box-shadow: var(--shadow) !important;
 }
 .stat-card .stat-value {
   letter-spacing: -0.035em;

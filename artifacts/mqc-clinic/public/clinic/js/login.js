@@ -414,7 +414,7 @@ function openIdentityVerification(user,loginPassword=""){
     }
     const shouldShowAlerts = !state.loginAlertsShown;
     state.currentUser=ensureVisibleClinicUser(user);
-    applyClinicTheme(user.appearanceTheme);
+    applyClinicTheme();
     state.loggedIn=true;
     state.loginAlertsShown = true;
     startClinicRefresh();

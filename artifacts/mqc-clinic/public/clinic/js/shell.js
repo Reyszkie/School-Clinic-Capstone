@@ -124,7 +124,8 @@ function attachShellEvents(){
   document.getElementById('alert-btn').onclick=()=>{
     const hasReferral = referralConcernList(REFERRAL_THRESHOLD).length>0;
     if(hasReferral){ state.page="reports"; render(); }
-    else { state.page="dashboard"; render(); setTimeout(()=>document.getElementById('alerts-section')?.scrollIntoView({behavior:'smooth'}),50); }
+    else { state.page="dashboard"; render(); }
+    setTimeout(() => openLoginAlertsModal(), 30);
   };
   document.getElementById('settings-btn').onclick=()=>{ state.page="settings"; render(); };
 }

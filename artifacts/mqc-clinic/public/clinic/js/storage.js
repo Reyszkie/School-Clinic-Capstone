@@ -694,8 +694,7 @@ function applyStoredData(data) {
   if (Array.isArray(data.users)) state.users = data.users;
   if (data.settings && typeof data.settings === "object")
     state.settings = { ...state.settings, ...data.settings };
-  if (state.currentUser?.appearanceTheme)
-    applyClinicTheme(state.currentUser.appearanceTheme);
+  applyClinicTheme();
   ensureInventoryLedger();
   return migratedInventory;
 }
@@ -847,7 +846,7 @@ async function restoreAuthSession() {
     ensureVisibleClinicUser(user);
     state.currentUser = user;
     state.loggedIn = true;
-    applyClinicTheme(user.appearanceTheme);
+    applyClinicTheme();
     return true;
   } catch (err) {
     console.warn("MQC Clinic: couldn't restore the login session.", err);

@@ -1,16 +1,5 @@
 /* ================= STATE ================= */
-const CLINIC_THEMES = [
-  { id: "ocean", label: "Ocean" },
-  { id: "forest", label: "Forest" },
-  { id: "berry", label: "Berry" },
-  { id: "terracotta", label: "Terracotta" },
-  { id: "lagoon", label: "Lagoon" },
-  { id: "sage", label: "Sage" },
-  { id: "cobalt", label: "Cobalt" },
-  { id: "cranberry", label: "Cranberry" },
-  { id: "amber", label: "Amber" },
-  { id: "graphite", label: "Graphite" },
-];
+const CLINIC_THEMES = [{ id: "forest", label: "Forest" }];
 const state = {
   loggedIn: false,
   loginAlertsShown: false,
@@ -45,13 +34,11 @@ const state = {
     timeFormat: "12-hour",
     timezone: "Asia/Manila",
     language: "English",
-    appearanceTheme: "ocean",
+    appearanceTheme: "forest",
   },
 };
-function applyClinicTheme(theme = state.settings.appearanceTheme) {
-  const selected = CLINIC_THEMES.some((option) => option.id === theme)
-    ? theme
-    : "ocean";
+function applyClinicTheme(theme = "forest") {
+  const selected = "forest";
   state.settings.appearanceTheme = selected;
   document.documentElement.dataset.theme = selected;
   return selected;
