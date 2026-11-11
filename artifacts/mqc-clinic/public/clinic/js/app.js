@@ -6,14 +6,22 @@ function render(){
   applyClinicTheme();
   if(!state.loggedIn&&authRestoreStatus==="loading"){
     app.innerHTML='<main class="session-restore" role="status">Restoring your clinic session…</main>';
+    document.body.style.overflowY = 'hidden';
     return;
   }
   if(!state.loggedIn&&authRestoreStatus==="error"){
     app.innerHTML='<main class="session-restore"><p>Unable to verify your clinic session. Your saved session has not been cleared.</p><button class="btn btn-dark" id="retry-session-restore">Try Again</button></main>';
+    document.body.style.overflowY = 'hidden';
     document.getElementById("retry-session-restore").onclick=()=>{serverHydrationPromise=bootstrapClinicSession();};
     return;
   }
-  if(!state.loggedIn){ app.innerHTML = renderLogin(); attachLoginEvents(); return; }
+  if(!state.loggedIn){
+    app.innerHTML = renderLogin();
+    document.body.style.overflowY = 'hidden';
+    attachLoginEvents();
+    return;
+  }
+  document.body.style.overflowY = 'auto';
   app.innerHTML = renderShell();
   attachShellEvents();
   renderPage();
