@@ -13,6 +13,7 @@ const CLINIC_THEMES = [
 ];
 const state = {
   loggedIn: false,
+  loginAlertsShown: false,
   currentUser: null,
   page: "dashboard",
   sidebarOpen: false,
@@ -344,6 +345,7 @@ function confirmDialog({
   title,
   msg,
   okLabel = "Confirm",
+  cancelLabel = "Cancel",
   danger = true,
   loadingLabel = "Processing...",
   onConfirm,
@@ -356,7 +358,7 @@ function confirmDialog({
       <p style="font-size:13.5px;color:var(--ink-soft);line-height:1.6;">${msg}</p>
     </div>
     <div class="modal-foot">
-      <button class="btn" id="cf-cancel">Cancel</button>
+      <button class="btn" id="cf-cancel">${escapeHtml(cancelLabel)}</button>
       <button class="btn ${danger ? "btn-outline-red" : "btn-teal"}" id="cf-ok" style="${danger ? "background:var(--red);color:#fff;border-color:var(--red);" : ""}">${okLabel}</button>
     </div>`;
   openModal(html, "sm");

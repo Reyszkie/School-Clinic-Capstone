@@ -134,6 +134,79 @@ function attachLoginFormEvents(){
   });
 }
 
+function buildLoginAlerts() {
+  const currentMonth = todayDateString().slice(0, 7);
+  const lowStock = [];
+  MEDICINES.filter((medicine) => !medicine.deleted).forEach((medicine) => {
+    if (Number(medicine.qty) <= Number(state.settings.lowStockThreshold ?? 15)) {
+      lowStock.push({ name: medicine.name, qty: medicine.qty, date: null, label: "Medicine" });
+    }
+  });
+  EQUIPMENT.filter((item) => !item.deleted && item.category === "Medical Supplies").forEach((item) => {
+    if (Number(item.qty) <= Number(state.settings.lowStockThreshold ?? 15)) {
+      lowStock.push({ name: item.name, qty: item.qty, date: null, label: "Supply" });
+    }
+  });
+  const expired = [];
+  const expiring = [];
+  MEDICINES.filter((medicine) => !medicine.deleted && medicine.exp).forEach((medicine) => {
+    const remaining = clinicDateDaysUntil(medicine.exp);
+    if (remaining === null) return;
+    if (remaining < 0) {
+      expired.push({ name: medicine.name, qty: medicine.qty, date: medicine.exp, label: "Medicine" });
+    } else if (remaining <= MEDICINE_EXPIRY_ALERT_DAYS) {
+      expiring.push({ name: medicine.name, qty: medicine.qty, date: medicine.exp, label: "Medicine" });
+    }
+  });
+  const visitsByPatient = new Map();
+  CONSULTATIONS.filter((visit) => !visit.deleted && visit.date && visit.date.startsWith(currentMonth)).forEach((visit) => {
+    const key = visit.studentId || visit.studentName || "unknown";
+    const entry = visitsByPatient.get(key) || { name: visit.studentName || "Unknown patient", count: 0 };
+    entry.count += 1;
+    entry.name = visit.studentName || entry.name;
+    visitsByPatient.set(key, entry);
+  });
+  const frequent = [...visitsByPatient.values()]
+    .filter((entry) => entry.count >= (CLINIC_FREQUENT_VISIT_THRESHOLD || 3))
+    .sort((a, b) => b.count - a.count);
+
+  const categories = [
+    { id: "low-stock", title: "Low Stock Medicines and Supplies", items: lowStock, empty: "No low-stock medicine or supply items require attention." },
+    { id: "expired", title: "Expired Medicines and Supplies", items: expired, empty: "No expired medicines or supplies are on record." },
+    { id: "expiring", title: "Expiring Medicines and Supplies", items: expiring, empty: "No medicines are expiring within the next 30 days." },
+    { id: "frequent", title: "Frequently Visited Patients", items: frequent, empty: "No patients have reached the current monthly visit alert threshold." },
+  ];
+  return { categories, hasAlerts: categories.some((category) => category.items.length > 0) };
+}
+
+function openLoginAlertsModal() {
+  const alerts = buildLoginAlerts();
+  const sectionHtml = (category) => {
+    if (!category.items.length) return `<div class="empty-state-box"><strong>${escapeHtml(category.empty)}</strong></div>`;
+    return `<ul class="clinic-alert-list">${category.items.map((item) => {
+      if (category.id === "frequent") return `<li><span>${escapeHtml(item.name)}</span><strong>${item.count} visits</strong></li>`;
+      return `<li><span>${escapeHtml(item.name)}</span><strong>${item.qty} left${item.date ? ` · ${fmtDate(item.date)}` : ""}</strong></li>`;
+    }).join("")}</ul>`;
+  };
+  const html = `
+    <div class="modal-head">
+      <div><div class="eyebrow">CLINIC ALERTS</div><h3>Important clinic alerts</h3></div>
+      <button class="modal-close" id="login-alerts-close" aria-label="Close clinic alerts">${ICONS.x}</button>
+    </div>
+    <div class="modal-body" style="max-height:70vh;overflow:auto;padding-right:8px;">
+      ${alerts.hasAlerts ? alerts.categories.map((category) => `
+        <div class="alert-panel" style="margin-bottom:16px;">
+          <div class="panel-title" style="margin-bottom:8px;"><h4>${escapeHtml(category.title)}</h4><span class="chip ${category.id === "low-stock" ? "chip-low" : category.id === "expired" ? "chip-expired" : category.id === "expiring" ? "chip-expiring" : "chip-available"}">${category.items.length}</span></div>
+          ${sectionHtml(category)}
+        </div>
+      `).join("") : `<div class="empty-state-box"><strong>There are currently no important clinic alerts.</strong></div>`}
+    </div>
+    <div class="modal-foot"><button class="btn btn-dark" id="login-alerts-done">Close</button></div>`;
+  openModal(html, "sm");
+  document.getElementById("login-alerts-close").onclick = closeModal;
+  document.getElementById("login-alerts-done").onclick = closeModal;
+}
+
 function openIdentityVerification(user,loginPassword=""){
   const roleLabel=user.role||"Clinic staff";
   openModal(`<div class="modal-head"><div><div class="eyebrow">IDENTITY CHECK</div><h3>Verify your identity</h3></div><button class="modal-close" id="verification-close" aria-label="Close">${ICONS.x}</button></div>
@@ -172,15 +245,18 @@ function openIdentityVerification(user,loginPassword=""){
       logAudit("Identity Verification Failed","Authentication","Warning",false);
       return;
     }
+    const shouldShowAlerts = !state.loginAlertsShown;
     state.currentUser=ensureVisibleClinicUser(user);
     applyClinicTheme(user.appearanceTheme);
     state.loggedIn=true;
+    state.loginAlertsShown = true;
     startClinicRefresh();
     saveAuthSession(user);
     closeModal();
     logAudit("Signed In","Authentication","Success",false);
     logAudit("Identity Verified","Authentication","Success",false);
     render();
+    if (shouldShowAlerts) openLoginAlertsModal();
     toast("Identity verified",`Welcome back, ${state.currentUser.name}.`,"ok");
   };
 }

@@ -100,7 +100,7 @@ function attachShellEvents(){
       auditWrite.finally(()=>fetch('/api/auth/logout',{method:'POST'}))
         .catch(error=>console.error('MQC Clinic: could not clear the server session cookie.',error));
       clearAuthSession();
-      state.loggedIn=false; state.currentUser=null; state.page="dashboard";
+      state.loggedIn=false; state.currentUser=null; state.page="dashboard"; state.loginAlertsShown=false;
       document.getElementById('app').classList.add('logout-exit');
       const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       window.setTimeout(()=>{

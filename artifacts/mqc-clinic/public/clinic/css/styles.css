@@ -223,12 +223,14 @@ html,
 body {
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
 }
 body {
   font-family: "Plus Jakarta Sans", sans-serif;
   background: var(--paper);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+  border: 0;
 }
 h1,
 h2,

@@ -856,6 +856,7 @@ async function restoreAuthSession() {
 }
 
 function clearAuthSession() {
+  state.loginAlertsShown = false;
   try {
     window.sessionStorage.removeItem(AUTH_SESSION_KEY);
     window.localStorage.removeItem(AUTH_SESSION_KEY);
