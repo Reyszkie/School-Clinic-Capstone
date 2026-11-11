@@ -12,6 +12,10 @@ function renderAdmin() {
     <button class="subtab ${state.adminTab === "audit" ? "active" : ""}" data-atab="audit">Audit Logs</button>
     <button class="subtab ${state.adminTab === "deleted" ? "active" : ""}" data-atab="deleted">Archive</button>
   </div>
+  <div class="toolbar admin-page-actions">
+    ${state.adminTab === "users" && canManageClinicAccounts() ? `<button class="btn btn-coral" id="add-user-btn">${ICONS.plus} Add User</button>` : ""}
+    <button class="btn admin-back-btn" id="admin-back-btn" type="button">Back</button>
+  </div>
   <div id="admin-body"></div>`;
 }
 function renderUsersTab() {
@@ -37,13 +41,6 @@ function renderUsersTab() {
     .join("");
   return `
   <div class="card">
-     ${
-       canManageAccounts
-         ? `<div class="toolbar" style="justify-content:flex-end;">
-      <button class="btn btn-coral" id="add-user-btn">${ICONS.plus} Add User</button>
-     </div>`
-         : ""
-     }
     <div class="table-wrap">
        <table><thead><tr><th>Name</th><th>Role</th><th>Status</th>${canManageAccounts ? "<th></th>" : ""}</tr></thead>
       <tbody>${rows}</tbody></table>
@@ -488,7 +485,7 @@ function bindUsersTab() {
             state.users.find((user) => user.id === button.dataset.viewUser),
           )),
     );
-  document.getElementById("add-user-btn").onclick = () => openUserForm();
+  document.getElementById("add-user-btn")?.addEventListener("click", () => openUserForm());
   document
     .querySelectorAll("[data-edit-user]")
     .forEach(
@@ -1249,6 +1246,10 @@ function bindDeletedTab() {
 }
 function renderAdminTabBody() {
   const body = document.getElementById("admin-body");
+  document.getElementById("admin-back-btn")?.addEventListener("click", () => {
+    state.page = "settings";
+    render();
+  });
   if (state.adminTab === "users") {
     body.innerHTML = renderUsersTab();
     if (canManageClinicAccounts()) bindUsersTab();

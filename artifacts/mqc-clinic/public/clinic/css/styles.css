@@ -3598,6 +3598,13 @@ button:disabled {
   gap: 12px;
   margin-bottom: 18px;
 }
+.admin-page-actions {
+  justify-content: flex-end;
+  margin: 0 0 14px;
+}
+.admin-page-actions .btn {
+  min-width: 104px;
+}
 .search-box {
   min-width: min(280px, 100%);
 }
