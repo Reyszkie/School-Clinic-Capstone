@@ -4,7 +4,7 @@ function settingField(label,id,value,type="text"){
 }
 function renderSettings(){
   return `<div class="card settings-admin-entry"><div class="panel-title"><h4>Administration</h4></div>
-      <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Manage users, review audit logs, and restore or permanently remove archived records.</p>
+      <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Manage users, review audit logs, and archive or restore clinic records.</p>
       <button class="btn btn-dark" id="settings-admin-btn">${ICONS.users} Open Administration</button>
     </div><div class="grid grid-2">
     <div class="card"><div class="panel-title"><h4>Backup & Restore</h4></div>

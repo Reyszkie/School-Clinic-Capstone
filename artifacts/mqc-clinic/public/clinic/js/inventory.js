@@ -70,7 +70,7 @@ function renderMedicinesTab(){
       <td><span class="chip ${st.chip}">${st.label}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>
-        ${canDeleteClinicRecords()?`<button class="mini-btn danger" data-del-med="${m.code}" title="Delete">${ICONS.trash_sm}</button>`:""}
+        ${canDeleteClinicRecords()?`<button class="mini-btn" data-archive-med="${m.code}" title="Move to Archive">${ICONS.archive}</button>`:""}
       </div></td>
     </tr>`;}).join("");
   const deletedCount = MEDICINES.filter(m=>m.deleted).length;
@@ -181,14 +181,14 @@ function bindMedicinesTab(){
   document.getElementById('add-med-btn').onclick=()=>openMedicineForm();
   document.querySelectorAll('[data-mpage]').forEach(b=> b.onclick=()=>{ state.medPage += b.dataset.mpage==='next'?1:-1; if(state.medPage<1) state.medPage=1; rerender(); });
   document.querySelectorAll('[data-edit-med]').forEach(b=> b.onclick=()=>openMedicineForm(MEDICINES.find(m=>m.code===b.dataset.editMed)));
-  document.querySelectorAll('[data-del-med]').forEach(b=>{
+  document.querySelectorAll('[data-archive-med]').forEach(b=>{
     b.onclick=()=>{
       if(!canDeleteClinicRecords())return;
-      const rec=MEDICINES.find(m=>m.code===b.dataset.delMed);
+      const rec=MEDICINES.find(m=>m.code===b.dataset.archiveMed);
       if(!rec)return;
-      confirmDialog({title:"Delete this medicine?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to the Archive.`, okLabel:"Delete Item", onConfirm:async()=>{
+      confirmDialog({title:"Move this medicine to the Archive?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to the Archive and can be restored later.`, okLabel:"Move to Archive", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("medicine",rec.code,true),auditAction:`Record Deleted — Medicine ${rec.name}`,module:"Medicines",status:"Warning",successTitle:"Medicine deleted",successMessage:`${rec.name} moved to the Archive.`,detail:rec.code,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("medicine",rec.code,true),auditAction:`Record Archived — Medicine ${rec.name}`,module:"Medicines",status:"Warning",successTitle:"Medicine archived",successMessage:`${rec.name} moved to the Archive.`,detail:rec.code,refresh:rerender});
       }});
     };
   });
@@ -224,7 +224,7 @@ function renderEquipmentTab(){
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" data-edit-eq="${e.id}" title="Edit">${ICONS.edit}</button>
-        ${canDeleteClinicRecords()?`<button class="mini-btn danger" data-del-eq="${e.id}" title="Delete">${ICONS.trash_sm}</button>`:""}
+        ${canDeleteClinicRecords()?`<button class="mini-btn" data-archive-eq="${e.id}" title="Move to Archive">${ICONS.archive}</button>`:""}
       </div></td>
     </tr>`).join("");
   return `
@@ -294,14 +294,14 @@ function bindEquipmentTab(){
   document.getElementById('add-eq-btn').onclick=()=>openEquipmentForm();
   document.querySelectorAll('[data-eqpage]').forEach(b=> b.onclick=()=>{ state.eqPage += b.dataset.eqpage==='next'?1:-1; if(state.eqPage<1) state.eqPage=1; rerender(); });
   document.querySelectorAll('[data-edit-eq]').forEach(b=> b.onclick=()=>openEquipmentForm(EQUIPMENT.find(e=>e.id===b.dataset.editEq)));
-  document.querySelectorAll('[data-del-eq]').forEach(b=>{
+  document.querySelectorAll('[data-archive-eq]').forEach(b=>{
     b.onclick=()=>{
       if(!canDeleteClinicRecords())return;
-      const rec=EQUIPMENT.find(e=>e.id===b.dataset.delEq);
+      const rec=EQUIPMENT.find(e=>e.id===b.dataset.archiveEq);
       if(!rec)return;
-      confirmDialog({title:"Delete this supply?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to the Archive.`, okLabel:"Delete Item", onConfirm:async()=>{
+      confirmDialog({title:"Move this supply to the Archive?", msg:`<b>${escapeHtml(rec.name)}</b> will be moved to the Archive and can be restored later.`, okLabel:"Move to Archive", onConfirm:async()=>{
         const previous={deleted:rec.deleted,deletedAt:rec.deletedAt},deletedAt=new Date().toISOString();
-        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("equipment",rec.id,true),auditAction:`Record Deleted — Medical Supply ${rec.name}`,module:"Medical Supplies",status:"Warning",successTitle:"Supply deleted",successMessage:`${rec.name} moved to the Archive.`,detail:rec.id,refresh:rerender});
+        await commitClinicRecordMutation({apply:()=>{rec.deleted=true;rec.deletedAt=deletedAt;},rollback:()=>Object.assign(rec,previous),save:()=>saveInventoryItemStatusToClinicState("equipment",rec.id,true),auditAction:`Record Archived — Medical Supply ${rec.name}`,module:"Medical Supplies",status:"Warning",successTitle:"Medical supply archived",successMessage:`${rec.name} moved to the Archive.`,detail:rec.id,refresh:rerender});
       }});
     };
   });

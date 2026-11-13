@@ -1,6 +1,6 @@
 export default function ClinicPage() {
   return (
-    <main style={{ width: "100%", height: "100dvh", overflow: "hidden", background: "#F0F4F7" }}>
+    <main style={{ width: "100%", height: "100dvh", overflow: "hidden", background: "#eef4f0" }}>
       <iframe
         title="MQC Clinic Management"
         src="/clinic/index.html"

@@ -1,27 +1,27 @@
 :root {
-  --navy: #0f5bbd;
-  --navy-deep: #0b2542;
-  --blue: #2a73d9;
-  --teal: #0ea5e9;
-  --paper: #f3f8ff;
+  --navy: #275c4c;
+  --navy-deep: #17382f;
+  --blue: #28795d;
+  --teal: #1d8975;
+  --paper: #eef4f0;
   --panel: #ffffff;
-  --ink: #16263d;
-  --ink-soft: #5e718a;
-  --line: #dfeafc;
+  --ink: #1c2e27;
+  --ink-soft: #5d7167;
+  --line: #d6e5dc;
   --red: #c34a4b;
   --amber: #d18a24;
-  --green: #2f8e63;
-  --violet: #7564b8;
-  --coral: #c96b52;
-  --login-start: #083a7a;
-  --login-mid: #1267c3;
-  --login-end: #2a8ee8;
-  --login-topbar: rgba(5, 32, 71, 0.78);
-  --login-overlay-start: rgba(8, 58, 122, 0.9);
-  --login-overlay-mid: rgba(18, 103, 195, 0.62);
-  --login-overlay-end: rgba(18, 103, 195, 0.08);
-  --login-highlight: #d7f0ff;
-  --login-muted: #d6ebff;
+  --green: #32815c;
+  --violet: #557a52;
+  --coral: #5d9674;
+  --login-start: #17382f;
+  --login-mid: #28795d;
+  --login-end: #43a582;
+  --login-topbar: rgba(18, 53, 43, 0.78);
+  --login-overlay-start: rgba(23, 56, 47, 0.9);
+  --login-overlay-mid: rgba(23, 56, 47, 0.55);
+  --login-overlay-end: rgba(23, 56, 47, 0.08);
+  --login-highlight: #b5f0d6;
+  --login-muted: #d1e9dc;
   --radius: 18px;
   --radius-sm: 12px;
   --shadow:
@@ -4150,4 +4150,30 @@ tbody tr:hover {
   text-align: center;
   color: var(--navy-deep);
   font-weight: 600;
+}
+:root[data-theme="forest"] .greeting-banner {
+  background: linear-gradient(
+    112deg,
+    var(--navy-deep) 0%,
+    var(--navy) 72%,
+    var(--teal) 132%
+  );
+}
+:root[data-theme="forest"] .btn-dark,
+:root[data-theme="forest"] .btn-primary {
+  background: var(--navy);
+  border-color: var(--navy);
+}
+:root[data-theme="forest"] .btn-dark:hover,
+:root[data-theme="forest"] .btn-primary:hover {
+  background: var(--navy-deep);
+  border-color: var(--navy-deep);
+}
+:root[data-theme="forest"] .btn-blue {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+:root[data-theme="forest"] .btn-blue:hover {
+  background: var(--navy);
+  border-color: var(--navy);
 }

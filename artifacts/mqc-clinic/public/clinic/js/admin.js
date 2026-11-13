@@ -29,7 +29,7 @@ function renderUsersTab() {
           ? `<td><div class="row-actions">
         <button class="mini-btn" data-edit-user="${u.id}" title="Edit">${ICONS.edit}</button>
         <button class="mini-btn" data-toggle-user="${u.id}" title="${u.status === "Active" ? "Disable" : "Enable"}">${u.status === "Active" ? ICONS.x : ICONS.check}</button>
-        ${u.id === state.currentUser?.id ? "" : `<button class="mini-btn danger" data-del-user="${u.id}" title="Delete">${ICONS.trash_sm}</button>`}
+        ${u.id === state.currentUser?.id ? "" : `<button class="mini-btn" data-archive-user="${u.id}" title="Move to Archive">${ICONS.archive}</button>`}
       </div></td>`
           : ""
       }
@@ -535,14 +535,14 @@ function bindUsersTab() {
       });
     };
   });
-  document.querySelectorAll("[data-del-user]").forEach((b) => {
+  document.querySelectorAll("[data-archive-user]").forEach((b) => {
     b.onclick = () => {
-      const u = state.users.find((x) => x.id === b.dataset.delUser);
+      const u = state.users.find((x) => x.id === b.dataset.archiveUser);
       if (!u) return;
       if (u.id === state.currentUser?.id) {
         toast(
-          "Cannot delete signed-in account",
-          "Sign in with another administrator account before deleting this user.",
+          "Cannot archive signed-in account",
+          "Sign in with another administrator account before archiving this user.",
           "err",
         );
         return;
@@ -564,9 +564,9 @@ function bindUsersTab() {
       const index = state.users.findIndex((user) => user.id === u.id),
         deleted = { ...u, deleted: true, deletedAt: new Date().toISOString() };
       confirmDialog({
-        title: "Delete this user?",
-        msg: `<b>${escapeHtml(u.name)}</b> will be moved to the Archive.`,
-        okLabel: "Delete User",
+        title: "Move this user to the Archive?",
+        msg: `<b>${escapeHtml(u.name)}</b> will be moved to the Archive and can be restored later.`,
+        okLabel: "Move to Archive",
         onConfirm: async () => {
           await commitClinicRecordMutation({
             apply: () => {
@@ -578,11 +578,11 @@ function bindUsersTab() {
               DELETED_USERS = DELETED_USERS.filter((x) => x.id !== u.id);
               state.users.splice(index, 0, u);
             },
-            auditAction: `Record Deleted — User ${u.name}`,
+            auditAction: `Record Archived — User ${u.name}`,
             module: "User Management",
             status: "Warning",
             detail: u.id,
-            successTitle: "User deleted",
+            successTitle: "User archived",
             successMessage: `${u.name} moved to the Archive.`,
             refresh: renderAdminTabBody,
           });
@@ -669,13 +669,8 @@ function renderDeletedTab() {
   const delMeds = MEDICINES.filter((m) => m.deleted || m.deletedAt);
   const delEq = EQUIPMENT.filter((e) => e.deleted || e.deletedAt);
   const delUsers = canAdminister ? DELETED_USERS || [] : [];
-  const rowActions = (
-    restoreAttribute,
-    id,
-    purgeAttribute,
-    restoreAllowed = canDeleteClinicRecords(),
-  ) =>
-    `<div class="row-actions">${restoreAllowed ? `<button class="mini-btn good" data-${restoreAttribute}="${escapeHtml(id)}" title="Restore">${ICONS.restore}</button>` : ""}${canAdminister ? `<button class="mini-btn danger" data-${purgeAttribute}="${escapeHtml(id)}" title="Delete permanently">${ICONS.trash_sm}</button>` : ""}</div>`;
+  const rowActions = (restoreAttribute, id, restoreAllowed = canDeleteClinicRecords()) =>
+    `<div class="row-actions">${restoreAllowed ? `<button class="mini-btn good" data-${restoreAttribute}="${escapeHtml(id)}" title="Restore from Archive">${ICONS.restore}</button>` : ""}</div>`;
   const section = (title, rows, empty) => `
     <div class="card" style="margin-bottom:16px;">
       <div class="panel-title"><h4>${title}</h4></div>
@@ -687,7 +682,7 @@ function renderDeletedTab() {
           (
             c,
           ) => `<tr><td class="mono">${escapeHtml(c.id)}</td><td>${escapeHtml(c.studentName || "Unknown patient")}</td><td>${fmtDate(c.date)}</td>
-    <td>${rowActions("restore-dc", c.id, "perm-dc")}</td></tr>`,
+    <td>${rowActions("restore-dc", c.id)}</td></tr>`,
         )
         .join("")}</tbody>`
     : "";
@@ -697,7 +692,7 @@ function renderDeletedTab() {
           (
             s,
           ) => `<tr><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.institutionalCategory || s.course || "—")} · ${escapeHtml(s.personnelType || s.year || "—")}</td><td>${fmtDeletedDate(s.deletedAt)}</td>
-    <td>${rowActions("restore-dp", s.id, "perm-dp")}</td></tr>`,
+    <td>${rowActions("restore-dp", s.id)}</td></tr>`,
         )
         .join("")}</tbody>`
     : "";
@@ -707,7 +702,7 @@ function renderDeletedTab() {
           (
             m,
           ) => `<tr><td class="mono">${escapeHtml(m.code)}</td><td>${escapeHtml(m.name)}</td><td>${fmtDeletedDate(m.deletedAt)}</td>
-    <td>${rowActions("restore-dm", m.code, "perm-dm")}</td></tr>`,
+    <td>${rowActions("restore-dm", m.code)}</td></tr>`,
         )
         .join("")}</tbody>`
     : "";
@@ -717,7 +712,7 @@ function renderDeletedTab() {
           (
             e,
           ) => `<tr><td class="mono">${escapeHtml(e.id)}</td><td>${escapeHtml(e.name)}</td><td>${fmtDeletedDate(e.deletedAt)}</td>
-    <td>${rowActions("restore-de", e.id, "perm-de")}</td></tr>`,
+    <td>${rowActions("restore-de", e.id)}</td></tr>`,
         )
         .join("")}</tbody>`
     : "";
@@ -727,28 +722,27 @@ function renderDeletedTab() {
           (
             u,
           ) => `<tr><td class="mono">${escapeHtml(u.id)}</td><td>${escapeHtml(u.name)}</td><td>${fmtDeletedDate(u.deletedAt)}</td>
-    <td>${rowActions("restore-du", u.id, "perm-du", canAdminister)}</td></tr>`,
+    <td>${rowActions("restore-du", u.id, canAdminister)}</td></tr>`,
         )
         .join("")}</tbody>`
     : "";
   return (
     section(
-      "Archive Patient Visit",
+      "Archived Patient Visits",
       consultRows,
       "No archived patient visits.",
     ) +
-    section("Archive Patients", studentRows, "No archived patients.") +
-    section("Archive Medicines", medRows, "No archived medicines.") +
-    section("Archive Medical Supplies", eqRows, "No archived medical supplies.") +
-    section("Archive Users", userRows, "No archived users.")
+    section("Archived Patients", studentRows, "No archived patients.") +
+    section("Archived Medicines", medRows, "No archived medicines.") +
+    section("Archived Medical Supplies and Equipment", eqRows, "No archived medical supplies or equipment.") +
+    section("Archived Users", userRows, "No archived users.")
   );
 }
 async function commitDeletedRecordChange({
   label,
   apply,
   rollback,
-  purge,
-  save = () => saveToClinicState(true, purge ? [purge] : []),
+  save = () => saveToClinicState(true),
   auditAction,
   auditActions,
   module,
@@ -760,11 +754,9 @@ async function commitDeletedRecordChange({
   try {
     applied = true;
     apply();
-    if (purge) PURGED_RECORDS.push(purge);
     await save();
   } catch (error) {
     if (applied) rollback();
-    if (purge) PURGED_RECORDS = PURGED_RECORDS.filter((row) => row !== purge);
     toast(
       "Change not saved",
       error.message || `Unable to update ${label}.`,
@@ -800,42 +792,6 @@ async function commitDeletedRecordChange({
   renderAdminTabBody();
 }
 function bindDeletedTab() {
-  const confirmPurge = (
-    label,
-    table,
-    key,
-    value,
-    action,
-    rollback,
-    auditActions,
-  ) => {
-    const purge = { table, key, value };
-    const events = auditActions || [
-      {
-        action: `Record Permanently Deleted — ${label}`,
-        module: "Administration",
-        detail: String(value),
-      },
-    ];
-    confirmDialog({
-      title: "Permanently delete?",
-      msg: `This will permanently remove <b>${escapeHtml(label)}</b>. This action cannot be undone.`,
-      okLabel: "Delete Permanently",
-      onConfirm: () =>
-        commitDeletedRecordChange({
-          label,
-          apply: action,
-          rollback,
-          purge,
-          auditAction: `Record Permanently Deleted — ${label}`,
-          auditActions: events,
-          module: "Administration",
-          status: "Warning",
-          successTitle: "Permanently deleted",
-          successMessage: `${label} has been permanently removed.`,
-        }),
-    });
-  };
   document.querySelectorAll("[data-restore-dc]").forEach(
     (b) =>
       (b.onclick = () => {
@@ -861,7 +817,7 @@ function bindDeletedTab() {
         const inventorySnapshot = captureInventoryState();
         confirmDialog({
           title: "Restore this patient visit?",
-          msg: `Visit <b>${escapeHtml(record.id)}</b> will return to Patient Visits${patient ? " and its deleted patient will also be restored" : ""}.`,
+          msg: `Visit <b>${escapeHtml(record.id)}</b> will return to Patient Visits${patient ? " and its archived patient will also be restored" : ""}.`,
           okLabel: "Restore Visit",
           danger: false,
           onConfirm: () =>
@@ -1095,150 +1051,6 @@ function bindDeletedTab() {
           successTitle: "Restored",
           successMessage: `${user.name} restored.`,
         });
-      }),
-  );
-  document.querySelectorAll("[data-perm-dc]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        if (!canManageClinicAccounts()) return;
-        const record = CONSULTATIONS.find((row) => row.id === b.dataset.permDc);
-        if (!record) return;
-        const previous = CONSULTATIONS.slice();
-        confirmPurge(
-          `visit ${record.id}`,
-          "clinical_visits",
-          "id",
-          record.id,
-          () => {
-            CONSULTATIONS = CONSULTATIONS.filter((row) => row !== record);
-          },
-          () => {
-            CONSULTATIONS = previous;
-          },
-        );
-      }),
-  );
-  document.querySelectorAll("[data-perm-dp]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        if (!canManageClinicAccounts()) return;
-        const record = DELETED_STUDENTS.find(
-          (row) => row.id === b.dataset.permDp,
-        );
-        if (!record) return;
-        const previousPatients = DELETED_STUDENTS.slice(),
-          previousVisits = CONSULTATIONS.slice();
-        const relatedVisits = CONSULTATIONS.filter(
-          (visit) => visit.studentId === record.id,
-        );
-        if (
-          relatedVisits.some(
-            (visit) =>
-              !visit.deleted &&
-              !visit.deletedAt &&
-              visit.status !== "Deleted",
-          )
-        ) {
-          toast(
-            "Patient cannot be permanently deleted",
-            "Move all linked clinical visits to the Archive first so active clinical history is not removed.",
-            "err",
-          );
-          return;
-        }
-        const relatedText = relatedVisits.length
-          ? ` and ${relatedVisits.length} related patient visit${relatedVisits.length === 1 ? "" : "s"}`
-          : "";
-        const auditActions = [
-          {
-            action: `Record Permanently Deleted — Patient ${record.id}`,
-            module: "Patients",
-          },
-          ...relatedVisits.map((visit) => ({
-            action: `Record Permanently Deleted — Patient Visit ${visit.id} (patient ${record.id})`,
-            module: "Patient Visits",
-          })),
-        ];
-        confirmPurge(
-          `patient ${record.name}${relatedText}`,
-          "patients",
-          "id",
-          record.id,
-          () => {
-            DELETED_STUDENTS = DELETED_STUDENTS.filter((row) => row !== record);
-            CONSULTATIONS = CONSULTATIONS.filter(
-              (visit) => visit.studentId !== record.id,
-            );
-          },
-          () => {
-            DELETED_STUDENTS = previousPatients;
-            CONSULTATIONS = previousVisits;
-          },
-          auditActions,
-        );
-      }),
-  );
-  document.querySelectorAll("[data-perm-dm]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        if (!canManageClinicAccounts()) return;
-        const record = MEDICINES.find((row) => row.code === b.dataset.permDm);
-        if (!record) return;
-        const previous = MEDICINES.slice();
-        confirmPurge(
-          `medicine ${record.name}`,
-          "medicines",
-          "code",
-          record.code,
-          () => {
-            MEDICINES = MEDICINES.filter((row) => row !== record);
-          },
-          () => {
-            MEDICINES = previous;
-          },
-        );
-      }),
-  );
-  document.querySelectorAll("[data-perm-de]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        if (!canManageClinicAccounts()) return;
-        const record = EQUIPMENT.find((row) => row.id === b.dataset.permDe);
-        if (!record) return;
-        const previous = EQUIPMENT.slice();
-        confirmPurge(
-          `medical supply ${record.name}`,
-          "equipment",
-          "id",
-          record.id,
-          () => {
-            EQUIPMENT = EQUIPMENT.filter((row) => row !== record);
-          },
-          () => {
-            EQUIPMENT = previous;
-          },
-        );
-      }),
-  );
-  document.querySelectorAll("[data-perm-du]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        if (!canManageClinicAccounts()) return;
-        const record = DELETED_USERS.find((row) => row.id === b.dataset.permDu);
-        if (!record) return;
-        const previous = DELETED_USERS.slice();
-        confirmPurge(
-          `user ${record.name}`,
-          "clinic_users",
-          "id",
-          record.id,
-          () => {
-            DELETED_USERS = DELETED_USERS.filter((row) => row !== record);
-          },
-          () => {
-            DELETED_USERS = previous;
-          },
-        );
       }),
   );
 }

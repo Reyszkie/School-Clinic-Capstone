@@ -33,7 +33,7 @@ function studentTableRows(list) {
       (s) => `<tr><td>${escapeHtml(s.name)}</td>
     <td>${escapeHtml(s.institutionalCategory || s.course || "—")}</td><td>${escapeHtml(s.personnelType || s.year || "—")}</td><td>${escapeHtml(s.gender || s.sex || "—")}</td>
     <td><div class="row-actions"><button class="btn" style="padding:6px 12px;" data-select-stu="${escapeHtml(s.id)}">Select</button>
-    ${canDeleteClinicRecords() ? `<button class="mini-btn danger" data-del-stu="${escapeHtml(s.id)}" title="Delete">${ICONS.trash_sm}</button>` : ""}</div></td></tr>`,
+    ${canDeleteClinicRecords() ? `<button class="mini-btn" data-archive-stu="${escapeHtml(s.id)}" title="Move to Archive">${ICONS.archive}</button>` : ""}</div></td></tr>`,
     )
     .join("");
 }
@@ -111,7 +111,7 @@ function renderStudentDetail(s, inModal = false) {
       <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.institutionalCategory || s.course || "—")}</div></div>
     <button class="btn" id="edit-student-profile-btn">${ICONS.edit} Edit Profile</button>
     <button class="btn btn-teal" id="new-student-visit-btn">${ICONS.plus} New Patient Visit</button>
-    ${canDeleteClinicRecords() ? `    ${canDeleteClinicRecords() ? `<button class="btn btn-outline-red" id="delete-student-btn">${ICONS.trash_sm} Delete Patient</button>` : ""}` : ""}
+    ${canDeleteClinicRecords() ? `<button class="btn" id="archive-student-btn">${ICONS.archive} Move to Archive</button>` : ""}
   </div><div class="info-grid">
     <div class="info-cell"><div class="lbl">Sex</div><div class="val">${escapeHtml(s.gender || s.sex || "—")}</div></div>
     <div class="info-cell"><div class="lbl">Parent / Guardian</div><div class="val">${escapeHtml(s.guardianName || s.emergency || "—")}</div></div>
@@ -122,7 +122,9 @@ function renderStudentDetail(s, inModal = false) {
 }
 
 function filterStudents() {
-  const q = (document.getElementById("stu-search").value || "").toLowerCase();
+  const q = (document.getElementById("stu-search").value || "")
+    .trim()
+    .toLowerCase();
   const course = document.getElementById("stu-course-filter").value;
   const department =
     document.getElementById("stu-department-filter").value || "";
@@ -133,11 +135,13 @@ function filterStudents() {
       s.name,
       category,
       year,
-      s.gender || s.sex,
+      s.gender,
+      s.sex,
       s.lastName,
       s.firstName,
     ]
       .filter(Boolean)
+      .map((value) => String(value).trim())
       .join(" ")
       .toLowerCase();
     return (
@@ -430,7 +434,7 @@ function showPatientMatchOptions(patient,matches){
 
 function bindSelectButtons(){
   document.querySelectorAll("[data-select-stu]").forEach(b=>b.onclick=()=>openStudentDetailModal(STUDENTS.find(s=>s.id===b.dataset.selectStu)));
-  document.querySelectorAll("[data-del-stu]").forEach(b=>b.onclick=()=>deleteStudent(STUDENTS.find(s=>s.id===b.dataset.delStu)));
+  document.querySelectorAll("[data-archive-stu]").forEach(b=>b.onclick=()=>archiveStudent(STUDENTS.find(s=>s.id===b.dataset.archiveStu)));
 }
 
 function openStudentDetailModal(student) {
@@ -460,11 +464,11 @@ function bindStudentDetailActions(student, root = document) {
       closeModal();
       openConsultationForm(student);
     };
-  const del = find("#delete-student-btn");
-  if (del)
-    del.onclick = () => {
+  const archive = find("#archive-student-btn");
+  if (archive)
+    archive.onclick = () => {
       closeModal();
-      deleteStudent(student);
+      archiveStudent(student);
     };
   root.querySelectorAll("[data-view-student-consult]").forEach(
     (button) =>
@@ -488,12 +492,12 @@ function bindStudentDetailActions(student, root = document) {
   );
 }
 
-function deleteStudent(s) {
+function archiveStudent(s) {
   if (!s || !canDeleteClinicRecords()) return;
   confirmDialog({
-    title: "Delete this patient?",
+    title: "Move this patient to the Archive?",
     msg: `<b>${escapeHtml(s.name)}</b> will be moved to the Archive and can be restored later.`,
-    okLabel: "Delete Patient",
+    okLabel: "Move to Archive",
     onConfirm: async () => {
       const index = STUDENTS.findIndex((x) => x.id === s.id);
       if (index < 0) return;
@@ -514,11 +518,11 @@ function deleteStudent(s) {
           DELETED_STUDENTS = DELETED_STUDENTS.filter((x) => x.id !== s.id);
           STUDENTS.splice(index, 0, s);
         },
-        auditAction: `Record Deleted — Patient ${s.id}`,
+        auditAction: `Record Archived — Patient ${s.id}`,
         module: "Patients",
         status: "Warning",
         detail: s.id,
-        successTitle: "Patient deleted",
+        successTitle: "Patient archived",
         successMessage: `${s.name} moved to the Archive.`,
         refresh: renderConsultTabBody,
       });
@@ -1404,11 +1408,11 @@ function renderConsultHistory() {
     ? items
         .map(
           (c) =>
-            `<tr><td>${fmtDate(c.date)}<br><span style="color:var(--ink-soft);font-size:11.5px">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.studentName)}</td><td>${escapeHtml(c.complaint === "Other" && c.reasonOther ? `Other: ${c.reasonOther}` : c.complaint)}</td><td>${escapeHtml(c.nurse)}</td><td>${escapeHtml(c.outcome || "—")}</td><td>${c.deleted ? '<span class="chip chip-void">Deleted</span>' : c.status === "Superseded" ? '<span class="chip chip-low">Superseded</span>' : '<span class="chip chip-available">Active</span>'}</td><td><div class="row-actions"><button class="mini-btn" data-view-consult="${c.id}" title="View clinical record">${ICONS.search}</button><button class="mini-btn" data-print="${c.id}" title="Print">${ICONS.print}</button>${c.deleted ? (canDeleteClinicRecords() ? `<button class="mini-btn good" data-restore-consult="${c.id}">${ICONS.restore}</button>` : "") : c.status === "Superseded" ? "" : `<button class="mini-btn" data-edit-consult="${c.id}" title="Edit visit record">${ICONS.edit}</button>${canDeleteClinicRecords() ? `<button class="mini-btn danger" data-del-consult="${c.id}">${ICONS.trash_sm}</button>` : ""}`}</div></td></tr>`,
+            `<tr><td>${fmtDate(c.date)}<br><span style="color:var(--ink-soft);font-size:11.5px">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.studentName)}</td><td>${escapeHtml(c.complaint === "Other" && c.reasonOther ? `Other: ${c.reasonOther}` : c.complaint)}</td><td>${escapeHtml(c.nurse)}</td><td>${escapeHtml(c.outcome || "—")}</td><td>${c.deleted ? '<span class="chip chip-void">Archived</span>' : c.status === "Superseded" ? '<span class="chip chip-low">Superseded</span>' : '<span class="chip chip-available">Active</span>'}</td><td><div class="row-actions"><button class="mini-btn" data-view-consult="${c.id}" title="View clinical record">${ICONS.search}</button><button class="mini-btn" data-print="${c.id}" title="Print">${ICONS.print}</button>${c.deleted ? (canDeleteClinicRecords() ? `<button class="mini-btn good" data-restore-consult="${c.id}" title="Restore visit">${ICONS.restore}</button>` : "") : c.status === "Superseded" ? "" : `<button class="mini-btn" data-edit-consult="${c.id}" title="Edit visit record">${ICONS.edit}</button>${canDeleteClinicRecords() ? `<button class="mini-btn" data-archive-consult="${c.id}" title="Move to Archive">${ICONS.archive}</button>` : ""}`}</div></td></tr>`,
         )
         .join("")
     : `<tr><td colspan="7">${emptyState("No patient visits match your filters.")}</td></tr>`;
-  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits, patient, reason, nurse, or record ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option ${status === "Deleted" ? "selected" : ""}>Deleted</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button data-page="prev">${ICONS.chevleft}</button><button data-page="next">${ICONS.chevright}</button></div></div></div>`;
+  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits, patient, reason, nurse, or record ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option value="Deleted" ${status === "Deleted" ? "selected" : ""}>Archived</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button data-page="prev">${ICONS.chevleft}</button><button data-page="next">${ICONS.chevright}</button></div></div></div>`;
 }
 
 function bindConsultHistory() {
@@ -1465,16 +1469,16 @@ function bindConsultHistory() {
         );
       }),
   );
-  document.querySelectorAll("[data-del-consult]").forEach(
+  document.querySelectorAll("[data-archive-consult]").forEach(
     (b) =>
       (b.onclick = () => {
         if (!canDeleteClinicRecords()) return;
-        const c = CONSULTATIONS.find((x) => x.id === b.dataset.delConsult);
+        const c = CONSULTATIONS.find((x) => x.id === b.dataset.archiveConsult);
         if (!c) return;
         confirmDialog({
-          title: "Delete this patient visit?",
+          title: "Move this patient visit to the Archive?",
           msg: `Record <b>${c.id}</b> will be moved to the Archive and can be restored later.`,
-          okLabel: "Delete Record",
+          okLabel: "Move to Archive",
           onConfirm: async () => {
             const snapshot = captureInventoryState(),
               previous = {
@@ -1497,18 +1501,18 @@ function bindConsultHistory() {
               save: () => saveVisitInventoryStatusToClinicState(c.id, true),
               auditActions: [
                 {
-                  action: `Record Deleted — Patient Visit ${c.id}`,
+                  action: `Record Archived — Patient Visit ${c.id}`,
                   module: "Patient Visits",
                   status: "Warning",
                   detail: c.id,
                 },
                 ...clinicInventoryAuditActions(
                   snapshot,
-                  `visit ${c.id} deleted`,
+                  `visit ${c.id} archived`,
                 ),
               ],
               module: "Patient Visits",
-              successTitle: "Visit deleted",
+              successTitle: "Visit archived",
               successMessage: `Record ${c.id} moved to the Archive; used inventory was restored.`,
               refresh: rerender,
             });
