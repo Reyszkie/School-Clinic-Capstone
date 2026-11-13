@@ -1399,6 +1399,8 @@ function renderConsultHistory() {
           c.clinicDisposition,
           c.clinic_disposition,
           c.disposition,
+          c.status,
+          c.deleted || c.status === "Deleted" ? "Archived" : "",
           c.versionOf,
           c.supersededBy,
         ]
@@ -1424,7 +1426,7 @@ function renderConsultHistory() {
         )
         .join("")
     : `<tr><td colspan="7">${emptyState("No patient visits match your filters.")}</td></tr>`;
-  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits, patient, reason, nurse, or record ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option value="Deleted" ${status === "Deleted" ? "selected" : ""}>Archived</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button data-page="prev">${ICONS.chevleft}</button><button data-page="next">${ICONS.chevright}</button></div></div></div>`;
+  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits by patient, date, outcome, status, nurse, or ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option value="Deleted" ${status === "Deleted" ? "selected" : ""}>Archived</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button data-page="prev">${ICONS.chevleft}</button><button data-page="next">${ICONS.chevright}</button></div></div></div>`;
 }
 
 function bindConsultHistory() {

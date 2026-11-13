@@ -81,7 +81,6 @@ create table if not exists public.equipment (
   quantity integer not null default 0 check (quantity >= 0),
   -- Retained for historical equipment data; the Medical Supplies UI does not expose condition.
   condition text not null default 'Good' check (condition in ('Good', 'Fair', 'Poor')),
-  production_date date,
   last_maintenance_date date,
   status text not null default 'Available' check (status in ('Available', 'Under Maintenance', 'Damaged', 'Replacement Needed')),
   deleted_at timestamptz,
@@ -90,9 +89,6 @@ create table if not exists public.equipment (
 );
 
 alter table public.medicines
-  add column if not exists production_date date;
-
-alter table public.equipment
   add column if not exists production_date date;
 
 alter table public.equipment

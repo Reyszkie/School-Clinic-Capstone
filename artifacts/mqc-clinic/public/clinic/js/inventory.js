@@ -208,8 +208,6 @@ function renderEquipmentTab(){
       e.id,
       e.name,
       e.qty,
-      e.productionDate,
-      fmtDate(e.productionDate),
       e.lastMaint,
       fmtDate(e.lastMaint),
       e.status,
@@ -221,13 +219,12 @@ function renderEquipmentTab(){
   if(state.eqPage>totalPages) state.eqPage=totalPages;
   const pageItems=list.slice((state.eqPage-1)*perPage, state.eqPage*perPage);
   const chipMap={"Available":"chip-available","Under Maintenance":"chip-maint","Damaged":"chip-damaged","Replacement Needed":"chip-out"};
-  const rows = pageItems.length===0? `<tr><td colspan="7">${emptyState("No supplies match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="6">${emptyState("No supplies match your filters.")}</td></tr>` :
     pageItems.map(e=>`
     <tr>
       <td class="mono">${e.id}</td>
       <td>${escapeHtml(e.name)}</td>
       <td class="mono">${e.qty}</td>
-      <td>${fmtDate(e.productionDate)}</td>
       <td>${fmtDate(e.lastMaint)}</td>
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
@@ -246,7 +243,7 @@ function renderEquipmentTab(){
       <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Supply</button>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>ID</th><th>Supply</th><th>Qty</th><th>Production Date</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>ID</th><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
@@ -256,7 +253,7 @@ function renderEquipmentTab(){
 }
 function openEquipmentForm(existing=null){
   const isEdit=!!existing;
-  const f=existing||{id:uid("EQP"), name:"", category:"Medical Supplies", qty:1, productionDate:"", condition:"Good", lastMaint:"", status:"Available"};
+  const f=existing||{id:uid("EQP"), name:"", category:"Medical Supplies", qty:1, condition:"Good", lastMaint:"", status:"Available"};
   const itemLabel="Supply";
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} ${itemLabel}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
@@ -265,7 +262,6 @@ function openEquipmentForm(existing=null){
       <div class="f-field"><label>Item ID</label><input type="text" id="ef-id" value="${f.id}" ${isEdit?'readonly style="background:#F7FAFD;"':''}></div>
       <div class="f-field full"><label>${itemLabel} Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="ef-qty" value="${f.qty}"></div>
-      <div class="f-field"><label>Production Date</label><input type="date" id="ef-production" value="${escapeHtml(f.productionDate||"")}"></div>
       <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
     </form>
@@ -278,7 +274,7 @@ function openEquipmentForm(existing=null){
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information',`${itemLabel} name is required.`,'err'); return; }
     const rec={ id:document.getElementById('ef-id').value, name, category:"Medical Supplies", qty:parseInt(document.getElementById('ef-qty').value)||0,
-      condition:existing?.condition||"Good", productionDate:document.getElementById('ef-production').value||null, lastMaint:document.getElementById('ef-maint').value,
+      condition:existing?.condition||"Good", lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
     const saveButton=document.getElementById('ef-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     saving=true;

@@ -96,7 +96,6 @@ export const equipmentTable = pgTable("equipment", {
 	name: text("name").notNull(),
 	category: text("category").notNull().default("Medical Supplies"),
 	quantity: integer("quantity").notNull().default(0),
-	productionDate: date("production_date"),
 	condition: text("condition").notNull().default("Good"),
 	lastMaintenanceDate: date("last_maintenance_date"),
 	status: text("status").notNull().default("Available"),
