@@ -64,8 +64,9 @@ create table if not exists public.medicines (
   category text not null default 'General',
   quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
-  -- Batch and supplier are retained for legacy rows; expiration_date is used by the current inventory workflows.
+  -- Batch and supplier are retained for legacy rows; production and expiration dates support current inventory workflows.
   batch_number text,
+  production_date date,
   expiration_date date,
   supplier text,
   deleted_at timestamptz,
@@ -80,12 +81,19 @@ create table if not exists public.equipment (
   quantity integer not null default 0 check (quantity >= 0),
   -- Retained for historical equipment data; the Medical Supplies UI does not expose condition.
   condition text not null default 'Good' check (condition in ('Good', 'Fair', 'Poor')),
+  production_date date,
   last_maintenance_date date,
   status text not null default 'Available' check (status in ('Available', 'Under Maintenance', 'Damaged', 'Replacement Needed')),
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.medicines
+  add column if not exists production_date date;
+
+alter table public.equipment
+  add column if not exists production_date date;
 
 alter table public.equipment
   add column if not exists category text not null default 'Medical Equipment';

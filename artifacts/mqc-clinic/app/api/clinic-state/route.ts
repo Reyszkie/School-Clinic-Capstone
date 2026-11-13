@@ -203,6 +203,9 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
     category: row.category ?? "General",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
     unit: row.unit ?? "piece",
+    production_date: toDateValue(
+      row.productionDate ?? row.production_date,
+    ),
     expiration_date: toDateValue(
       row.exp ?? row.expirationDate ?? row.expiration_date,
     ),
@@ -223,6 +226,9 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
     name: row.name ?? "",
     category: row.category ?? "Medical Supplies",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
+    production_date: toDateValue(
+      row.productionDate ?? row.production_date,
+    ),
     condition,
     last_maintenance_date: toDateValue(
       row.lastMaint ?? row.lastMaintenanceDate ?? row.last_maintenance_date,
@@ -587,6 +593,7 @@ function medicineFromRow(row: Record<string, unknown>) {
     category: row.category,
     qty: row.quantity,
     unit: row.unit,
+    productionDate: row.production_date,
     exp: row.expiration_date,
     deleted: Boolean(row.deleted_at),
     deletedAt: row.deleted_at,
@@ -599,6 +606,7 @@ function equipmentFromRow(row: Record<string, unknown>) {
     name: row.name,
     category: row.category ?? "Medical Supplies",
     qty: row.quantity,
+    productionDate: row.production_date,
     condition: row.condition,
     lastMaint: row.last_maintenance_date,
     status: row.status,

@@ -51,6 +51,8 @@ function renderMedicinesTab(){
       m.unit,
       m.exp,
       fmtDate(m.exp),
+      m.productionDate,
+      fmtDate(m.productionDate),
       st,
     ].some(value=>String(value??"").toLowerCase().includes(q));
     const matchStatus = !statusF || st===statusF;
@@ -59,13 +61,14 @@ function renderMedicinesTab(){
   const totalPages=Math.max(1,Math.ceil(list.length/perPage));
   if(state.medPage>totalPages) state.medPage=totalPages;
   const pageItems=list.slice((state.medPage-1)*perPage, state.medPage*perPage);
-  const rows = pageItems.length===0? `<tr><td colspan="7">${emptyState("No medicines match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="8">${emptyState("No medicines match your filters.")}</td></tr>` :
     pageItems.map(m=>{ const st=medStatus(m); return `
     <tr>
       <td class="mono">${m.code}</td>
       <td>${escapeHtml(m.name)}</td>
       <td>${escapeHtml(m.category)}</td>
       <td class="mono">${m.qty} ${m.unit}</td>
+      <td>${fmtDate(m.productionDate)}</td>
       <td>${fmtDate(m.exp)}</td>
       <td><span class="chip ${st.chip}">${st.label}</span></td>
       <td><div class="row-actions">
@@ -86,7 +89,7 @@ function renderMedicinesTab(){
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Quantity</th><th>Expiration</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Quantity</th><th>Production Date</th><th>Expiration</th><th>Status</th><th></th></tr></thead>
         <tbody id="med-tbody">${rows}</tbody>
       </table>
     </div>
@@ -130,7 +133,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
 }
 function openMedicineForm(existing=null){
   const isEdit=!!existing;
-  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", exp:""};
+  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", productionDate:"", exp:""};
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} Medicine</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
@@ -140,6 +143,7 @@ function openMedicineForm(existing=null){
       <div class="f-field"><label>Category</label><input type="text" id="mf-category" value="${escapeHtml(f.category)}" placeholder="e.g. Analgesic"></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="mf-qty" value="${f.qty}"></div>
       <div class="f-field"><label>Unit</label><select id="mf-unit">${["tablet","bottle","tube","piece","roll","sachet","box"].map(u=>`<option ${f.unit===u?'selected':''}>${u}</option>`).join("")}</select></div>
+      <div class="f-field"><label>Production Date</label><input type="date" id="mf-production" value="${escapeHtml(f.productionDate||"")}"></div>
       <div class="f-field"><label>Expiration Date</label><input type="date" id="mf-exp" value="${f.exp}"></div>
     </form>
   </div>
@@ -155,6 +159,7 @@ function openMedicineForm(existing=null){
       category: document.getElementById('mf-category').value || "General",
       qty: parseInt(document.getElementById('mf-qty').value)||0,
       unit: document.getElementById('mf-unit').value,
+      productionDate: document.getElementById('mf-production').value || null,
       exp: document.getElementById('mf-exp').value,
       deleted:false,
     };
@@ -203,6 +208,8 @@ function renderEquipmentTab(){
       e.id,
       e.name,
       e.qty,
+      e.productionDate,
+      fmtDate(e.productionDate),
       e.lastMaint,
       fmtDate(e.lastMaint),
       e.status,
@@ -214,12 +221,13 @@ function renderEquipmentTab(){
   if(state.eqPage>totalPages) state.eqPage=totalPages;
   const pageItems=list.slice((state.eqPage-1)*perPage, state.eqPage*perPage);
   const chipMap={"Available":"chip-available","Under Maintenance":"chip-maint","Damaged":"chip-damaged","Replacement Needed":"chip-out"};
-  const rows = pageItems.length===0? `<tr><td colspan="6">${emptyState("No supplies match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="7">${emptyState("No supplies match your filters.")}</td></tr>` :
     pageItems.map(e=>`
     <tr>
       <td class="mono">${e.id}</td>
       <td>${escapeHtml(e.name)}</td>
       <td class="mono">${e.qty}</td>
+      <td>${fmtDate(e.productionDate)}</td>
       <td>${fmtDate(e.lastMaint)}</td>
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
@@ -238,7 +246,7 @@ function renderEquipmentTab(){
       <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Supply</button>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>ID</th><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>ID</th><th>Supply</th><th>Qty</th><th>Production Date</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
@@ -248,7 +256,7 @@ function renderEquipmentTab(){
 }
 function openEquipmentForm(existing=null){
   const isEdit=!!existing;
-  const f=existing||{id:uid("EQP"), name:"", category:"Medical Supplies", qty:1, condition:"Good", lastMaint:"", status:"Available"};
+  const f=existing||{id:uid("EQP"), name:"", category:"Medical Supplies", qty:1, productionDate:"", condition:"Good", lastMaint:"", status:"Available"};
   const itemLabel="Supply";
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} ${itemLabel}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
@@ -257,6 +265,7 @@ function openEquipmentForm(existing=null){
       <div class="f-field"><label>Item ID</label><input type="text" id="ef-id" value="${f.id}" ${isEdit?'readonly style="background:#F7FAFD;"':''}></div>
       <div class="f-field full"><label>${itemLabel} Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="ef-qty" value="${f.qty}"></div>
+      <div class="f-field"><label>Production Date</label><input type="date" id="ef-production" value="${escapeHtml(f.productionDate||"")}"></div>
       <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
     </form>
@@ -269,7 +278,7 @@ function openEquipmentForm(existing=null){
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information',`${itemLabel} name is required.`,'err'); return; }
     const rec={ id:document.getElementById('ef-id').value, name, category:"Medical Supplies", qty:parseInt(document.getElementById('ef-qty').value)||0,
-      condition:existing?.condition||"Good", lastMaint:document.getElementById('ef-maint').value,
+      condition:existing?.condition||"Good", productionDate:document.getElementById('ef-production').value||null, lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
     const saveButton=document.getElementById('ef-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     saving=true;

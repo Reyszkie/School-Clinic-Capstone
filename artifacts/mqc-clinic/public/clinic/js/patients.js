@@ -28,7 +28,6 @@ function studentTableRows(list) {
   if (!list.length)
     return `<tr><td colspan="5">${emptyState("No patients found. Try a different search term.")}</td></tr>`;
   return list
-    .slice(0, 12)
     .map(
       (s) => `<tr><td>${escapeHtml(s.name)}</td>
     <td>${escapeHtml(s.institutionalCategory || s.course || "—")}</td><td>${escapeHtml(s.personnelType || s.year || "—")}</td><td>${escapeHtml(s.gender || s.sex || "—")}</td>
@@ -131,12 +130,20 @@ function filterStudents() {
   return activeClinicPatients().filter((s) => {
     const category = s.institutionalCategory || s.course,
       year = s.personnelType || s.year;
+    const genderMatches =
+      !q ||
+      [s.gender, s.sex].some((value) => {
+        const gender = String(value || "")
+          .trim()
+          .toLowerCase();
+        return q === "male"
+          ? gender.split(/[^a-z]+/).includes("male")
+          : gender.includes(q);
+      });
     const searchable = [
       s.name,
       category,
       year,
-      s.gender,
-      s.sex,
       s.lastName,
       s.firstName,
     ]
@@ -145,7 +152,7 @@ function filterStudents() {
       .join(" ")
       .toLowerCase();
     return (
-      (!q || searchable.includes(q)) &&
+      (!q || searchable.includes(q) || genderMatches) &&
       (!course || category === course) &&
       (!department || educationGroupFor(category, year) === department)
     );
@@ -1375,18 +1382,23 @@ function printConsultation(c) {
 
 function renderConsultHistory() {
   const rawQ = document.getElementById("ch-search")?.value || "",
-    q = rawQ.toLowerCase(),
+    q = rawQ.trim().toLowerCase(),
     status = document.getElementById("ch-status")?.value || "";
   let list = CONSULTATIONS.filter(
     (c) =>
       (!q ||
         [
           c.studentName,
+          c.date,
+          fmtDate(c.date),
           c.complaint,
           c.id,
           c.nurse,
           c.diagnosis,
           c.outcome,
+          c.clinicDisposition,
+          c.clinic_disposition,
+          c.disposition,
           c.versionOf,
           c.supersededBy,
         ]
