@@ -74,7 +74,7 @@ function canEditClinicRecords(){
 function canManageInventory(){
   return hasClinicAdminPrivileges(state.currentUser?.role);
 }
-function canAddMedicine(){
+function canAddInventoryItem(){
   return canManageInventory()||state.currentUser?.role==="Staff Nurse";
 }
 function isProtectedSuperAdmin(user){

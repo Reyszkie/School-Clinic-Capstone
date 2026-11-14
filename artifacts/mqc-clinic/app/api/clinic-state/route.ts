@@ -1652,10 +1652,11 @@ export async function PUT(request: Request) {
       const previousQuantity = toNumber(inventoryMutation.previousQuantity);
       if (
         !hasClinicAdminPrivileges(session.role) &&
-        (itemType !== "medicine" || previousQuantity !== null)
+        (!["medicine", "equipment"].includes(String(itemType)) ||
+          previousQuantity !== null)
       ) {
         return Response.json(
-          { message: "Staff Nurses may add medicines but cannot edit inventory records." },
+          { message: "Staff Nurses may add inventory records but cannot edit existing items." },
           { status: 403, headers: { "Cache-Control": "no-store" } },
         );
       }
@@ -1680,6 +1681,16 @@ export async function PUT(request: Request) {
         );
 
       const submitted = affected[0];
+      if (
+        !hasClinicAdminPrivileges(session.role) &&
+        itemType === "equipment" &&
+        String(submitted.category ?? "Medical Supplies") !== "Medical Supplies"
+      ) {
+        return Response.json(
+          { message: "Staff Nurses may only add medical supplies, not other equipment." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (previousQuantity !== null) {
         const currentResponse = await supabaseRequest(
           `${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},quantity,deleted_at,updated_at`,

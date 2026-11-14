@@ -205,8 +205,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Super Admin role with full system access and a protected, permanent maintenance account.
 - Staff Nurse role.
 - Existing legacy Head Nurse & Administrator accounts are preserved but do not receive administrative permissions; the legacy role is not offered for new accounts.
-- Only Head Nurse and Super Admin accounts can access Administration, manage users, change roles, or administer inventory.
-- Staff Nurses can add patient visits and medicines, but cannot edit patient records, patient visits, medicines, or medical supplies.
+- Only Head Nurse and Super Admin accounts can access Administration, manage users, change roles, or edit and archive inventory.
+- Staff Nurses can add patient visits, medicines, and medical supplies, but cannot edit patient records, patient visits, or existing inventory records.
 - Staff Nurses cannot archive medicines or medical supplies; Head Nurses and the Super Admin retain their existing inventory permissions.
 - The Super Admin account cannot be archived, permanently deleted, disabled, or assigned another role.
 - Username field.
@@ -262,7 +262,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Supabase PostgreSQL persistence through authenticated Next.js REST API routes.
 - Normalized tables for patients, visits, inventory, users, settings, and audit logs, with `clinic_state` retained as a compatibility snapshot.
 - Server-side session and role checks for clinic data, account management, inventory mutations, and deletion/restoration.
-- Staff Nurses cannot manage accounts, access Administration data, edit patient records or visits, or edit/archive inventory, including through direct API requests. They can add medicines and patient visits.
+- Staff Nurses cannot manage accounts, access Administration data, edit patient records or visits, or edit/archive inventory, including through direct API requests. They can add medicines, medical supplies, and patient visits.
 - `GET /api/healthz` health endpoint.
 - `GET /api/clinic-state` shared-state endpoint.
 - `PUT /api/clinic-state` shared-state update endpoint.
