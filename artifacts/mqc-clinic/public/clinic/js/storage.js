@@ -704,6 +704,7 @@ async function hydrateFromSharedStorage() {
   try {
     const response = await fetch(SHARED_STORAGE_URL, { cache: "no-store" });
     if (response.ok) {
+      sharedStorageMissing = false;
       const data = await response.json();
       if (localChangeVersion !== hydrationVersion) return false;
       const fingerprint = JSON.stringify([

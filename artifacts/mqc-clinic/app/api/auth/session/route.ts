@@ -17,6 +17,12 @@ export async function PATCH(request: Request) {
   try {
     const session = await readActiveClinicSession(request);
     if (!session) return Response.json({ message: "No active clinic session." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    if (session.role.trim().toLowerCase() === "staff nurse") {
+      return Response.json(
+        { message: "Staff Nurses cannot access account settings." },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     let body: unknown;
     try {
       body = await request.json();

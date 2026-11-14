@@ -42,6 +42,36 @@ async function supabaseRequest(path: string, init: RequestInit = {}) {
   });
 }
 
+function appendOnlyInventoryTransactions(
+  existingValue: unknown,
+  submittedValue: unknown,
+): unknown[] | null {
+  const existing = Array.isArray(existingValue) ? existingValue : [];
+  const submitted = Array.isArray(submittedValue) ? submittedValue : existing;
+  const existingById = new Map<string, string>();
+  const submittedIds = new Set<string>();
+
+  for (const transaction of existing) {
+    if (!transaction || typeof transaction !== "object" || Array.isArray(transaction))
+      return null;
+    const id = String((transaction as Record<string, unknown>).id ?? "");
+    if (!id || existingById.has(id)) return null;
+    existingById.set(id, JSON.stringify(transaction));
+  }
+  for (const transaction of submitted) {
+    if (!transaction || typeof transaction !== "object" || Array.isArray(transaction))
+      return null;
+    const id = String((transaction as Record<string, unknown>).id ?? "");
+    if (!id || submittedIds.has(id)) return null;
+    submittedIds.add(id);
+    const original = existingById.get(id);
+    if (original !== undefined && original !== JSON.stringify(transaction))
+      return null;
+  }
+  if ([...existingById.keys()].some((id) => !submittedIds.has(id))) return null;
+  return submitted;
+}
+
 function toDateValue(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "string") return value;
@@ -1381,6 +1411,46 @@ export async function GET(request: Request) {
     if (!hasClinicAdminPrivileges(session.role)) {
         delete (normalized as Record<string, unknown>).purged;
     }
+    if (session.role.trim().toLowerCase() === "staff nurse") {
+      const stateData = normalized as Record<string, unknown>;
+      const savedSettings =
+        stateData.settings && typeof stateData.settings === "object"
+          ? (stateData.settings as Record<string, unknown>)
+          : {};
+      return Response.json(
+        {
+          students: stateData.students ?? [],
+          consultations: stateData.consultations ?? [],
+          medicines: stateData.medicines ?? [],
+          equipment: stateData.equipment ?? [],
+          inventoryTransactions: Array.isArray(stateData.inventoryTransactions)
+            ? stateData.inventoryTransactions
+            : [],
+          users: stateData.users ?? [],
+          deletedStudents: [],
+          deletedUsers: [],
+          auditLogs: [],
+          purged: [],
+          settings: {
+            clinicName:
+              savedSettings.clinicName ?? "Mary the Queen College School Clinic",
+            address: savedSettings.address ?? "Quezon City, Philippines",
+            patientIdPrefix: savedSettings.patientIdPrefix ?? "",
+            lowStockThreshold: savedSettings.lowStockThreshold ?? 15,
+            expirationAlertDays: savedSettings.expirationAlertDays ?? 14,
+            dateFormat: "MMM D, YYYY",
+            timeFormat: "12-hour",
+            timezone: "Asia/Manila",
+            language: "English",
+            appearanceTheme: "forest",
+          },
+          inventoryCatalogVersion: stateData.inventoryCatalogVersion,
+          savedAt: stateData.savedAt,
+          bootstrapRequired: stateData.bootstrapRequired,
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     return Response.json(normalized, {
       headers: { "Cache-Control": "no-store" },
     });
@@ -1691,6 +1761,36 @@ export async function PUT(request: Request) {
           { status: 403, headers: { "Cache-Control": "no-store" } },
         );
       }
+      let staffSnapshotState: Record<string, unknown> | null = null;
+      let staffInventoryTransactions: unknown[] = [];
+      if (!hasClinicAdminPrivileges(session.role)) {
+        const currentSnapshotResponse = await supabaseRequest(
+          `clinic_state?id=eq.${clinicStateId}&select=state`,
+        );
+        if (!currentSnapshotResponse.ok)
+          throw new Error(
+            `clinic_state inventory snapshot read returned ${currentSnapshotResponse.status}`,
+          );
+        const currentSnapshots =
+          (await currentSnapshotResponse.json()) as Array<{
+            state?: Record<string, unknown>;
+          }>;
+        staffSnapshotState = currentSnapshots[0]?.state ?? {};
+        const transactions = appendOnlyInventoryTransactions(
+          staffSnapshotState.inventoryTransactions,
+          snapshot.inventoryTransactions,
+        );
+        if (!transactions) {
+          return Response.json(
+            {
+              message:
+                "Staff Nurses cannot edit or remove existing inventory transactions.",
+            },
+            { status: 403, headers: { "Cache-Control": "no-store" } },
+          );
+        }
+        staffInventoryTransactions = transactions;
+      }
       if (previousQuantity !== null) {
         const currentResponse = await supabaseRequest(
           `${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},quantity,deleted_at,updated_at`,
@@ -1808,13 +1908,18 @@ export async function PUT(request: Request) {
           (await currentSnapshotResponse.json()) as Array<{
             state?: Record<string, unknown>;
           }>;
-        const currentState = currentSnapshots[0]?.state ?? {};
+        const currentState =
+          staffSnapshotState ?? currentSnapshots[0]?.state ?? {};
         const stateUpdate = {
           ...currentState,
-          inventoryTransactions: Array.isArray(snapshot.inventoryTransactions)
-            ? snapshot.inventoryTransactions
-            : (currentState.inventoryTransactions ?? []),
-          savedAt: snapshot.savedAt ?? new Date().toISOString(),
+          inventoryTransactions: staffSnapshotState
+            ? staffInventoryTransactions
+            : Array.isArray(snapshot.inventoryTransactions)
+              ? snapshot.inventoryTransactions
+              : (currentState.inventoryTransactions ?? []),
+          savedAt: hasClinicAdminPrivileges(session.role)
+            ? snapshot.savedAt ?? new Date().toISOString()
+            : new Date().toISOString(),
         };
         const snapshotResponse = await supabaseRequest("clinic_state", {
           method: "POST",
@@ -2258,6 +2363,36 @@ export async function PUT(request: Request) {
       const patient = affectedPatients.find(
         (row) => String(row.id) === String(normalizedVisit.patient_id),
       );
+      let staffVisitSnapshotState: Record<string, unknown> | null = null;
+      let staffVisitTransactions: unknown[] = [];
+      if (!hasClinicAdminPrivileges(session.role)) {
+        const currentSnapshotResponse = await supabaseRequest(
+          `clinic_state?id=eq.${clinicStateId}&select=state`,
+        );
+        if (!currentSnapshotResponse.ok)
+          throw new Error(
+            `clinic_state visit snapshot read returned ${currentSnapshotResponse.status}`,
+          );
+        const currentSnapshots =
+          (await currentSnapshotResponse.json()) as Array<{
+            state?: Record<string, unknown>;
+          }>;
+        staffVisitSnapshotState = currentSnapshots[0]?.state ?? {};
+        const transactions = appendOnlyInventoryTransactions(
+          staffVisitSnapshotState.inventoryTransactions,
+          snapshot.inventoryTransactions,
+        );
+        if (!transactions) {
+          return Response.json(
+            {
+              message:
+                "Staff Nurses cannot edit or remove existing inventory transactions.",
+            },
+            { status: 403, headers: { "Cache-Control": "no-store" } },
+          );
+        }
+        staffVisitTransactions = transactions;
+      }
       const rpcName = updateVisit
         ? "update_clinical_visit_with_inventory"
         : "save_clinical_visit_with_inventory";
@@ -2295,8 +2430,15 @@ export async function PUT(request: Request) {
         );
       }
 
-      const { visitMutation: _visitMutation, ...clinicSnapshot } =
+      const { visitMutation: _visitMutation, ...adminClinicSnapshot } =
         persistedSnapshot;
+      const clinicSnapshot = hasClinicAdminPrivileges(session.role)
+        ? adminClinicSnapshot
+        : {
+            ...(staffVisitSnapshotState ?? {}),
+            inventoryTransactions: staffVisitTransactions,
+            savedAt: new Date().toISOString(),
+          };
       try {
         const snapshotResponse = await supabaseRequest("clinic_state", {
           method: "POST",
@@ -2414,6 +2556,16 @@ export async function PUT(request: Request) {
         status: 204,
         headers: { "Cache-Control": "no-store" },
       });
+    }
+
+    if (session.role.trim().toLowerCase() === "staff nurse") {
+      return Response.json(
+        {
+          message:
+            "Staff Nurses may only add records through patient registration, visit creation, or inventory insertion.",
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
     }
 
     const syncMeta =

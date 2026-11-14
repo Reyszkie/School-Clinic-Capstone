@@ -106,7 +106,7 @@ function attachLoginFormEvents(){
       return;
     }
     const visibleUser=ensureVisibleClinicUser(found);
-    if((!hydrated&&sharedStorageMissing)||sharedStorageNeedsBootstrap){
+    if(hasClinicAdminPrivileges(found.role)&&((!hydrated&&sharedStorageMissing)||sharedStorageNeedsBootstrap)){
       try{await saveToClinicState(true,[],true);}
       catch(error){
         await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
@@ -294,6 +294,7 @@ function buildLoginAlerts() {
 }
 
 function openLoginAlertsModal() {
+  if(isStaffNurseRole(state.currentUser?.role))return;
   const alerts = buildLoginAlerts();
   const renderAlertItem = (section, item) => {
     const commonHtml = `

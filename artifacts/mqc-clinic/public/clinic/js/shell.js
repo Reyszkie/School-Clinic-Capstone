@@ -23,11 +23,15 @@ function manilaDateTime(){
 }
 function renderShell(){
   const u=state.currentUser;
-   const initials = (u?.name||"MQ").split(/[\s,]+/).filter(Boolean).map(x=>x[0]).slice(0,2).join("").toUpperCase();
+  if(!canAccessClinicModule(state.page,u?.role))state.page="consultation";
+  const staffNurse=isStaffNurseRole(u?.role);
+  const initials = (u?.name||"MQ").split(/[\s,]+/).filter(Boolean).map(x=>x[0]).slice(0,2).join("").toUpperCase();
   let navHtml="";
   NAV.forEach(g=>{
+    const items=g.items.filter(item=>canAccessClinicModule(item.key,u?.role));
+    if(!items.length)return;
     navHtml+=`<div class="nav-label">${g.group}</div>`;
-    g.items.forEach(it=>{
+    items.forEach(it=>{
       navHtml+=`<button class="nav-item ${state.page===it.key?'active':''}" data-nav="${it.key}" style="--nav-c:${it.color};">${it.icon}<span>${it.label}</span></button>`;
     });
   });
@@ -62,8 +66,8 @@ function renderShell(){
         <div class="top-actions">
           <span class="sync-status" id="sync-status" data-state="saved" aria-live="polite">Saved</span>
            <div class="datetime-chip mono" id="clock" aria-label="Current date and time">${manilaDateTime()}</div>
-          <button class="icon-btn" id="alert-btn" title="Alerts" aria-label="Alerts">${ICONS.bell}${hasClinicAlerts?'<span class="dot-alert"></span>':''}</button>
-          <button class="icon-btn settings-btn" id="settings-btn" title="Settings" aria-label="Settings"><span class="settings-icon">${ICONS.settings}</span><span class="settings-label">Settings</span></button>
+          ${staffNurse?"":`<button class="icon-btn" id="alert-btn" title="Alerts" aria-label="Alerts">${ICONS.bell}${hasClinicAlerts?'<span class="dot-alert"></span>':''}</button>`}
+          ${staffNurse?"":`<button class="icon-btn settings-btn" id="settings-btn" title="Settings" aria-label="Settings"><span class="settings-icon">${ICONS.settings}</span><span class="settings-label">Settings</span></button>`}
           <button class="logout-btn" id="logout-btn" type="button" aria-label="Log out">Logout</button>
         </div>
       </div>
@@ -121,19 +125,21 @@ function attachShellEvents(){
   document.getElementById('menu-toggle').onclick=()=>{
     document.getElementById('sidebar').classList.toggle('force-open');
   };
-  document.getElementById('alert-btn').onclick=()=>{
+  document.getElementById('alert-btn')?.addEventListener('click',()=>{
     const hasReferral = referralConcernList(REFERRAL_THRESHOLD).length>0;
     if(hasReferral){ state.page="reports"; render(); }
     else { state.page="dashboard"; render(); }
     setTimeout(() => openLoginAlertsModal(), 30);
-  };
-  document.getElementById('settings-btn').onclick=()=>{ state.page="settings"; render(); };
+  });
+  document.getElementById('settings-btn')?.addEventListener('click',()=>{ state.page="settings"; render(); });
 }
 
 /* ================= PAGE ROUTER ================= */
 function renderPage(){
   const c=document.getElementById('content');
-  if(state.page==='admin'&&!hasClinicAdminPrivileges(state.currentUser?.role))state.page='dashboard';
+  if(!canAccessClinicModule(state.page))state.page="consultation";
+  if(state.page==='admin'&&!hasClinicAdminPrivileges(state.currentUser?.role))
+    state.page=isStaffNurseRole(state.currentUser?.role)?"consultation":"dashboard";
   if(state.page==='dashboard') c.innerHTML = renderDashboard();
   else if(state.page==='consultation') c.innerHTML = renderConsultation();
   else if(state.page==='inventory') c.innerHTML = renderInventory();

@@ -77,6 +77,12 @@ function canManageInventory(){
 function canAddInventoryItem(){
   return canManageInventory()||state.currentUser?.role==="Staff Nurse";
 }
+function isStaffNurseRole(role=state.currentUser?.role){
+  return String(role||"").trim().toLowerCase()==="staff nurse";
+}
+function canAccessClinicModule(module,role=state.currentUser?.role){
+  return !isStaffNurseRole(role)||module==="consultation"||module==="inventory";
+}
 function isProtectedSuperAdmin(user){
   return user?.id==="SYS-SUPER-ADMIN"||String(user?.username||"").toLowerCase()==="super admin";
 }
