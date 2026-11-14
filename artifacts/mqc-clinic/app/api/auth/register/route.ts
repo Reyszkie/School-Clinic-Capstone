@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     return Response.json({ message: "Account creation is temporarily unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
   if (!session) return Response.json({ message: "Sign in to manage clinic accounts." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-  if (!hasClinicAdminPrivileges(session.role)) return Response.json({ message: "Only a Head Nurse or existing legacy administrator can create clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  if (!hasClinicAdminPrivileges(session.role)) return Response.json({ message: "Only a Head Nurse or Super Admin can create clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
 
   let body: unknown;
   try {

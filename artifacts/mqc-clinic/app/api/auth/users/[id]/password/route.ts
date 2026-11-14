@@ -1,4 +1,4 @@
-import { readActiveClinicSession } from "../../../session";
+import { hasClinicAdminPrivileges, readActiveClinicSession } from "../../../session";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const session = await readActiveClinicSession(request);
     if (!session) return Response.json({ message: "Sign in to manage clinic accounts." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-    if (session.role !== "Head Nurse") return Response.json({ message: "Only a Head Nurse can change another user's password." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    if (!hasClinicAdminPrivileges(session.role)) return Response.json({ message: "Only a Head Nurse or Super Admin can manage clinic account passwords." }, { status: 403, headers: { "Cache-Control": "no-store" } });
 
     const { id } = await context.params;
     const isSelf=id===session.userId;

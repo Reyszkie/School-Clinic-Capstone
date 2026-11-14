@@ -25,13 +25,15 @@ function renderUsersTab() {
       <td>${u.role}</td>
       <td><span class="chip ${u.status === "Active" ? "chip-available" : "chip-void"}">${u.status}</span></td>
       ${
-        canManageAccounts
+        canManageAccounts && !isProtectedSuperAdmin(u)
           ? `<td><div class="row-actions">
         <button class="mini-btn" data-edit-user="${u.id}" title="Edit">${ICONS.edit}</button>
         <button class="mini-btn" data-toggle-user="${u.id}" title="${u.status === "Active" ? "Disable" : "Enable"}">${u.status === "Active" ? ICONS.x : ICONS.check}</button>
         ${u.id === state.currentUser?.id ? "" : `<button class="mini-btn" data-archive-user="${u.id}" title="Move to Archive">${ICONS.archive}</button>`}
       </div></td>`
-          : ""
+          : canManageAccounts
+            ? `<td><span class="chip chip-available">Permanent account</span></td>`
+            : ""
       }
     </tr>`,
     )
@@ -46,6 +48,7 @@ function renderUsersTab() {
   </div>`;
 }
 function openUserForm(existing = null) {
+  if (existing && isProtectedSuperAdmin(existing)) return;
   const isEdit = !!existing;
   const f = existing || {
     id: uid("NRS"),
@@ -60,12 +63,13 @@ function openUserForm(existing = null) {
   };
   const canChangeOwnPassword =
     isEdit &&
-    state.currentUser?.role === "Head Nurse" &&
+    hasClinicAdminPrivileges(state.currentUser?.role) &&
     state.currentUser.id === f.id;
   const canChangeOtherPasswords =
     isEdit &&
-    state.currentUser?.role === "Head Nurse" &&
-    state.currentUser.id !== f.id;
+    hasClinicAdminPrivileges(state.currentUser?.role) &&
+    state.currentUser.id !== f.id &&
+    !isProtectedSuperAdmin(f);
   const parts = (f.name || "").split(",");
   const roles = [
     ["Head Nurse", "Head Nurse"],
@@ -495,6 +499,10 @@ function bindUsersTab() {
     b.onclick = async () => {
       const u = state.users.find((x) => x.id === b.dataset.toggleUser);
       if (!u) return;
+      if (isProtectedSuperAdmin(u)) {
+        toast("Protected account","The Super Admin maintenance account cannot be disabled.","err");
+        return;
+      }
       if (u.id === state.currentUser?.id && u.status === "Active") {
         toast(
           "Cannot disable signed-in account",
@@ -512,7 +520,7 @@ function bindUsersTab() {
       ) {
         toast(
           "Administrator required",
-          "At least one active Head Nurse or legacy administrator account must remain.",
+          "At least one active Head Nurse or Super Admin account must remain.",
           "err",
         );
         return;
@@ -539,6 +547,10 @@ function bindUsersTab() {
     b.onclick = () => {
       const u = state.users.find((x) => x.id === b.dataset.archiveUser);
       if (!u) return;
+      if (isProtectedSuperAdmin(u)) {
+        toast("Protected account","The Super Admin maintenance account cannot be archived.","err");
+        return;
+      }
       if (u.id === state.currentUser?.id) {
         toast(
           "Cannot archive signed-in account",
@@ -556,7 +568,7 @@ function bindUsersTab() {
       ) {
         toast(
           "Administrator required",
-          "At least one active Head Nurse or legacy administrator account must remain.",
+          "At least one active Head Nurse or Super Admin account must remain.",
           "err",
         );
         return;
@@ -668,7 +680,7 @@ function renderDeletedTab() {
   );
   const delMeds = MEDICINES.filter((m) => m.deleted || m.deletedAt);
   const delEq = EQUIPMENT.filter((e) => e.deleted || e.deletedAt);
-  const delUsers = canAdminister ? DELETED_USERS || [] : [];
+  const delUsers = canAdminister ? (DELETED_USERS || []).filter(user=>!isProtectedSuperAdmin(user)) : [];
   const rowActions = (restoreAttribute, id, restoreAllowed = canDeleteClinicRecords()) =>
     `<div class="row-actions">${restoreAllowed ? `<button class="mini-btn good" data-${restoreAttribute}="${escapeHtml(id)}" title="Restore from Archive">${ICONS.restore}</button>` : ""}</div>`;
   const section = (title, rows, empty) => `

@@ -8,7 +8,7 @@ type ClinicSession = { userId: string; userName: string; expiresAt: number };
 export type ActiveClinicSession = ClinicSession & { role: string; username: string; appearanceTheme: string };
 
 export function hasClinicAdminPrivileges(role: string) {
-  return role === "Head Nurse" || role === "Head Nurse & Administrator";
+  return role === "Head Nurse" || role === "Super Admin";
 }
 
 function sessionSecret() {

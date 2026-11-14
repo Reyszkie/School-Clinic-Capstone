@@ -72,7 +72,7 @@ function renderMedicinesTab(){
       <td>${fmtDate(m.exp)}</td>
       <td><span class="chip ${st.chip}">${st.label}</span></td>
       <td><div class="row-actions">
-        <button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>
+        ${canManageInventory()?`<button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>`:""}
         ${canDeleteClinicRecords()?`<button class="mini-btn" data-archive-med="${m.code}" title="Move to Archive">${ICONS.archive}</button>`:""}
       </div></td>
     </tr>`;}).join("");
@@ -85,7 +85,7 @@ function renderMedicinesTab(){
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Low Stock","Out of Stock","Expiring Soon","Expired"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
       </select>
-      <button class="btn btn-amber" id="add-med-btn">${ICONS.plus} Add Medicine</button>
+      ${canManageInventory()?`<button class="btn btn-amber" id="add-med-btn">${ICONS.plus} Add Medicine</button>`:""}
     </div>
     <div class="table-wrap">
       <table>
@@ -100,6 +100,10 @@ function renderMedicinesTab(){
   </div>`;
 }
 async function saveInventoryRecord({itemType,records,record,existing,refresh}){
+  if(!canManageInventory()){
+    toast("Permission denied","Only Head Nurses and the Super Admin can add or edit inventory.","err");
+    return false;
+  }
   const previousRecords=records.slice();
   const inventorySnapshot=captureInventoryState();
   const previousQuantity=existing?Number(existing.qty)||0:0;
@@ -132,6 +136,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
   return saved;
 }
 function openMedicineForm(existing=null){
+  if(!canManageInventory())return;
   const isEdit=!!existing;
   const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", productionDate:"", exp:""};
   const html=`
@@ -183,7 +188,7 @@ function bindMedicinesTab(){
   };
   const s=document.getElementById('med-search'); if(s) s.oninput=rerender;
   const st=document.getElementById('med-status'); if(st) st.onchange=rerender;
-  document.getElementById('add-med-btn').onclick=()=>openMedicineForm();
+  document.getElementById('add-med-btn')?.addEventListener('click',()=>openMedicineForm());
   document.querySelectorAll('[data-mpage]').forEach(b=> b.onclick=()=>{ state.medPage += b.dataset.mpage==='next'?1:-1; if(state.medPage<1) state.medPage=1; rerender(); });
   document.querySelectorAll('[data-edit-med]').forEach(b=> b.onclick=()=>openMedicineForm(MEDICINES.find(m=>m.code===b.dataset.editMed)));
   document.querySelectorAll('[data-archive-med]').forEach(b=>{
@@ -228,7 +233,7 @@ function renderEquipmentTab(){
       <td>${fmtDate(e.lastMaint)}</td>
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
       <td><div class="row-actions">
-        <button class="mini-btn" data-edit-eq="${e.id}" title="Edit">${ICONS.edit}</button>
+        ${canManageInventory()?`<button class="mini-btn" data-edit-eq="${e.id}" title="Edit">${ICONS.edit}</button>`:""}
         ${canDeleteClinicRecords()?`<button class="mini-btn" data-archive-eq="${e.id}" title="Move to Archive">${ICONS.archive}</button>`:""}
       </div></td>
     </tr>`).join("");
@@ -240,7 +245,7 @@ function renderEquipmentTab(){
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Under Maintenance","Damaged","Replacement Needed"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
       </select>
-      <button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Supply</button>
+      ${canManageInventory()?`<button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Supply</button>`:""}
     </div>
     <div class="table-wrap">
       <table><thead><tr><th>ID</th><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
@@ -252,6 +257,7 @@ function renderEquipmentTab(){
   </div>`;
 }
 function openEquipmentForm(existing=null){
+  if(!canManageInventory())return;
   const isEdit=!!existing;
   const f=existing||{id:uid("EQP"), name:"", category:"Medical Supplies", qty:1, condition:"Good", lastMaint:"", status:"Available"};
   const itemLabel="Supply";
@@ -296,7 +302,7 @@ function bindEquipmentTab(){
   };
   const s=document.getElementById('eq-search'); if(s) s.oninput=rerender;
   const st=document.getElementById('eq-status'); if(st) st.onchange=rerender;
-  document.getElementById('add-eq-btn').onclick=()=>openEquipmentForm();
+  document.getElementById('add-eq-btn')?.addEventListener('click',()=>openEquipmentForm());
   document.querySelectorAll('[data-eqpage]').forEach(b=> b.onclick=()=>{ state.eqPage += b.dataset.eqpage==='next'?1:-1; if(state.eqPage<1) state.eqPage=1; rerender(); });
   document.querySelectorAll('[data-edit-eq]').forEach(b=> b.onclick=()=>openEquipmentForm(EQUIPMENT.find(e=>e.id===b.dataset.editEq)));
   document.querySelectorAll('[data-archive-eq]').forEach(b=>{

@@ -116,6 +116,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Vital-sign fields for weight, height, temperature, blood pressure, heart rate, and oxygen saturation.
 - Nurse notes field.
 - Treatment and intervention checklist with Other option.
+- Warm/Hot Compress and Ice/Cold Compress treatment options.
 - Additional treatment details field.
 - Medication and quantity-used fields.
 - Clinic disposition selection.
@@ -201,8 +202,12 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Deleted user recovery.
 - Last name, first name, and middle initial fields.
 - Head Nurse role with full administrative permissions.
+- Super Admin role with full system access and a protected, permanent maintenance account.
 - Staff Nurse role.
-- Existing legacy Head Nurse & Administrator accounts retain access; the legacy role is not offered for new accounts.
+- Existing legacy Head Nurse & Administrator accounts are preserved but do not receive administrative permissions; the legacy role is not offered for new accounts.
+- Only Head Nurse and Super Admin accounts can access Administration, manage users, change roles, or administer inventory.
+- Staff Nurses can view inventory and record clinic visits, but cannot add, edit, or archive medicines or medical supplies.
+- The Super Admin account cannot be archived, permanently deleted, disabled, or assigned another role.
 - Username field.
 - Password and confirm-password fields.
 - Password show/hide controls.
@@ -231,8 +236,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Deleted medicines list.
 - Deleted inventory items list.
 - Deleted users list.
-- Restore actions for every record category (Head Nurse and existing legacy administrators only).
-- Permanent delete actions (Head Nurse and existing legacy administrators only).
+- Restore actions for every record category (Head Nurse and Super Admin only).
+- Permanent delete actions (Head Nurse and Super Admin only); the Super Admin account is never eligible for deletion.
 - Permanent delete confirmation dialog.
 - Warning audit entry for permanent deletion.
 - Empty-state message for each category.
@@ -255,8 +260,8 @@ The application is built with Next.js and deployed as one Vercel application. Th
 
 - Supabase PostgreSQL persistence through authenticated Next.js REST API routes.
 - Normalized tables for patients, visits, inventory, users, settings, and audit logs, with `clinic_state` retained as a compatibility snapshot.
-- Server-side session and role checks for clinic data, account management, and deletion/restoration.
-- Staff Nurses can add and edit records but cannot delete or restore them, including through direct API requests.
+- Server-side session and role checks for clinic data, account management, inventory mutations, and deletion/restoration.
+- Staff Nurses cannot manage accounts, access Administration data, or add/edit/archive inventory, including through direct API requests.
 - `GET /api/healthz` health endpoint.
 - `GET /api/clinic-state` shared-state endpoint.
 - `PUT /api/clinic-state` shared-state update endpoint.
@@ -292,7 +297,7 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 - `clinic_sync_meta` for normalized-data migration and synchronization state.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations before deploying application changes that use it. It adds the patient classification fields, the per-user `clinic_users.appearance_theme` preference, and allows visit outcome details to be left blank; restores patient profiles from a legacy `students` table or the `clinic_state` snapshot; backfills a missing `clinical_visits.patient_id` from legacy visit links or the snapshot; normalizes known legacy guardian-contact values; and installs the `register_clinic_patient`, `save_clinical_visit_with_inventory`, `update_clinical_visit_with_inventory`, and `set_clinical_visit_inventory_status` database functions. Patient registration uses the transactional registration function to detect possible matches and prevent simultaneous duplicate submissions. A database trigger prevents a patient purge from cascading into visit rows that are not already in Deleted Records. If any visit still cannot be linked to an existing patient, the migration stops with the first 20 unresolved visit and patient IDs so they can be restored or corrected without discarding visits. It also removes the obsolete function that created a patient and initial visit together. Existing `Head Nurse & Administrator` accounts are preserved and retain administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations before deploying application changes that use it. It adds the patient classification fields, the per-user `clinic_users.appearance_theme` preference, and allows visit outcome details to be left blank; restores patient profiles from a legacy `students` table or the `clinic_state` snapshot; backfills a missing `clinical_visits.patient_id` from legacy visit links or the snapshot; normalizes known legacy guardian-contact values; and installs the clinic patient and visit database functions. Patient registration uses the transactional registration function to detect possible matches and prevent simultaneous duplicate submissions. Database triggers prevent patient purges from cascading into visit rows that are not already deleted and protect the permanent Super Admin account from role, status, archive, and delete changes. The schema seeds the `super admin` / `adminsuper123!` maintenance account if it does not already exist. Existing `Head Nurse & Administrator` accounts are preserved but no longer receive administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
 `supabase/reset_patient_records.sql` is a destructive reset script. Verify the Supabase project before running it. By default it requires an external backup reference and explicit operator confirmation; proceeding without a backup requires explicitly setting `operator_confirmed_without_backup` and `operator_confirmed` to `true`. That option is irreversible without another backup. The script preserves user accounts and inventory rows and checks their data before committing.
 
@@ -317,7 +322,7 @@ The clinic API reads normalized tables and uses `clinic_state` for compatibility
 3. Set `SUPABASE_URL` to the URL of that Supabase project.
 4. Set `SUPABASE_SECRET_KEY` to that project's server-side Secret key, or use `SUPABASE_SERVICE_ROLE_KEY` for a legacy project. Never expose this key to the browser.
 5. Optionally set `AUDIT_SESSION_SECRET` to a separate long random secret for signing clinic sessions. If omitted, the server-side Supabase key is used.
-6. Create the first Head Nurse in the Supabase SQL Editor, replacing the sample username and password before running:
+6. The schema seeds the permanent Super Admin account (`super admin` / `adminsuper123!`). Create a Head Nurse in the Supabase SQL Editor, replacing the sample username and password before running:
 
 	```sql
 insert into public.clinic_users (id, name, last_name, first_name, role, username, password_hash, status)

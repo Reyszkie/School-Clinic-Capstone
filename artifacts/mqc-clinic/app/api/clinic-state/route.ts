@@ -4,8 +4,20 @@ import {
 } from "../auth/session";
 
 const clinicStateId = 1;
+const superAdminId = "SYS-SUPER-ADMIN";
 
 export const dynamic = "force-dynamic";
+
+function isSuperAdminUser(user: Record<string, unknown>) {
+  return String(user.id ?? "") === superAdminId ||
+    String(user.username ?? "").toLowerCase() === "super admin";
+}
+
+function targetsSuperAdminUser(table: string, value: unknown) {
+  return table === "clinic_users" &&
+    (String(value ?? "") === superAdminId ||
+      String(value ?? "").toLowerCase() === "super admin");
+}
 
 function supabaseConfig() {
   const url = process.env.SUPABASE_URL;
@@ -85,7 +97,7 @@ function userStateKey(row: Record<string, unknown>) {
   });
 }
 
-async function hasClinicUserChanges(rows: unknown) {
+async function hasClinicUserChanges(rows: unknown, detectMissingUsers = true) {
   if (!Array.isArray(rows)) return false;
   const [currentUsers, snapshotResponse] = await Promise.all([
     readTable("clinic_users"),
@@ -144,7 +156,7 @@ async function hasClinicUserChanges(rows: unknown) {
     if (snapshotUser?.id) submittedIds.add(String(snapshotUser.id));
     if (username) submittedUsernames.add(username);
   }
-  return (
+  return detectMissingUsers && (
     currentUsers.some((user) => !submittedIds.has(String(user.id))) ||
     snapshotUsers.some(
       (user) =>
@@ -490,6 +502,16 @@ function isDeletedRecord(row: Record<string, unknown>) {
     Boolean(row.deleted_at) ||
     Boolean(row.deletedAt) ||
     row.status === "Deleted"
+  );
+}
+
+function activeSnapshotRows(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (row): row is Record<string, unknown> =>
+      Boolean(row) &&
+      typeof row === "object" &&
+      !isDeletedRecord(row as Record<string, unknown>),
   );
 }
 
@@ -1189,10 +1211,34 @@ export async function GET(request: Request) {
     const normalized = hasNormalizedData
       ? {
           ...snapshot,
-          students: patients.map(patientFromRow),
-          medicines: medicines.map(medicineFromRow),
-          equipment: equipment.map(equipmentFromRow),
-          consultations: visits.map((visit) => {
+          students: patients
+            .filter(
+              (patient) =>
+                hasClinicAdminPrivileges(session.role) ||
+                !isDeletedRecord(patient),
+            )
+            .map(patientFromRow),
+          medicines: medicines
+            .filter(
+              (medicine) =>
+                hasClinicAdminPrivileges(session.role) ||
+                !isDeletedRecord(medicine),
+            )
+            .map(medicineFromRow),
+          equipment: equipment
+            .filter(
+              (item) =>
+                hasClinicAdminPrivileges(session.role) ||
+                !isDeletedRecord(item),
+            )
+            .map(equipmentFromRow),
+          consultations: visits
+            .filter(
+              (visit) =>
+                hasClinicAdminPrivileges(session.role) ||
+                !isDeletedRecord(visit),
+            )
+            .map((visit) => {
             const normalizedVisit = visitFromRow(visit, patients);
             const savedVisit = snapshotVisitById.get(String(visit.id));
             return savedVisit
@@ -1206,17 +1252,24 @@ export async function GET(request: Request) {
                 }
               : normalizedVisit;
           }),
-          users: [...normalizedUsers, ...missingSnapshotUsers],
+          users: hasClinicAdminPrivileges(session.role)
+            ? [...normalizedUsers, ...missingSnapshotUsers]
+            : normalizedUsers.filter(
+                (user) => String(user.id ?? "") === session.userId,
+              ),
           deletedStudents: patients
-            .filter((patient) => patient.deleted_at)
+            .filter(
+              (patient) =>
+                hasClinicAdminPrivileges(session.role) && patient.deleted_at,
+            )
             .map(patientFromRow),
-          deletedUsers: users
-            .filter((user) => user.deleted_at)
-            .map(userFromRow),
+          deletedUsers: hasClinicAdminPrivileges(session.role)
+            ? users.filter((user) => user.deleted_at).map(userFromRow)
+            : [],
           auditLogs: auditLogs
             .filter(
               (audit) =>
-                session.role !== "Staff Nurse" ||
+                hasClinicAdminPrivileges(session.role) ||
                 audit.user_id === session.userId,
             )
             .map((audit) => auditFromRow(audit, users)),
@@ -1230,7 +1283,41 @@ export async function GET(request: Request) {
             : {}),
           bootstrapRequired: usersNeedBootstrap,
         }
-      : { ...snapshot, bootstrapRequired: true };
+      : hasClinicAdminPrivileges(session.role)
+        ? { ...snapshot, bootstrapRequired: true }
+        : (() => {
+            const staffSnapshot = { ...snapshot };
+            for (const key of [
+              "students",
+              "consultations",
+              "medicines",
+              "equipment",
+            ]) {
+              staffSnapshot[key] = activeSnapshotRows(snapshot[key]);
+            }
+            staffSnapshot.users = snapshotUsers.filter(
+              (user) => String(user.id ?? "") === session.userId,
+            );
+            staffSnapshot.deletedStudents = [];
+            staffSnapshot.deletedUsers = [];
+            staffSnapshot.auditLogs = Array.isArray(snapshot.auditLogs)
+              ? snapshot.auditLogs.filter(
+                  (entry) =>
+                    entry &&
+                    typeof entry === "object" &&
+                    String(
+                      (entry as Record<string, unknown>).userId ??
+                        (entry as Record<string, unknown>).user_id ??
+                        "",
+                    ) === session.userId,
+                )
+              : [];
+            delete staffSnapshot.purged;
+            return { ...staffSnapshot, bootstrapRequired: true };
+          })();
+    if (!hasClinicAdminPrivileges(session.role)) {
+        delete (normalized as Record<string, unknown>).purged;
+    }
     return Response.json(normalized, {
       headers: { "Cache-Control": "no-store" },
     });
@@ -1268,6 +1355,12 @@ export async function PUT(request: Request) {
         { status: 401, headers: { "Cache-Control": "no-store" } },
       );
     const snapshot = state as Record<string, unknown>;
+    if (!hasClinicAdminPrivileges(session.role) && snapshot.inventoryBootstrap === true) {
+      return Response.json(
+        { message: "Staff Nurses cannot add or edit inventory records." },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (snapshot.recordRestoreMutation !== undefined) {
       if (
         Object.keys(snapshot).length !== 1 ||
@@ -1282,7 +1375,7 @@ export async function PUT(request: Request) {
       }
       if (!hasClinicAdminPrivileges(session.role)) {
         return Response.json(
-          { message: "Only a Head Nurse or existing legacy administrator can restore records." },
+          { message: "Only a Head Nurse or Super Admin can restore records." },
           { status: 403, headers: { "Cache-Control": "no-store" } },
         );
       }
@@ -1317,6 +1410,12 @@ export async function PUT(request: Request) {
       if (!record) {
         return Response.json(
           { message: "This record is no longer deleted or no longer exists. Refresh the list and try again." },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      if (table === "clinic_users" && (record.id === superAdminId || record.username?.toLowerCase() === "super admin")) {
+        return Response.json(
+          { message: "The Super Admin maintenance account cannot be archived or restored." },
           { status: 409, headers: { "Cache-Control": "no-store" } },
         );
       }
@@ -1383,7 +1482,7 @@ export async function PUT(request: Request) {
         return Response.json(
           {
             message:
-              "Only a Head Nurse or existing legacy administrator can permanently delete clinic records.",
+              "Only a Head Nurse or Super Admin can permanently delete clinic records.",
           },
           { status: 403, headers: { "Cache-Control": "no-store" } },
         );
@@ -1403,6 +1502,12 @@ export async function PUT(request: Request) {
           },
           { status: 400, headers: { "Cache-Control": "no-store" } },
         );
+      if (purgeRequest.requests.some((record) => targetsSuperAdminUser(record.table, record.value))) {
+        return Response.json(
+          { message: "The Super Admin maintenance account cannot be permanently deleted." },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (
         purgeRequest.requests.some(
           (record) =>
@@ -1424,7 +1529,7 @@ export async function PUT(request: Request) {
         headers: { "Cache-Control": "no-store" },
       });
     }
-    if (session.role === "Staff Nurse") {
+    if (!hasClinicAdminPrivileges(session.role)) {
       const transitions = await Promise.all([
         hasStaffDeleteRestoreTransition("patients", "id", snapshot.students),
         hasStaffDeleteRestoreTransition(
@@ -1466,6 +1571,12 @@ export async function PUT(request: Request) {
         ? (snapshot.inventoryMutation as Record<string, unknown>)
         : null;
     if (inventoryMutation) {
+      if (!hasClinicAdminPrivileges(session.role)) {
+        return Response.json(
+          { message: "Staff Nurses cannot add or edit medicines or medical supplies." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (
         snapshot.visitMutation ||
         snapshot.visitStatusMutation ||
@@ -1529,7 +1640,7 @@ export async function PUT(request: Request) {
             ? normalizeMedicineRow(submitted)
             : normalizeEquipmentRow(submitted);
         if (
-          session.role === "Staff Nurse" &&
+          !hasClinicAdminPrivileges(session.role) &&
           Boolean(current.deleted_at) !== Boolean(normalized.deleted_at)
         ) {
           return Response.json(
@@ -1578,7 +1689,7 @@ export async function PUT(request: Request) {
           table === "medicines"
             ? normalizeMedicineRow(submitted)
             : normalizeEquipmentRow(submitted);
-        if (session.role === "Staff Nurse" && Boolean(normalized.deleted_at)) {
+        if (!hasClinicAdminPrivileges(session.role) && Boolean(normalized.deleted_at)) {
           return Response.json(
             {
               message:
@@ -1654,7 +1765,7 @@ export async function PUT(request: Request) {
         ? (snapshot.inventoryStatusMutation as Record<string, unknown>)
         : null;
     if (inventoryStatusMutation) {
-      if (session.role === "Staff Nurse")
+      if (!hasClinicAdminPrivileges(session.role))
         return Response.json(
           {
             message: "Staff Nurses cannot delete or restore inventory records.",
@@ -1733,12 +1844,15 @@ export async function PUT(request: Request) {
         headers: { "Cache-Control": "no-store" },
       });
     }
-    const clinicUsersChanged = await hasClinicUserChanges(snapshot.users);
+    const clinicUsersChanged = await hasClinicUserChanges(
+      snapshot.users,
+      hasClinicAdminPrivileges(session.role),
+    );
     if (clinicUsersChanged && !hasClinicAdminPrivileges(session.role)) {
       return Response.json(
         {
           message:
-            "Only a Head Nurse or existing legacy administrator can change clinic accounts.",
+            "Only a Head Nurse or Super Admin can change clinic accounts.",
         },
         { status: 403, headers: { "Cache-Control": "no-store" } },
       );
@@ -1751,8 +1865,32 @@ export async function PUT(request: Request) {
       const existingUsersById = new Map(
         existingUsers.map((user) => [String(user.id ?? ""), user]),
       );
+      const protectedUser = existingUsers.find(isSuperAdminUser);
+      const submittedProtectedUser = submittedUsers.find(isSuperAdminUser);
+      if (
+        protectedUser &&
+        (!submittedProtectedUser ||
+          String(submittedProtectedUser.id ?? "") !== String(protectedUser.id ?? "") ||
+          String(submittedProtectedUser.username ?? "").toLowerCase() !== String(protectedUser.username ?? "").toLowerCase() ||
+          submittedProtectedUser.role !== "Super Admin" ||
+          submittedProtectedUser.status !== "Active" ||
+          Boolean(
+            submittedProtectedUser.deleted ||
+              submittedProtectedUser.deletedAt ||
+              submittedProtectedUser.deleted_at,
+          ))
+      ) {
+        return Response.json(
+          { message: "The Super Admin maintenance account cannot be modified, disabled, or archived." },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       const invalidRole = submittedUsers.some((user) => {
         const role = user.role;
+        if (role === "Super Admin") {
+          const existing = existingUsersById.get(String(user.id ?? ""));
+          return !existing || !isSuperAdminUser(existing) || existing.role !== role;
+        }
         if (
           role !== "Head Nurse" &&
           role !== "Staff Nurse" &&
@@ -1769,7 +1907,7 @@ export async function PUT(request: Request) {
         return Response.json(
           {
             message:
-              "Select Head Nurse or Staff Nurse. The legacy administrator role cannot be assigned to new accounts.",
+              "Select Head Nurse or Staff Nurse. Administrative roles cannot be assigned to new accounts.",
           },
           { status: 400, headers: { "Cache-Control": "no-store" } },
         );
@@ -1787,7 +1925,7 @@ export async function PUT(request: Request) {
         return Response.json(
           {
             message:
-              "At least one active Head Nurse or legacy administrator account must remain.",
+              "At least one active Head Nurse or Super Admin account must remain.",
           },
           { status: 409, headers: { "Cache-Control": "no-store" } },
         );
@@ -1827,7 +1965,7 @@ export async function PUT(request: Request) {
       return Response.json(
         {
           message:
-            "Only a Head Nurse or existing legacy administrator can permanently delete clinic records.",
+            "Only a Head Nurse or Super Admin can permanently delete clinic records.",
         },
         { status: 403, headers: { "Cache-Control": "no-store" } },
       );
@@ -1841,6 +1979,12 @@ export async function PUT(request: Request) {
     ) {
       return Response.json(
         { message: "You cannot permanently delete your signed-in account." },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    if (purgeRequest.requests.some((record) => targetsSuperAdminUser(record.table, record.value))) {
+      return Response.json(
+        { message: "The Super Admin maintenance account cannot be permanently deleted." },
         { status: 409, headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -2089,7 +2233,7 @@ export async function PUT(request: Request) {
         ? (snapshot.visitStatusMutation as Record<string, unknown>)
         : null;
     if (visitStatusMutation) {
-      if (session.role === "Staff Nurse")
+      if (!hasClinicAdminPrivileges(session.role))
         return Response.json(
           { message: "Staff Nurses cannot delete or restore clinical visits." },
           { status: 403, headers: { "Cache-Control": "no-store" } },

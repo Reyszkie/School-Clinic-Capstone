@@ -3,10 +3,10 @@ function settingField(label,id,value,type="text"){
   return `<div class="f-field"><label>${label}</label><input type="${type}" id="${id}" value="${escapeHtml(value??"")}"></div>`;
 }
 function renderSettings(){
-  return `<div class="card settings-admin-entry"><div class="panel-title"><h4>Administration</h4></div>
+  return `${hasClinicAdminPrivileges(state.currentUser?.role)?`<div class="card settings-admin-entry"><div class="panel-title"><h4>Administration</h4></div>
       <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Manage users, review audit logs, and archive or restore clinic records.</p>
       <button class="btn btn-dark" id="settings-admin-btn">${ICONS.users} Open Administration</button>
-    </div><div class="grid grid-2">
+    </div>`:""}<div class="grid grid-2">
     <div class="card"><div class="panel-title"><h4>Backup & Restore</h4></div>
       <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Download a copy of the clinic records saved in this browser, or restore a previous JSON backup.</p>
       <div class="toolbar"><button class="btn btn-blue" id="backup-btn">${ICONS.download||ICONS.check} Create Backup</button><label class="btn">Restore Backup<input type="file" id="restore-file" accept=".json" style="display:none"></label></div>

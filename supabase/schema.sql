@@ -11,7 +11,7 @@ create table if not exists public.clinic_users (
   last_name text not null,
   first_name text not null,
   middle_initial text,
-  role text not null check (role in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse')),
+  role text not null check (role in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse', 'Super Admin')),
   username text not null unique,
   appearance_theme text not null default 'ocean',
   password_hash text,
@@ -23,6 +23,11 @@ create table if not exists public.clinic_users (
 
 alter table public.clinic_users
   add column if not exists appearance_theme text not null default 'ocean';
+alter table public.clinic_users
+  drop constraint if exists clinic_users_role_check;
+alter table public.clinic_users
+  add constraint clinic_users_role_check
+  check (role in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse', 'Super Admin'));
 
 create table if not exists public.patients (
   id text primary key,
@@ -1344,6 +1349,52 @@ begin
 end;
 $$;
 
+create or replace function public.protect_super_admin_account()
+returns trigger
+language plpgsql
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if (new.id = 'SYS-SUPER-ADMIN' or lower(new.username) = 'super admin' or new.role = 'Super Admin')
+      and not (
+        new.id = 'SYS-SUPER-ADMIN'
+        and new.username = 'super admin'
+        and new.role = 'Super Admin'
+        and new.status = 'Active'
+        and new.deleted_at is null
+      ) then
+      raise exception 'The Super Admin maintenance account is reserved.';
+    end if;
+    return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    if old.id = 'SYS-SUPER-ADMIN' or lower(old.username) = 'super admin' then
+      raise exception 'The Super Admin maintenance account cannot be deleted.';
+    end if;
+    return old;
+  end if;
+
+  if old.id = 'SYS-SUPER-ADMIN' or lower(old.username) = 'super admin' then
+    if new.id is distinct from old.id
+      or new.username is distinct from old.username
+      or new.role is distinct from old.role
+      or new.status is distinct from old.status
+      or new.deleted_at is distinct from old.deleted_at then
+      raise exception 'The Super Admin maintenance account cannot be modified, disabled, or archived.';
+    end if;
+  elsif new.role = 'Super Admin' then
+    raise exception 'The Super Admin role is reserved for the maintenance account.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists clinic_users_protect_super_admin on public.clinic_users;
+create trigger clinic_users_protect_super_admin
+before insert or update or delete on public.clinic_users
+for each row execute function public.protect_super_admin_account();
+
 drop trigger if exists clinic_users_set_updated_at on public.clinic_users;
 create trigger clinic_users_set_updated_at
 before update on public.clinic_users
@@ -1406,6 +1457,22 @@ values (
 )
 on conflict do nothing;
 
+-- Permanent system maintenance account. Passwords are stored only as bcrypt hashes.
+insert into public.clinic_users (
+  id, name, last_name, first_name, role, username, password_hash, status
+)
+values (
+  'SYS-SUPER-ADMIN',
+  'System Administrator',
+  'System',
+  'Administrator',
+  'Super Admin',
+  'super admin',
+  extensions.crypt('adminsuper123!', extensions.gen_salt('bf')),
+  'Active'
+)
+on conflict do nothing;
+
 -- Migrate clinic users already saved in the legacy browser snapshot.
 insert into public.clinic_users (
   id,
@@ -1431,7 +1498,7 @@ select
   coalesce(nullif(user_row->>'lastName', ''), split_part(user_row->>'name', ',', 1)),
   coalesce(nullif(user_row->>'firstName', ''), btrim(split_part(user_row->>'name', ',', 2))),
   nullif(user_row->>'middleInitial', ''),
-  case when user_row->>'role' in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse') then user_row->>'role' else 'Staff Nurse' end,
+  case when user_row->>'role' in ('Head Nurse & Administrator', 'Head Nurse', 'Staff Nurse', 'Super Admin') then user_row->>'role' else 'Staff Nurse' end,
   nullif(user_row->>'username', ''),
   case when user_row->>'status' = 'Disabled' then 'Disabled' else 'Active' end,
   case when coalesce((user_row->>'deleted')::boolean, false) then now() else null end,
@@ -1568,7 +1635,7 @@ begin
   set password_hash = extensions.crypt(p_new_password, extensions.gen_salt('bf')),
       updated_at = now()
   where username = p_username
-    and role = 'Head Nurse'
+    and role in ('Head Nurse', 'Super Admin')
     and status = 'Active'
     and deleted_at is null
     and password_hash is not null

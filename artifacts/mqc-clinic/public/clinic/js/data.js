@@ -63,10 +63,16 @@ function yearOptionsForCategoryHtml(category,selected=""){
 }
 function hasClinicAdminPrivileges(role){
   const normalized=String(role||"").trim().toLowerCase();
-  return normalized==="head nurse"||normalized==="head nurse & administrator";
+  return normalized==="head nurse"||normalized==="super admin";
 }
 function canDeleteClinicRecords(){
   return hasClinicAdminPrivileges(state.currentUser?.role);
+}
+function canManageInventory(){
+  return hasClinicAdminPrivileges(state.currentUser?.role);
+}
+function isProtectedSuperAdmin(user){
+  return user?.id==="SYS-SUPER-ADMIN"||String(user?.username||"").toLowerCase()==="super admin";
 }
 function schoolLevelForYear(year){
   return YEAR_LEVEL_GROUPS.find(group=>group.options.includes(year))?.label||"College";
@@ -116,7 +122,7 @@ const INVENTORY_ITEM_NAME_ALIASES={
 
 const COMPLAINTS = ["Headache","Fever","Dizziness","Stomachache","Nausea/Vomiting","Injury","Cough/Cold","Difficulty Breathing","Menstrual Pain","Weakness/Fatigue"];
 const SYMPTOMS = ["Fever","Headache","Dizziness","Nausea","Vomiting","Stomach Pain","Cough","Sore Throat","Runny Nose","Difficulty Breathing","Chest Pain","Weakness","Fainting","Diarrhea","Asthma"];
-const INTERVENTIONS = ["Rest/Observation","First Aid","Wound Cleaning","Ice/Cold Compress","Oral Fluids","Medication Given","Referred to Parent/Guardian","Referred to Doctor/Hospital"];
+const INTERVENTIONS = ["Rest/Observation","First Aid","Wound Cleaning","Ice/Cold Compress","Warm/Hot Compress","Oral Fluids","Medication Given","Referred to Parent/Guardian","Referred to Doctor/Hospital"];
 const DISPOSITIONS = ["Treated and Released","Returned to Class","Rested in Clinic","Admitted","Sent Home","Parent/Guardian Notified","Referred to Doctor","Referred to Hospital/Healthcare Facility","Emergency Referral"];
 
 function seedConsultations(){

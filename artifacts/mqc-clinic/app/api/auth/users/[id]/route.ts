@@ -31,7 +31,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const session = await readActiveClinicSession(request);
     if (!session) return Response.json({ message: "Sign in to manage clinic accounts." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-    if (!hasClinicAdminPrivileges(session.role)) return Response.json({ message: "Only a Head Nurse or existing legacy administrator can update clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    if (!hasClinicAdminPrivileges(session.role)) return Response.json({ message: "Only a Head Nurse or Super Admin can update clinic accounts." }, { status: 403, headers: { "Cache-Control": "no-store" } });
 
     const { id } = await context.params;
     let body: unknown;
@@ -57,6 +57,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (!existingResponse.ok) throw new Error(`clinic_users lookup returned ${existingResponse.status}`);
     const [existing] = await existingResponse.json() as Array<{ id: string; auth_user_id: string | null; username: string; role: string; status: string; deleted_at: string | null }>;
     if (!existing || existing.deleted_at) return Response.json({ message: "This user record is no longer available." }, { status: 404 });
+    if (existing.id === "SYS-SUPER-ADMIN" || existing.username.toLowerCase() === "super admin") {
+      return Response.json({ message: "The Super Admin maintenance account cannot be modified, disabled, or archived." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+    }
     if (role === "Head Nurse & Administrator" && existing.role !== role) {
       return Response.json({ message: "The legacy administrator role cannot be assigned to another account." }, { status: 400 });
     }
@@ -67,7 +70,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       const remainingAdmins = await supabaseRequest(`clinic_users?status=eq.Active&deleted_at=is.null&id=neq.${encodeURIComponent(id)}&select=id,role&limit=1000`);
       if (!remainingAdmins.ok) throw new Error(`active administrator lookup returned ${remainingAdmins.status}`);
       const remaining = await remainingAdmins.json() as Array<{ role?: string }>;
-      if (!remaining.some(user => user.role === "Head Nurse" || user.role === "Head Nurse & Administrator")) return Response.json({ message: "At least one active Head Nurse or legacy administrator account must remain." }, { status: 409 });
+      if (!remaining.some(user => user.role === "Head Nurse" || user.role === "Super Admin")) return Response.json({ message: "At least one active Head Nurse or Super Admin account must remain." }, { status: 409 });
     }
 
     const name = `${lastName}, ${firstName}${middleInitial ? ` ${middleInitial.replace(/\.$/, "")}.` : ""}`;

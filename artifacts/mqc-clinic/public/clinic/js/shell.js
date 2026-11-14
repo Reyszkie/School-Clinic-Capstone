@@ -133,11 +133,12 @@ function attachShellEvents(){
 /* ================= PAGE ROUTER ================= */
 function renderPage(){
   const c=document.getElementById('content');
+  if(state.page==='admin'&&!hasClinicAdminPrivileges(state.currentUser?.role))state.page='dashboard';
   if(state.page==='dashboard') c.innerHTML = renderDashboard();
   else if(state.page==='consultation') c.innerHTML = renderConsultation();
   else if(state.page==='inventory') c.innerHTML = renderInventory();
   else if(state.page==='reports') c.innerHTML = renderReports();
-  else if(state.page==='admin') c.innerHTML = renderAdmin();
+  else if(state.page==='admin'&&hasClinicAdminPrivileges(state.currentUser?.role)) c.innerHTML = renderAdmin();
   else if(state.page==='settings') c.innerHTML = renderSettings();
   afterPageRender();
 }

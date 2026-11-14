@@ -68,8 +68,8 @@ function attachLoginFormEvents(){
     const btnText=document.getElementById('login-btn-text');
     errEl.style.display='none';
     if(!user || !pass){ errEl.textContent='Please enter both username and password.'; errEl.style.display='block'; return; }
-    if(/\s/.test(user)){errEl.textContent='Username cannot contain spaces.';errEl.style.display='block';return;}
-    if(!/^[A-Za-z0-9._-]{3,50}$/.test(user)){errEl.textContent='Username must be 3-50 letters, numbers, dots, underscores, or hyphens.';errEl.style.display='block';return;}
+    if(user!=="super admin"&&/\s/.test(user)){errEl.textContent='Username cannot contain spaces.';errEl.style.display='block';return;}
+    if(user!=="super admin"&&!/^[A-Za-z0-9._-]{3,50}$/.test(user)){errEl.textContent='Username must be 3-50 letters, numbers, dots, underscores, or hyphens.';errEl.style.display='block';return;}
     if(/\s/.test(pass)){errEl.textContent='Password cannot contain spaces.';errEl.style.display='block';return;}
     spinner.style.display='block';
     btnText.textContent='Signing in...';
