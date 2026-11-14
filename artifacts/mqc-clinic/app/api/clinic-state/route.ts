@@ -168,9 +168,13 @@ async function hasClinicUserChanges(rows: unknown, detectMissingUsers = true) {
 
 function visitStateKey(row: Record<string, unknown>) {
   const visit = normalizeVisitRow(row, false);
-  delete visit.created_at;
-  delete visit.updated_at;
-  return JSON.stringify(visit);
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(visit).filter(
+        ([key]) => key !== "created_at" && key !== "updated_at",
+      ),
+    ),
+  );
 }
 
 async function hasUnauthorizedVisitChanges(
