@@ -4179,38 +4179,52 @@ tbody tr:hover {
 }
 
 .pagination {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   width: 100%;
   min-width: 0;
   gap: 12px;
-  flex-wrap: wrap;
+  overflow: visible;
 }
 .pagination > span {
   min-width: 0;
-  flex: 1 1 180px;
   overflow-wrap: anywhere;
 }
 .page-btns {
-  flex: 0 0 auto;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: max-content;
 }
 .page-btns button {
   display: inline-flex;
-  flex: 0 0 36px;
+  flex: 0 0 40px;
   align-items: center;
   justify-content: center;
-  min-width: 36px;
-  min-height: 36px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
 }
 @media (max-width: 520px) {
+  .pagination {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .pagination > span {
-    flex-basis: 100%;
+    grid-column: 1;
   }
   .page-btns {
-    margin-left: auto;
+    grid-column: 1;
+    justify-self: end;
   }
   .page-btns button {
     flex-basis: 44px;
+    width: 44px;
     min-width: 44px;
+    height: 44px;
     min-height: 44px;
   }
 }
