@@ -89,7 +89,7 @@ function openUserForm(existing = null) {
       <div class="f-field"><label>Middle Initial</label><input type="text" id="uf-middle" value="${escapeHtml(f.middleInitial || "")}" maxlength="3"></div>
       <div class="f-field"><label>Role <span class="req">*</span></label><select id="uf-role" required><option value="">Select Role</option>${roles.map(([value, label]) => `<option value="${value}" ${f.role === value ? "selected" : ""} ${value === "Head Nurse & Administrator" ? "disabled" : ""}>${label}</option>`).join("")}</select></div>
       <div class="f-field"><label>Username <span class="req">*</span></label><input type="text" id="uf-username" value="${escapeHtml(f.username || "")}" required></div>
-      <div class="f-field"><label>Status</label><select id="uf-status">${["Active", "Disabled"].map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      <div class="f-field"><label>Status</label><select id="uf-status" ${isEdit ? "disabled" : ""}>${["Active", "Disabled"].map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       ${
         canChangeOwnPassword
           ? `<div class="f-field full"><h4>Change Password</h4><p class="field-hint">Use 8-128 characters without spaces. Verify your current password to continue.</p></div>
@@ -527,20 +527,32 @@ function bindUsersTab() {
       }
       const previousStatus = u.status,
         nextStatus = u.status === "Active" ? "Disabled" : "Active";
-      await commitClinicRecordMutation({
-        apply: () => {
-          u.status = nextStatus;
-        },
-        rollback: () => {
-          u.status = previousStatus;
-        },
-        auditAction: `User ${nextStatus === "Active" ? "Enabled" : "Disabled"} — ${u.name}`,
-        module: "User Management",
-        detail: u.id,
-        successTitle: `User ${nextStatus.toLowerCase()}`,
-        successMessage: `${u.name} is now ${nextStatus.toLowerCase()}.`,
-        refresh: renderAdminTabBody,
-      });
+      const updateStatus = () =>
+        commitClinicRecordMutation({
+          apply: () => {
+            u.status = nextStatus;
+          },
+          rollback: () => {
+            u.status = previousStatus;
+          },
+          auditAction: `User ${nextStatus === "Active" ? "Enabled" : "Disabled"} — ${u.name}`,
+          module: "User Management",
+          detail: u.id,
+          successTitle: `User ${nextStatus.toLowerCase()}`,
+          successMessage: `${u.name} is now ${nextStatus.toLowerCase()}.`,
+          refresh: renderAdminTabBody,
+        });
+      if (nextStatus === "Disabled") {
+        confirmDialog({
+          title: "Are you sure you want to disable this user account?",
+          msg: `<b>${escapeHtml(u.name)}</b> will no longer be able to sign in.`,
+          okLabel: "Yes, Disable",
+          cancelLabel: "Cancel",
+          onConfirm: updateStatus,
+        });
+      } else {
+        await updateStatus();
+      }
     };
   });
   document.querySelectorAll("[data-archive-user]").forEach((b) => {
@@ -576,9 +588,10 @@ function bindUsersTab() {
       const index = state.users.findIndex((user) => user.id === u.id),
         deleted = { ...u, deleted: true, deletedAt: new Date().toISOString() };
       confirmDialog({
-        title: "Move this user to the Archive?",
+        title: "Are you sure you want to archive this user account?",
         msg: `<b>${escapeHtml(u.name)}</b> will be moved to the Archive and can be restored later.`,
-        okLabel: "Move to Archive",
+        okLabel: "Yes, Archive",
+        cancelLabel: "Cancel",
         onConfirm: async () => {
           await commitClinicRecordMutation({
             apply: () => {

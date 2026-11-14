@@ -199,6 +199,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Name, role, and status display; internal user IDs remain available to application operations.
 - Active and Disabled statuses.
 - Add, edit, enable, disable, and delete user actions.
+- Disabling or archiving an existing account requires explicit confirmation; disabled and archived accounts cannot log in, and archived accounts remain restorable.
 - Deleted user recovery.
 - Last name, first name, and middle initial fields.
 - Head Nurse role with full administrative permissions.
@@ -206,7 +207,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Staff Nurse role.
 - Existing legacy Head Nurse & Administrator accounts are preserved but do not receive administrative permissions; the legacy role is not offered for new accounts.
 - Only Head Nurse and Super Admin accounts can access Administration, manage users, change roles, or edit and archive inventory.
-- Staff Nurses can access Patients and Inventory only; they can view and add patients, visits, medicines, and medical supplies, but cannot edit, archive, or permanently delete existing records.
+- Staff Nurses can view Dashboard, Reports, Patients, Inventory, and clinic notifications; they can add patients, visits, medicines, and medical supplies, but cannot edit, archive, or permanently delete existing records.
 - Head Nurses and the Super Admin retain full clinic and inventory permissions.
 - The Super Admin account cannot be archived, permanently deleted, disabled, or assigned another role.
 - Username field.
@@ -262,7 +263,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Supabase PostgreSQL persistence through authenticated Next.js REST API routes.
 - Normalized tables for patients, visits, inventory, users, settings, and audit logs, with `clinic_state` retained as a compatibility snapshot.
 - Server-side session and role checks for clinic data, account management, inventory mutations, and deletion/restoration.
-- Staff Nurses can access Patients and Inventory only, with view/add permissions; backend routes also prevent patient, visit, and inventory edits, archives, and permanent deletions through direct API requests.
+- Staff Nurses can view Dashboard, Reports, Patients, Inventory, and clinic notifications; they have view/add permissions for clinic records, while backend routes prevent patient, visit, and inventory edits, archives, and permanent deletions through direct API requests.
 - `GET /api/healthz` health endpoint.
 - `GET /api/clinic-state` shared-state endpoint.
 - `PUT /api/clinic-state` shared-state update endpoint.

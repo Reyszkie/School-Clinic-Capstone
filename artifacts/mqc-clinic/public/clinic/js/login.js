@@ -294,7 +294,6 @@ function buildLoginAlerts() {
 }
 
 function openLoginAlertsModal() {
-  if(isStaffNurseRole(state.currentUser?.role))return;
   const alerts = buildLoginAlerts();
   const renderAlertItem = (section, item) => {
     const commonHtml = `

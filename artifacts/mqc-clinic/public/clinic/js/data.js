@@ -81,7 +81,7 @@ function isStaffNurseRole(role=state.currentUser?.role){
   return String(role||"").trim().toLowerCase()==="staff nurse";
 }
 function canAccessClinicModule(module,role=state.currentUser?.role){
-  return !isStaffNurseRole(role)||module==="consultation"||module==="inventory";
+  return !isStaffNurseRole(role)||["dashboard","consultation","inventory","reports"].includes(module);
 }
 function isProtectedSuperAdmin(user){
   return user?.id==="SYS-SUPER-ADMIN"||String(user?.username||"").toLowerCase()==="super admin";
