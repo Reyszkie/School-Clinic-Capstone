@@ -12,6 +12,7 @@ const state = {
   invTab: "medicines",
   adminTab: "users",
   consultPage: 1,
+  studentPage: 1,
   medPage: 1,
   eqPage: 1,
   auditPage: 1,

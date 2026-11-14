@@ -21,7 +21,7 @@ function renderConsultSearchTab() {
     <select class="select-sm hidden" id="stu-course-filter"><option value="">All Institutional Categories</option>${courseOptionsHtml("")}</select>
     <button class="btn btn-teal" id="add-student-btn">${ICONS.plus} Add New Patient</button>
   </div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Institutional Category</th><th>Year / Personnel Type</th><th>Sex</th><th></th></tr></thead>
-    <tbody id="stu-tbody"></tbody></table></div></div>`;
+    <tbody id="stu-tbody"></tbody></table></div><div class="pagination" id="stu-pagination"></div></div>`;
 }
 
 function studentTableRows(list) {
@@ -160,17 +160,38 @@ function filterStudents() {
 }
 
 function bindConsultSearch() {
-  const run = () => {
-    document.getElementById("stu-tbody").innerHTML =
-      studentTableRows(filterStudents());
+  const perPage = 8;
+  const run = (resetPage = false) => {
+    if (resetPage) state.studentPage = 1;
+    const list = filterStudents();
+    const totalPages = Math.max(1, Math.ceil(list.length / perPage));
+    if (state.studentPage > totalPages) state.studentPage = totalPages;
+    const pageRows = list.slice(
+      (state.studentPage - 1) * perPage,
+      state.studentPage * perPage,
+    );
+    document.getElementById("stu-tbody").innerHTML = studentTableRows(pageRows);
+    document.getElementById("stu-pagination").innerHTML = `
+      <span>Page ${state.studentPage} of ${totalPages} · ${list.length} patients</span>
+      <div class="page-btns">
+        <button type="button" data-student-page="prev" aria-label="Previous patient page" title="Previous page">${ICONS.chevleft}<span>Previous</span></button>
+        <button type="button" data-student-page="next" aria-label="Next patient page" title="Next page">${ICONS.chevright}<span>Next</span></button>
+      </div>`;
     bindSelectButtons();
+    document.querySelectorAll("[data-student-page]").forEach((button) => {
+      button.onclick = () => {
+        state.studentPage += button.dataset.studentPage === "next" ? 1 : -1;
+        if (state.studentPage < 1) state.studentPage = 1;
+        run();
+      };
+    });
   };
-  document.getElementById("stu-search").oninput = run;
-  document.getElementById("stu-course-filter").onchange = run;
+  document.getElementById("stu-search").oninput = () => run(true);
+  document.getElementById("stu-course-filter").onchange = () => run(true);
   document.getElementById("stu-department-filter").onchange = (event) => {
     state.departmentFilter = event.target.value;
     state.selectedStudent = null;
-    run();
+    run(true);
   };
   document.getElementById("add-student-btn").onclick = () => openStudentForm();
   run();
@@ -1432,7 +1453,7 @@ function renderConsultHistory() {
         )
         .join("")
     : `<tr><td colspan="7">${emptyState("No patient visits match your filters.")}</td></tr>`;
-  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits by patient, date, outcome, status, nurse, or ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option value="Deleted" ${status === "Deleted" ? "selected" : ""}>Archived</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button type="button" data-page="prev" aria-label="Previous visit history page" title="Previous page">${ICONS.chevleft}</button><button type="button" data-page="next" aria-label="Next visit history page" title="Next page">${ICONS.chevright}</button></div></div></div>`;
+  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits by patient, date, outcome, status, nurse, or ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option value="Deleted" ${status === "Deleted" ? "selected" : ""}>Archived</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button type="button" data-page="prev" aria-label="Previous visit history page" title="Previous page">${ICONS.chevleft}<span>Previous</span></button><button type="button" data-page="next" aria-label="Next visit history page" title="Next page">${ICONS.chevright}<span>Next</span></button></div></div></div>`;
 }
 
 function bindConsultHistory() {

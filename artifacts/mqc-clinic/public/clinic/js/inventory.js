@@ -95,7 +95,7 @@ function renderMedicinesTab(){
     </div>
     <div class="pagination">
       <span>Page ${state.medPage} of ${totalPages} · ${list.length} items ${deletedCount?`· ${deletedCount} in Archive`:''}</span>
-      <div class="page-btns"><button type="button" data-mpage="prev" aria-label="Previous medicines page" title="Previous page">${ICONS.chevleft}</button><button type="button" data-mpage="next" aria-label="Next medicines page" title="Next page">${ICONS.chevright}</button></div>
+      <div class="page-btns"><button type="button" data-mpage="prev" aria-label="Previous medicines page" title="Previous page">${ICONS.chevleft}<span>Previous</span></button><button type="button" data-mpage="next" aria-label="Next medicines page" title="Next page">${ICONS.chevright}<span>Next</span></button></div>
     </div>
   </div>`;
 }
@@ -252,7 +252,7 @@ function renderEquipmentTab(){
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
-      <div class="page-btns"><button type="button" data-eqpage="prev" aria-label="Previous medical supplies page" title="Previous page">${ICONS.chevleft}</button><button type="button" data-eqpage="next" aria-label="Next medical supplies page" title="Next page">${ICONS.chevright}</button></div>
+      <div class="page-btns"><button type="button" data-eqpage="prev" aria-label="Previous medical supplies page" title="Previous page">${ICONS.chevleft}<span>Previous</span></button><button type="button" data-eqpage="next" aria-label="Next medical supplies page" title="Next page">${ICONS.chevright}<span>Next</span></button></div>
     </div>
   </div>`;
 }

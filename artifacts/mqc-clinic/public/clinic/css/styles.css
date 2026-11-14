@@ -4200,14 +4200,16 @@ tbody tr:hover {
 }
 .page-btns button {
   display: inline-flex;
-  flex: 0 0 40px;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  min-width: 40px;
+  gap: 6px;
+  width: auto;
+  min-width: 92px;
   height: 40px;
   min-height: 40px;
-  padding: 0;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 @media (max-width: 520px) {
   .pagination {
@@ -4221,9 +4223,7 @@ tbody tr:hover {
     justify-self: end;
   }
   .page-btns button {
-    flex-basis: 44px;
-    width: 44px;
-    min-width: 44px;
+    min-width: 100px;
     height: 44px;
     min-height: 44px;
   }
