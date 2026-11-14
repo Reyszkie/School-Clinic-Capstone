@@ -206,14 +206,15 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Staff Nurse role.
 - Existing legacy Head Nurse & Administrator accounts are preserved but do not receive administrative permissions; the legacy role is not offered for new accounts.
 - Only Head Nurse and Super Admin accounts can access Administration, manage users, change roles, or administer inventory.
-- Staff Nurses can view inventory and record clinic visits, but cannot add, edit, or archive medicines or medical supplies.
+- Staff Nurses can add patient visits and medicines, but cannot edit patient records, patient visits, medicines, or medical supplies.
+- Staff Nurses cannot archive medicines or medical supplies; Head Nurses and the Super Admin retain their existing inventory permissions.
 - The Super Admin account cannot be archived, permanently deleted, disabled, or assigned another role.
 - Username field.
 - Password and confirm-password fields.
 - Password show/hide controls.
 - Required name, username, and new-password validation.
 - Password confirmation validation.
-- Head Nurses can change another user's password through Supabase Auth; Staff Nurses cannot use the interface or password API to do so.
+- Head Nurses and the Super Admin can change another user's password through the account interface; Staff Nurses cannot use the interface or password API to do so.
 - Password changes require matching values and at least 8 characters; plaintext passwords are never written to clinic tables.
 - User audit entries.
 
@@ -261,7 +262,7 @@ The application is built with Next.js and deployed as one Vercel application. Th
 - Supabase PostgreSQL persistence through authenticated Next.js REST API routes.
 - Normalized tables for patients, visits, inventory, users, settings, and audit logs, with `clinic_state` retained as a compatibility snapshot.
 - Server-side session and role checks for clinic data, account management, inventory mutations, and deletion/restoration.
-- Staff Nurses cannot manage accounts, access Administration data, or add/edit/archive inventory, including through direct API requests.
+- Staff Nurses cannot manage accounts, access Administration data, edit patient records or visits, or edit/archive inventory, including through direct API requests. They can add medicines and patient visits.
 - `GET /api/healthz` health endpoint.
 - `GET /api/clinic-state` shared-state endpoint.
 - `PUT /api/clinic-state` shared-state update endpoint.
@@ -297,7 +298,7 @@ The repository includes a normalized Supabase schema at `supabase/schema.sql`. I
 - `clinic_state` for backward compatibility with the current shared snapshot API.
 - `clinic_sync_meta` for normalized-data migration and synchronization state.
 
-Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations before deploying application changes that use it. It adds the patient classification fields, the per-user `clinic_users.appearance_theme` preference, and allows visit outcome details to be left blank; restores patient profiles from a legacy `students` table or the `clinic_state` snapshot; backfills a missing `clinical_visits.patient_id` from legacy visit links or the snapshot; normalizes known legacy guardian-contact values; and installs the clinic patient and visit database functions. Patient registration uses the transactional registration function to detect possible matches and prevent simultaneous duplicate submissions. Database triggers prevent patient purges from cascading into visit rows that are not already deleted and protect the permanent Super Admin account from role, status, archive, and delete changes. The schema seeds the `super admin` / `adminsuper123!` maintenance account if it does not already exist. Existing `Head Nurse & Administrator` accounts are preserved but no longer receive administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
+Run `supabase/schema.sql` in the Supabase SQL Editor for both new and existing installations before deploying application changes that use it. It adds the patient classification fields, the per-user `clinic_users.appearance_theme` preference, and allows visit outcome details to be left blank; restores patient profiles from a legacy `students` table or the `clinic_state` snapshot; backfills a missing `clinical_visits.patient_id` from legacy visit links or the snapshot; normalizes known legacy guardian-contact values; and installs the clinic patient and visit database functions. Patient registration uses the transactional registration function to detect possible matches and prevent simultaneous duplicate submissions. Database triggers prevent patient purges from cascading into visit rows that are not already deleted and protect the permanent Super Admin account from role, status, archive, and delete changes. The schema creates the protected `super admin` account without embedding its password in source; provision its initial password by running `select public.set_super_admin_password('<initial password>');` once in the Supabase SQL Editor. Existing `Head Nurse & Administrator` accounts are preserved but no longer receive administrative access; create new accounts with the `Head Nurse` role. The Drizzle schema and `db:push` command are separate tooling and are not a substitute for this runtime schema.
 
 `supabase/reset_patient_records.sql` is a destructive reset script. Verify the Supabase project before running it. By default it requires an external backup reference and explicit operator confirmation; proceeding without a backup requires explicitly setting `operator_confirmed_without_backup` and `operator_confirmed` to `true`. That option is irreversible without another backup. The script preserves user accounts and inventory rows and checks their data before committing.
 
@@ -318,19 +319,20 @@ The clinic API reads normalized tables and uses `clinic_state` for compatibility
 ## Local Development
 
 1. Create a Supabase project and run `supabase/schema.sql` in its SQL Editor.
-2. Copy `.env.example` to `artifacts/mqc-clinic/.env.local`.
-3. Set `SUPABASE_URL` to the URL of that Supabase project.
-4. Set `SUPABASE_SECRET_KEY` to that project's server-side Secret key, or use `SUPABASE_SERVICE_ROLE_KEY` for a legacy project. Never expose this key to the browser.
-5. Optionally set `AUDIT_SESSION_SECRET` to a separate long random secret for signing clinic sessions. If omitted, the server-side Supabase key is used.
-6. The schema seeds the permanent Super Admin account (`super admin` / `adminsuper123!`). Create a Head Nurse in the Supabase SQL Editor, replacing the sample username and password before running:
+2. Set the initial Super Admin password once by running `select public.set_super_admin_password('<initial password>');` in the SQL Editor. Do not commit the password or its setup command with a literal password to source control.
+3. Copy `.env.example` to `artifacts/mqc-clinic/.env.local`.
+4. Set `SUPABASE_URL` to the URL of that Supabase project.
+5. Set `SUPABASE_SECRET_KEY` to that project's server-side Secret key, or use `SUPABASE_SERVICE_ROLE_KEY` for a legacy project. Never expose this key to the browser.
+6. Optionally set `AUDIT_SESSION_SECRET` to a separate long random secret for signing clinic sessions. If omitted, the server-side Supabase key is used.
+7. Create a Head Nurse in the Supabase SQL Editor, replacing the sample username and password before running:
 
 	```sql
 insert into public.clinic_users (id, name, last_name, first_name, role, username, password_hash, status)
 values ('NRS-ADMIN-001', 'Clinic Head Nurse', 'Nurse', 'Clinic', 'Head Nurse', 'YOUR_ADMIN_USERNAME', extensions.crypt('REPLACE_WITH_A_STRONG_PASSWORD', extensions.gen_salt('bf')), 'Active');
 	```
 
-   The schema also creates a local test account (`testnurse` / `test12345`) with the Staff Nurse role. Change or remove it before production use.
-7. Start the Next.js application:
+   The schema creates and immediately archives the sample Staff Nurse account (`testnurse` / `test12345`); it remains restorable from Administration → Archive and cannot log in while archived.
+8. Start the Next.js application:
 
 	```powershell
 	corepack pnpm --filter @workspace/mqc-clinic run dev

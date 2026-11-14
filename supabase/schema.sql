@@ -1395,6 +1395,34 @@ create trigger clinic_users_protect_super_admin
 before insert or update or delete on public.clinic_users
 for each row execute function public.protect_super_admin_account();
 
+create or replace function public.set_super_admin_password(p_password text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if p_password is null or length(p_password) < 12 then
+    raise exception 'The Super Admin password must be at least 12 characters.';
+  end if;
+
+  update public.clinic_users
+  set password_hash = extensions.crypt(p_password, extensions.gen_salt('bf'))
+  where id = 'SYS-SUPER-ADMIN'
+    and username = 'super admin'
+    and role = 'Super Admin'
+    and status = 'Active'
+    and deleted_at is null;
+
+  if not found then
+    raise exception 'The protected Super Admin account is not available.';
+  end if;
+end;
+$$;
+
+revoke all on function public.set_super_admin_password(text) from public, anon, authenticated;
+grant execute on function public.set_super_admin_password(text) to service_role;
+
 drop trigger if exists clinic_users_set_updated_at on public.clinic_users;
 create trigger clinic_users_set_updated_at
 before update on public.clinic_users
@@ -1448,7 +1476,7 @@ create index if not exists audit_logs_created_at_idx
 alter table public.clinic_users enable row level security;
 
 -- Local test account for the clinic login endpoint.
--- Change or remove this account before production use.
+-- It is immediately soft-archived below so the sample account cannot sign in.
 insert into public.clinic_users (
   id, name, last_name, first_name, role, username, password_hash, status
 )
@@ -1456,6 +1484,24 @@ values (
   'NRS-TEST', 'Test Nurse', 'Nurse', 'Test', 'Staff Nurse', 'testnurse', extensions.crypt('test12345', extensions.gen_salt('bf')), 'Active'
 )
 on conflict do nothing;
+
+-- Archive the sample account (named "test nurse" in older data or "testnurse" here).
+-- Soft deletion keeps it available in Administration → Archive for restoration.
+update public.clinic_users
+set deleted_at = now(),
+    updated_at = now()
+where deleted_at is null
+  and (
+    lower(btrim(username)) = 'test nurse'
+    or (
+      lower(btrim(username)) = 'testnurse'
+      and not exists (
+        select 1
+        from public.clinic_users
+        where lower(btrim(username)) = 'test nurse'
+      )
+    )
+  );
 
 -- Permanent system maintenance account. Passwords are stored only as bcrypt hashes.
 insert into public.clinic_users (
@@ -1468,7 +1514,7 @@ values (
   'Administrator',
   'Super Admin',
   'super admin',
-  extensions.crypt('adminsuper123!', extensions.gen_salt('bf')),
+  null,
   'Active'
 )
 on conflict do nothing;

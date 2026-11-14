@@ -647,7 +647,7 @@ function renderAuditTab() {
     <div class="table-wrap"><table><thead><tr><th>Date</th><th>Time</th><th>User</th><th>Role</th><th>Action</th><th>Module</th><th>Status</th></tr></thead>
     <tbody>${rows || `<tr><td colspan="7">${emptyState("No audit activity recorded yet.")}</td></tr>`}</tbody></table></div>
     <div class="pagination"><span>Page ${state.auditPage} of ${totalPages} · ${AUDIT_LOGS.length} entries</span>
-      <div class="page-btns"><button data-apage="prev">${ICONS.chevleft}</button><button data-apage="next">${ICONS.chevright}</button></div>
+      <div class="page-btns"><button type="button" data-apage="prev" aria-label="Previous audit log page" title="Previous page">${ICONS.chevleft}</button><button type="button" data-apage="next" aria-label="Next audit log page" title="Next page">${ICONS.chevright}</button></div>
     </div>
   </div>`;
 }

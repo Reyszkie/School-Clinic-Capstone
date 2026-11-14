@@ -68,8 +68,14 @@ function hasClinicAdminPrivileges(role){
 function canDeleteClinicRecords(){
   return hasClinicAdminPrivileges(state.currentUser?.role);
 }
+function canEditClinicRecords(){
+  return hasClinicAdminPrivileges(state.currentUser?.role);
+}
 function canManageInventory(){
   return hasClinicAdminPrivileges(state.currentUser?.role);
+}
+function canAddMedicine(){
+  return canManageInventory()||state.currentUser?.role==="Staff Nurse";
 }
 function isProtectedSuperAdmin(user){
   return user?.id==="SYS-SUPER-ADMIN"||String(user?.username||"").toLowerCase()==="super admin";

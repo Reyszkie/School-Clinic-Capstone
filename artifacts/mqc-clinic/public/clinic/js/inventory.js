@@ -85,7 +85,7 @@ function renderMedicinesTab(){
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Low Stock","Out of Stock","Expiring Soon","Expired"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
       </select>
-      ${canManageInventory()?`<button class="btn btn-amber" id="add-med-btn">${ICONS.plus} Add Medicine</button>`:""}
+      ${canAddMedicine()?`<button class="btn btn-amber" id="add-med-btn">${ICONS.plus} Add Medicine</button>`:""}
     </div>
     <div class="table-wrap">
       <table>
@@ -95,13 +95,13 @@ function renderMedicinesTab(){
     </div>
     <div class="pagination">
       <span>Page ${state.medPage} of ${totalPages} · ${list.length} items ${deletedCount?`· ${deletedCount} in Archive`:''}</span>
-      <div class="page-btns"><button data-mpage="prev">${ICONS.chevleft}</button><button data-mpage="next">${ICONS.chevright}</button></div>
+      <div class="page-btns"><button type="button" data-mpage="prev" aria-label="Previous medicines page" title="Previous page">${ICONS.chevleft}</button><button type="button" data-mpage="next" aria-label="Next medicines page" title="Next page">${ICONS.chevright}</button></div>
     </div>
   </div>`;
 }
 async function saveInventoryRecord({itemType,records,record,existing,refresh}){
-  if(!canManageInventory()){
-    toast("Permission denied","Only Head Nurses and the Super Admin can add or edit inventory.","err");
+  if(!(canManageInventory()||(itemType==="medicine"&&!existing&&canAddMedicine()))){
+    toast("Permission denied","You do not have permission to make this inventory change.","err");
     return false;
   }
   const previousRecords=records.slice();
@@ -136,7 +136,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
   return saved;
 }
 function openMedicineForm(existing=null){
-  if(!canManageInventory())return;
+  if(existing?!canManageInventory():!canAddMedicine())return;
   const isEdit=!!existing;
   const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", productionDate:"", exp:""};
   const html=`
@@ -252,7 +252,7 @@ function renderEquipmentTab(){
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
-      <div class="page-btns"><button data-eqpage="prev">${ICONS.chevleft}</button><button data-eqpage="next">${ICONS.chevright}</button></div>
+      <div class="page-btns"><button type="button" data-eqpage="prev" aria-label="Previous medical supplies page" title="Previous page">${ICONS.chevleft}</button><button type="button" data-eqpage="next" aria-label="Next medical supplies page" title="Next page">${ICONS.chevright}</button></div>
     </div>
   </div>`;
 }

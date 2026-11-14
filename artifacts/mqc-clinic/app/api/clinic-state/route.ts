@@ -166,6 +166,29 @@ async function hasClinicUserChanges(rows: unknown, detectMissingUsers = true) {
   );
 }
 
+function visitStateKey(row: Record<string, unknown>) {
+  const visit = normalizeVisitRow(row, false);
+  delete visit.created_at;
+  delete visit.updated_at;
+  return JSON.stringify(visit);
+}
+
+async function hasUnauthorizedVisitChanges(
+  rows: Array<Record<string, unknown>>,
+) {
+  const existingVisits = await readTable("clinical_visits");
+  const existingById = new Map(
+    existingVisits.map((visit) => [String(visit.id ?? ""), visit]),
+  );
+  return rows.some((row) => {
+    const existing = existingById.get(String(row.id ?? ""));
+    return (
+      !existing ||
+      visitStateKey(row) !== visitStateKey(visitFromRow(existing, []))
+    );
+  });
+}
+
 function normalizePatientRow(row: Record<string, unknown>) {
   const name =
     row.name ??
@@ -206,6 +229,42 @@ function normalizePatientRow(row: Record<string, unknown>) {
     deleted_by: row.deletedBy ?? row.deleted_by ?? null,
     updated_at: new Date().toISOString(),
   };
+}
+
+function patientStateKey(row: Record<string, unknown>) {
+  const patient = normalizePatientRow(row);
+  return JSON.stringify({
+    id: patient.id,
+    last_name: patient.last_name,
+    first_name: patient.first_name,
+    middle_initial: patient.middle_initial || null,
+    name: patient.name,
+    course: patient.course,
+    institutional_category: patient.institutional_category || patient.course,
+    personnel_type: patient.personnel_type || null,
+    year_level: patient.year_level,
+    gender: patient.gender || null,
+    age: patient.age,
+    contact: patient.contact || null,
+    guardian_name: patient.guardian_name || null,
+    guardian_contact: patient.guardian_contact || null,
+    allergies: patient.allergies || "Not Yet Assessed",
+    medical_conditions: patient.medical_conditions || "None",
+    symptoms: patient.symptoms,
+    deleted_at: patient.deleted_at,
+    deleted_by: patient.deleted_by || null,
+  });
+}
+
+async function hasExistingPatientEdits(rows: Array<Record<string, unknown>>) {
+  const existingPatients = await readTable("patients");
+  const existingById = new Map(
+    existingPatients.map((patient) => [String(patient.id ?? ""), patient]),
+  );
+  return rows.some((submitted) => {
+    const existing = existingById.get(String(submitted.id ?? ""));
+    return existing && patientStateKey(submitted) !== patientStateKey(existing);
+  });
 }
 
 function normalizeMedicineRow(row: Record<string, unknown>) {
@@ -1571,12 +1630,6 @@ export async function PUT(request: Request) {
         ? (snapshot.inventoryMutation as Record<string, unknown>)
         : null;
     if (inventoryMutation) {
-      if (!hasClinicAdminPrivileges(session.role)) {
-        return Response.json(
-          { message: "Staff Nurses cannot add or edit medicines or medical supplies." },
-          { status: 403, headers: { "Cache-Control": "no-store" } },
-        );
-      }
       if (
         snapshot.visitMutation ||
         snapshot.visitStatusMutation ||
@@ -1592,6 +1645,16 @@ export async function PUT(request: Request) {
         );
       const itemType = inventoryMutation.itemType;
       const itemId = String(inventoryMutation.itemId ?? "");
+      const previousQuantity = toNumber(inventoryMutation.previousQuantity);
+      if (
+        !hasClinicAdminPrivileges(session.role) &&
+        (itemType !== "medicine" || previousQuantity !== null)
+      ) {
+        return Response.json(
+          { message: "Staff Nurses may add medicines but cannot edit inventory records." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       const table =
         itemType === "medicine"
           ? "medicines"
@@ -1613,7 +1676,6 @@ export async function PUT(request: Request) {
         );
 
       const submitted = affected[0];
-      const previousQuantity = toNumber(inventoryMutation.previousQuantity);
       if (previousQuantity !== null) {
         const currentResponse = await supabaseRequest(
           `${table}?${key}=eq.${encodeURIComponent(itemId)}&select=${key},quantity,deleted_at,updated_at`,
@@ -2061,6 +2123,12 @@ export async function PUT(request: Request) {
       const createPatient = visitMutation.createPatient === true;
       const updateVisit = visitMutation.updateVisit === true;
 
+      if (updateVisit && !hasClinicAdminPrivileges(session.role)) {
+        return Response.json(
+          { message: "Staff Nurses cannot edit patient visits." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (createPatient) {
         return Response.json(
           {
@@ -2082,6 +2150,15 @@ export async function PUT(request: Request) {
         throw new Error(
           "The new clinical visit for this save could not be found.",
         );
+      if (
+        !hasClinicAdminPrivileges(session.role) &&
+        (visitToSave.supersedesId || visitToSave.supersedes_id)
+      ) {
+        return Response.json(
+          { message: "Staff Nurses cannot revise or supersede patient visits." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (updateVisit && (visitIds.size !== 1 || patientIds.size !== 1)) {
         return Response.json(
           {
@@ -2331,8 +2408,33 @@ export async function PUT(request: Request) {
         : [];
     const normalizedReady = syncMeta[0]?.normalized_ready === true;
 
+    if (
+      Array.isArray(snapshot.consultations) &&
+      !hasClinicAdminPrivileges(session.role) &&
+      (await hasUnauthorizedVisitChanges(
+        snapshot.consultations as Array<Record<string, unknown>>,
+      ))
+    ) {
+      return Response.json(
+        {
+          message:
+            "Staff Nurses cannot edit or import patient visits through shared-state updates.",
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     if (Array.isArray(snapshot.students)) {
       const patients = snapshot.students as Array<Record<string, unknown>>;
+      if (
+        !hasClinicAdminPrivileges(session.role) &&
+        (await hasExistingPatientEdits(patients))
+      ) {
+        return Response.json(
+          { message: "Staff Nurses cannot edit patient records." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (await validateNewPatientFields(patients)) {
         return Response.json(
           {

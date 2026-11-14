@@ -55,7 +55,7 @@ function renderStudentClinicalRecords(student) {
       <td><b>${escapeHtml(reason)}</b><br><span class="record-preview">${escapeHtml(note)}</span></td>
       <td>${escapeHtml(c.nurse || "—")}</td><td><span class="chip ${c.status === "Superseded" ? "chip-low" : "chip-available"}">${escapeHtml(c.status === "Superseded" ? "Revised" : c.outcome || "Active")}</span></td>
       <td><div class="row-actions"><button class="btn records-view-button" data-view-student-consult="${escapeHtml(c.id)}">View Records</button>
-      ${c.status === "Superseded" ? "" : `<button class="mini-btn" data-edit-student-consult="${escapeHtml(c.id)}" title="Edit Patient Visit">${ICONS.edit}</button>`}</div></td></tr>`;
+      ${c.status === "Superseded" || !canEditClinicRecords() ? "" : `<button class="mini-btn" data-edit-student-consult="${escapeHtml(c.id)}" title="Edit Patient Visit">${ICONS.edit}</button>`}</div></td></tr>`;
         })
         .join("")
     : `<tr><td colspan="5"><div class="clinical-empty"><b>No clinical visits recorded yet.</b><span>Clinical visit records will appear here when available.</span></div></td></tr>`;
@@ -108,7 +108,7 @@ function renderStudentDetail(s, inModal = false) {
   return `<div class="${inModal ? "student-detail-content" : "card"}" ${inModal ? "" : 'style="margin-top:16px;"'}><div class="student-card">
     <div class="s-avatar">${escapeHtml(initials)}</div><div style="flex:1"><h3 style="font-size:19px">${escapeHtml(displayName)}</h3>
       <div style="color:var(--ink-soft);font-size:13px;margin-top:2px">${escapeHtml(s.institutionalCategory || s.course || "—")}</div></div>
-    <button class="btn" id="edit-student-profile-btn">${ICONS.edit} Edit Profile</button>
+    ${canEditClinicRecords() ? `<button class="btn" id="edit-student-profile-btn">${ICONS.edit} Edit Profile</button>` : ""}
     <button class="btn btn-teal" id="new-student-visit-btn">${ICONS.plus} New Patient Visit</button>
     ${canDeleteClinicRecords() ? `<button class="btn" id="archive-student-btn">${ICONS.archive} Move to Archive</button>` : ""}
   </div><div class="info-grid">
@@ -177,6 +177,7 @@ function bindConsultSearch() {
 }
 
 function openStudentForm(existing = null, returnToDetails = false) {
+  if(existing&&!canEditClinicRecords())return;
   let isEdit = !!existing;
   let editingStudent = existing;
   const f = existing || {
@@ -282,6 +283,10 @@ function openStudentForm(existing = null, returnToDetails = false) {
   let patientSaveInProgress=false;
   document.getElementById("sf-save").onclick=async()=>{
     if(patientSaveInProgress)return;
+    if(isEdit&&!canEditClinicRecords()){
+      toast("Permission denied","Staff Nurses cannot edit patient records.","err");
+      return;
+    }
     const last=document.getElementById("sf-lastname").value.trim(), first=document.getElementById("sf-firstname").value.trim(), middle=document.getElementById("sf-middle").value.trim();
     if(!last||!first){toast("Missing information","Last name and given name are required.","err");return;}
     const symptoms=selectedChecks('[data-check-group="patient-symptom"]');
@@ -464,7 +469,7 @@ function openStudentDetailModal(student) {
 function bindStudentDetailActions(student, root = document) {
   const find = (selector) => root.querySelector(selector);
   const editProfile = find("#edit-student-profile-btn");
-  if (editProfile) editProfile.onclick = () => openStudentForm(student, true);
+  if (editProfile && canEditClinicRecords()) editProfile.onclick = () => openStudentForm(student, true);
   const newVisit = find("#new-student-visit-btn");
   if (newVisit)
     newVisit.onclick = () => {
@@ -682,6 +687,7 @@ function normalizeGuardianContacted(value) {
 
 function openConsultationForm(student, existing = null) {
   if (!student) return;
+  if(existing&&!canEditClinicRecords())return;
   if (existing && existing.studentId !== student.id) {
     toast(
       "Visit does not match patient",
@@ -1297,7 +1303,7 @@ function viewConsultation(c) {
   openModal(`<div class="modal-head"><h3>${isSuperseded ? "Original" : "Clinical"} Visit Record</h3><button class="modal-close" onclick="closeModal()" aria-label="Close clinical visit record">${ICONS.x}</button></div>
      <div class="modal-body"><div class="visit-record-summary"><span>${isSuperseded ? "Original record · preserved for audit" : "Reason for clinic visit"}</span><strong>${escapeHtml(c.complaint || "Other")}</strong><small>${escapeHtml(c.studentName || "")} · ${escapeHtml(fmtDate(c.date))} at ${escapeHtml(c.time || "—")} · Revision ${c.revision || 1}${isSuperseded && c.supersededBy ? ` · Revised as ${escapeHtml(c.supersededBy)}` : ""}</small></div>
     <table class="record-detail-table"><tbody>${rows.map((r) => `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1] || "—")}</td></tr>`).join("")}</tbody></table></div>
-     <div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button><button class="btn" id="view-record-print">${ICONS.print} Print</button>${isSuperseded ? "" : `<button class="btn btn-dark" id="view-record-edit">${ICONS.edit} Edit Patient Visit</button>`}</div>`);
+     <div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button><button class="btn" id="view-record-print">${ICONS.print} Print</button>${isSuperseded || !canEditClinicRecords() ? "" : `<button class="btn btn-dark" id="view-record-edit">${ICONS.edit} Edit Patient Visit</button>`}</div>`);
   document.getElementById("view-record-print").onclick = () =>
     printConsultation(c);
   document.getElementById("view-record-edit")?.addEventListener("click", () => {
@@ -1422,11 +1428,11 @@ function renderConsultHistory() {
     ? items
         .map(
           (c) =>
-            `<tr><td>${fmtDate(c.date)}<br><span style="color:var(--ink-soft);font-size:11.5px">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.studentName)}</td><td>${escapeHtml(c.complaint === "Other" && c.reasonOther ? `Other: ${c.reasonOther}` : c.complaint)}</td><td>${escapeHtml(c.nurse)}</td><td>${escapeHtml(c.outcome || "—")}</td><td>${c.deleted ? '<span class="chip chip-void">Archived</span>' : c.status === "Superseded" ? '<span class="chip chip-low">Superseded</span>' : '<span class="chip chip-available">Active</span>'}</td><td><div class="row-actions"><button class="mini-btn" data-view-consult="${c.id}" title="View clinical record">${ICONS.search}</button><button class="mini-btn" data-print="${c.id}" title="Print">${ICONS.print}</button>${c.deleted ? (canDeleteClinicRecords() ? `<button class="mini-btn good" data-restore-consult="${c.id}" title="Restore visit">${ICONS.restore}</button>` : "") : c.status === "Superseded" ? "" : `<button class="mini-btn" data-edit-consult="${c.id}" title="Edit visit record">${ICONS.edit}</button>${canDeleteClinicRecords() ? `<button class="mini-btn" data-archive-consult="${c.id}" title="Move to Archive">${ICONS.archive}</button>` : ""}`}</div></td></tr>`,
+            `<tr><td>${fmtDate(c.date)}<br><span style="color:var(--ink-soft);font-size:11.5px">${escapeHtml(c.time)}</span></td><td>${escapeHtml(c.studentName)}</td><td>${escapeHtml(c.complaint === "Other" && c.reasonOther ? `Other: ${c.reasonOther}` : c.complaint)}</td><td>${escapeHtml(c.nurse)}</td><td>${escapeHtml(c.outcome || "—")}</td><td>${c.deleted ? '<span class="chip chip-void">Archived</span>' : c.status === "Superseded" ? '<span class="chip chip-low">Superseded</span>' : '<span class="chip chip-available">Active</span>'}</td><td><div class="row-actions"><button class="mini-btn" data-view-consult="${c.id}" title="View clinical record">${ICONS.search}</button><button class="mini-btn" data-print="${c.id}" title="Print">${ICONS.print}</button>            ${c.deleted ? (canDeleteClinicRecords() ? `<button class="mini-btn good" data-restore-consult="${c.id}" title="Restore visit">${ICONS.restore}</button>` : "") : c.status === "Superseded" || !canEditClinicRecords() ? "" : `<button class="mini-btn" data-edit-consult="${c.id}" title="Edit visit record">${ICONS.edit}</button>`}${!c.deleted&&canDeleteClinicRecords()&&c.status!=="Superseded" ? `<button class="mini-btn" data-archive-consult="${c.id}" title="Move to Archive">${ICONS.archive}</button>` : ""}</div></td></tr>`,
         )
         .join("")
     : `<tr><td colspan="7">${emptyState("No patient visits match your filters.")}</td></tr>`;
-  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits by patient, date, outcome, status, nurse, or ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option value="Deleted" ${status === "Deleted" ? "selected" : ""}>Archived</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button data-page="prev">${ICONS.chevleft}</button><button data-page="next">${ICONS.chevright}</button></div></div></div>`;
+  return `<div class="card"><div class="toolbar"><div class="search-box"><span class="ic">${ICONS.search}</span><input id="ch-search" value="${escapeHtml(rawQ)}" placeholder="Search visits by patient, date, outcome, status, nurse, or ID..."></div><select class="select-sm" id="ch-status"><option value="">All Status</option><option ${status === "Active" ? "selected" : ""}>Active</option><option ${status === "Superseded" ? "selected" : ""}>Superseded</option><option value="Deleted" ${status === "Deleted" ? "selected" : ""}>Archived</option></select></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Patient</th><th>Reason</th><th>Nurse</th><th>Outcome</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="pagination"><span>Page ${state.consultPage} of ${totalPages} · ${list.length} records</span><div class="page-btns"><button type="button" data-page="prev" aria-label="Previous visit history page" title="Previous page">${ICONS.chevleft}</button><button type="button" data-page="next" aria-label="Next visit history page" title="Next page">${ICONS.chevright}</button></div></div></div>`;
 }
 
 function bindConsultHistory() {
