@@ -1412,10 +1412,22 @@ begin
     and username = 'super admin'
     and role = 'Super Admin'
     and status = 'Active'
-    and deleted_at is null;
+    and deleted_at is null
+    and password_hash is null;
 
   if not found then
-    raise exception 'The protected Super Admin account is not available.';
+    if not exists (
+      select 1
+      from public.clinic_users
+      where id = 'SYS-SUPER-ADMIN'
+        and username = 'super admin'
+        and role = 'Super Admin'
+        and status = 'Active'
+        and deleted_at is null
+        and password_hash is not null
+    ) then
+      raise exception 'The protected Super Admin account is not available.';
+    end if;
   end if;
 end;
 $$;

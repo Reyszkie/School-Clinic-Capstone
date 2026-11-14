@@ -1,6 +1,16 @@
+import { timingSafeEqual } from "node:crypto";
 import { createClinicSessionCookie } from "../session";
 
 export const dynamic = "force-dynamic";
+
+function matchesConfiguredPassword(candidate: string, configured: string) {
+  const candidateBytes = Buffer.from(candidate);
+  const configuredBytes = Buffer.from(configured);
+  return (
+    candidateBytes.length === configuredBytes.length &&
+    timingSafeEqual(candidateBytes, configuredBytes)
+  );
+}
 
 function authEmail(username: string) {
   return `${username.toLowerCase()}@mqc-clinic.local`;
@@ -33,7 +43,7 @@ export async function POST(request: Request) {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
     if (!url || !key) throw new Error("Supabase server configuration is missing.");
-    const profileResponse = await fetch(`${url}/rest/v1/clinic_users?username=eq.${encodeURIComponent(username)}&select=id,name,role,username,status,auth_user_id,deleted_at,appearance_theme&limit=1`, {
+    const profileResponse = await fetch(`${url}/rest/v1/clinic_users?username=eq.${encodeURIComponent(username)}&select=id,name,role,username,status,auth_user_id,deleted_at,appearance_theme,password_hash&limit=1`, {
       headers: supabaseHeaders(key),
       cache: "no-store",
     });
@@ -42,6 +52,32 @@ export async function POST(request: Request) {
     const profile = profiles[0];
     if (!profile?.id || profile.status !== "Active" || profile.deleted_at) {
       return Response.json({ message: "Invalid username or password." }, { status: 401 });
+    }
+
+    if (
+      username === "super admin" &&
+      !profile.password_hash &&
+      process.env.SUPER_ADMIN_INITIAL_PASSWORD &&
+      matchesConfiguredPassword(
+        password,
+        process.env.SUPER_ADMIN_INITIAL_PASSWORD,
+      )
+    ) {
+      const setupResponse = await fetch(
+        `${url}/rest/v1/rpc/set_super_admin_password`,
+        {
+          method: "POST",
+          headers: supabaseHeaders(key),
+          body: JSON.stringify({
+            p_password: process.env.SUPER_ADMIN_INITIAL_PASSWORD,
+          }),
+          cache: "no-store",
+        },
+      );
+      if (!setupResponse.ok)
+        throw new Error(
+          `Super Admin password initialization returned ${setupResponse.status}`,
+        );
     }
 
     const response = await fetch(`${url}/rest/v1/rpc/authenticate_clinic_user`, {
