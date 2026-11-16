@@ -976,6 +976,37 @@ alter table public.audit_logs enable row level security;
 -- Audit writes use the server-side secret key; do not expose direct anon/authenticated access.
 drop policy if exists "audit_logs_all_access" on public.audit_logs;
 
+create table if not exists public.clinic_sessions (
+  user_id text primary key references public.clinic_users(id) on delete cascade,
+  token_hash text not null unique check (token_hash ~ '^[0-9a-f]{64}$'),
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.clinic_sessions enable row level security;
+revoke all on public.clinic_sessions from public, anon, authenticated;
+
+create or replace function public.release_clinic_session_on_account_inactive()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if (old.status = 'Active' and new.status = 'Disabled')
+    or (old.deleted_at is null and new.deleted_at is not null) then
+    delete from public.clinic_sessions where user_id = new.id;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.release_clinic_session_on_account_inactive() from public, anon, authenticated;
+drop trigger if exists clinic_users_release_session_on_inactive on public.clinic_users;
+create trigger clinic_users_release_session_on_inactive
+after update of status, deleted_at on public.clinic_users
+for each row execute function public.release_clinic_session_on_account_inactive();
+
 create table if not exists public.clinic_login_attempts (
   username text primary key,
   failed_attempts integer not null default 0 check (failed_attempts >= 0),
@@ -1228,6 +1259,226 @@ revoke all on function public.get_clinic_login_lockout(text) from public, anon, 
 grant execute on function public.get_clinic_login_lockout(text) to service_role;
 revoke all on function public.record_clinic_login_attempt(text, boolean) from public, anon, authenticated;
 grant execute on function public.record_clinic_login_attempt(text, boolean) to service_role;
+
+create or replace function public.create_clinic_session(
+  p_user_id text,
+  p_token_hash text,
+  p_expires_at timestamptz
+)
+returns table (
+  created boolean,
+  reason text,
+  expires_at timestamptz,
+  locked_until timestamptz,
+  permanently_disabled boolean,
+  lockout_stage smallint,
+  failed_attempts integer
+)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_username text;
+  v_attempts public.clinic_login_attempts%rowtype;
+  v_user public.clinic_users%rowtype;
+  v_existing_session public.clinic_sessions%rowtype;
+  v_now timestamptz := clock_timestamp();
+begin
+  if p_user_id is null or p_token_hash is null
+    or p_token_hash !~ '^[0-9a-f]{64}$'
+    or p_expires_at is null
+    or p_expires_at <= v_now
+    or p_expires_at > v_now + interval '30 days 1 minute' then
+    raise exception 'Invalid clinic session details.';
+  end if;
+
+  select users.username
+    into v_username
+  from public.clinic_users as users
+  where users.id = p_user_id;
+  if not found then
+    return query select false, 'account_disabled'::text, null::timestamptz,
+                        null::timestamptz, false, 0::smallint, 0;
+    return;
+  end if;
+
+  insert into public.clinic_login_attempts (username)
+  values (v_username)
+  on conflict (username) do nothing;
+
+  select attempts.*
+    into v_attempts
+  from public.clinic_login_attempts as attempts
+  where attempts.username = v_username
+  for update;
+  v_now := clock_timestamp();
+
+  if v_attempts.permanently_disabled_at is not null then
+    return query select false, 'permanently_disabled'::text, null::timestamptz,
+                        null::timestamptz, true,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
+    return;
+  end if;
+  if v_attempts.locked_until > v_now then
+    return query select false, 'locked'::text, null::timestamptz,
+                        v_attempts.locked_until, false,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
+    return;
+  end if;
+
+  select users.*
+    into v_user
+  from public.clinic_users as users
+  where users.id = p_user_id
+    and users.username = v_username
+  for update;
+  if not found or v_user.status <> 'Active' or v_user.deleted_at is not null then
+    return query select false, 'account_disabled'::text, null::timestamptz,
+                        null::timestamptz, false,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
+    return;
+  end if;
+
+  select sessions.*
+    into v_existing_session
+  from public.clinic_sessions as sessions
+  where sessions.user_id = p_user_id
+  for update;
+
+  if found and v_existing_session.expires_at > v_now then
+    insert into public.audit_logs (
+      user_id, user_name, username, role, action, event_details,
+      module, status, created_at
+    )
+    values (
+      v_user.id, v_user.name, v_user.username, v_user.role,
+      'Concurrent Login Rejected',
+      'A login was rejected because this account already has an active session on another browser or device.',
+      'Authentication', 'Warning', v_now
+    );
+    return query select false, 'active_session'::text,
+                        v_existing_session.expires_at, null::timestamptz, false,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
+    return;
+  end if;
+
+  if found then
+    insert into public.audit_logs (
+      user_id, user_name, username, role, action, event_details,
+      module, status, created_at
+    )
+    values (
+      v_user.id, v_user.name, v_user.username, v_user.role,
+      'Session Expired',
+      'The previous clinic session expired and was released when a new session was established.',
+      'Authentication', 'Warning', v_now
+    );
+  end if;
+
+  insert into public.clinic_sessions (user_id, token_hash, expires_at, created_at)
+  values (p_user_id, p_token_hash, p_expires_at, v_now)
+  on conflict (user_id) do update
+  set token_hash = excluded.token_hash,
+      expires_at = excluded.expires_at,
+      created_at = excluded.created_at;
+
+  update public.clinic_login_attempts
+  set failed_attempts = 0,
+      lockout_stage = 0,
+      locked_until = null,
+      updated_at = v_now
+  where username = v_username;
+
+  insert into public.audit_logs (
+    user_id, user_name, username, role, action, event_details,
+    module, status, created_at
+  )
+  values (
+    v_user.id, v_user.name, v_user.username, v_user.role,
+    'Signed In', 'A new clinic session was established.',
+    'Authentication', 'Success', v_now
+  );
+
+  return query select true, null::text, p_expires_at, null::timestamptz,
+                      false, 0::smallint, 0;
+end;
+$$;
+
+create or replace function public.validate_clinic_session(
+  p_user_id text,
+  p_token_hash text
+)
+returns table (is_valid boolean)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  return query
+  select exists (
+    select 1
+    from public.clinic_sessions as sessions
+    join public.clinic_users as users on users.id = sessions.user_id
+    where sessions.user_id = p_user_id
+      and sessions.token_hash = p_token_hash
+      and sessions.expires_at > clock_timestamp()
+      and users.status = 'Active'
+      and users.deleted_at is null
+  );
+end;
+$$;
+
+create or replace function public.release_clinic_session(
+  p_user_id text,
+  p_token_hash text
+)
+returns table (released boolean)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_user public.clinic_users%rowtype;
+  v_released_user_id text;
+  v_now timestamptz := clock_timestamp();
+begin
+  delete from public.clinic_sessions as sessions
+  where sessions.user_id = p_user_id
+    and sessions.token_hash = p_token_hash
+  returning sessions.user_id into v_released_user_id;
+
+  if not found then
+    return query select false;
+    return;
+  end if;
+
+  select users.*
+    into v_user
+  from public.clinic_users as users
+  where users.id = v_released_user_id;
+  if found then
+    insert into public.audit_logs (
+      user_id, user_name, username, role, action, event_details,
+      module, status, created_at
+    )
+    values (
+      v_user.id, v_user.name, v_user.username, v_user.role,
+      'Logout', 'The active clinic session was ended by the account holder.',
+      'Authentication', 'Success', v_now
+    );
+  end if;
+
+  return query select true;
+end;
+$$;
+
+revoke all on function public.create_clinic_session(text, text, timestamptz) from public, anon, authenticated;
+grant execute on function public.create_clinic_session(text, text, timestamptz) to service_role;
+revoke all on function public.validate_clinic_session(text, text) from public, anon, authenticated;
+grant execute on function public.validate_clinic_session(text, text) to service_role;
+revoke all on function public.release_clinic_session(text, text) from public, anon, authenticated;
+grant execute on function public.release_clinic_session(text, text) to service_role;
 
 create or replace function public.reactivate_clinic_user(
   p_user_id text,

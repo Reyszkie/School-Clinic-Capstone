@@ -98,11 +98,20 @@ function attachShellEvents(){
   document.getElementById('logout-btn').onclick=()=>{
     if(logoutConfirmationOpen||logoutTransitionRunning)return;
     logoutConfirmationOpen=true;
-    confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, loadingLabel:"Signing out...", onCancel:()=>{logoutConfirmationOpen=false;}, onConfirm:()=>{
+    confirmDialog({title:"Log out?", msg:"You will be returned to the sign-in screen.", okLabel:"Log Out", danger:false, loadingLabel:"Signing out...", onCancel:()=>{logoutConfirmationOpen=false;}, onConfirm:async()=>{
       logoutTransitionRunning=true;
-      const auditWrite=logAudit("Logout","Authentication","Success",false);
-      auditWrite.finally(()=>fetch('/api/auth/logout',{method:'POST'}))
-        .catch(error=>console.error('MQC Clinic: could not clear the server session cookie.',error));
+      try{
+        const response=await fetch('/api/auth/logout',{method:'POST',cache:'no-store'});
+        if(!response.ok){
+          const result=await response.json().catch(()=>({}));
+          throw new Error(result.message||`Session release returned ${response.status}.`);
+        }
+      }catch(error){
+        logoutTransitionRunning=false;
+        logoutConfirmationOpen=false;
+        toast("Logout failed",error.message||"The active session could not be released. Please try again.","err");
+        return;
+      }
       clearAuthSession();
       state.loggedIn=false; state.currentUser=null; state.page="dashboard"; state.loginAlertsShown=false;
       document.getElementById('app').classList.add('logout-exit');

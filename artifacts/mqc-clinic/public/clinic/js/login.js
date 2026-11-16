@@ -52,6 +52,14 @@ function resetLoginRecaptcha() {
   }
 }
 
+async function releaseUninitializedLoginSession() {
+  const response=await fetch('/api/auth/logout',{method:'POST',cache:'no-store'});
+  if(!response.ok){
+    const result=await response.json().catch(()=>({}));
+    throw new Error(result.message||`Session release returned ${response.status}.`);
+  }
+}
+
 function renderLogin(){
   return `
   <div class="login-page">
@@ -166,10 +174,15 @@ function attachLoginFormEvents(){
       hydrated=await hydrateFromSharedStorage();
       if(!hydrated&&!sharedStorageMissing)throw new Error('Shared clinic records could not be loaded. Check the connection and try again.');
     }catch(error){
-      await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
+      let cleanupWarning="";
+      try{await releaseUninitializedLoginSession();}
+      catch(cleanupError){
+        console.error("MQC Clinic: failed to release an uninitialized sign-in session.",cleanupError);
+        cleanupWarning=" The sign-in session may remain active until it expires.";
+      }
       resetLoginRecaptcha();
       spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
-      errEl.textContent=error.message||'Shared clinic records could not be loaded.';
+      errEl.textContent=(error.message||'Shared clinic records could not be loaded.')+cleanupWarning;
       errEl.style.display='block';
       return;
     }
@@ -177,10 +190,15 @@ function attachLoginFormEvents(){
     if(hasClinicAdminPrivileges(found.role)&&((!hydrated&&sharedStorageMissing)||sharedStorageNeedsBootstrap)){
       try{await saveToClinicState(true,[],true);}
       catch(error){
-        await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
+        let cleanupWarning="";
+        try{await releaseUninitializedLoginSession();}
+        catch(cleanupError){
+          console.error("MQC Clinic: failed to release an uninitialized sign-in session.",cleanupError);
+          cleanupWarning=" The sign-in session may remain active until it expires.";
+        }
         resetLoginRecaptcha();
         spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
-        errEl.textContent=error.message||'Clinic data could not be initialized.';
+        errEl.textContent=(error.message||'Clinic data could not be initialized.')+cleanupWarning;
         errEl.style.display='block';
         return;
       }
@@ -195,7 +213,6 @@ function attachLoginFormEvents(){
     startClinicRefresh();
     saveAuthSession(visibleUser);
     spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
-    logAudit("Signed In","Authentication","Success",false);
     render();
     if(shouldShowAlerts)openLoginAlertsModal();
     toast("Signed in",`Welcome back, ${state.currentUser.name}.`,"ok");

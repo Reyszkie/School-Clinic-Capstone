@@ -1,5 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
-import { createClinicSessionCookie } from "../session";
+import {
+  clinicSessionExpiresAt,
+  createClinicSessionCookie,
+  createClinicSessionId,
+  hashClinicSessionId,
+  readActiveClinicSession,
+} from "../session";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +44,12 @@ type LoginSecurityState = {
   permanently_disabled?: boolean;
   lockout_stage?: number;
   failed_attempts?: number;
+};
+
+type ClinicSessionCreationResult = LoginSecurityState & {
+  created?: boolean;
+  reason?: string | null;
+  expires_at?: string | null;
 };
 
 function loginSecurityResponse(state: LoginSecurityState) {
@@ -114,6 +126,12 @@ export async function POST(request: Request) {
     if (!recaptchaSecret) throw new Error("Google reCAPTCHA server configuration is missing.");
     if (!(await verifyRecaptcha(recaptchaToken, recaptchaSecret))) {
       return Response.json({ message: "Google reCAPTCHA verification failed. Please try again." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    }
+
+    if (await readActiveClinicSession(request)) {
+      return Response.json({
+        message: "This browser already has an active clinic session. Please log out from the existing session before signing in to another account.",
+      }, { status: 409, headers: { "Cache-Control": "no-store" } });
     }
 
     const lockoutRows = await supabaseRpc<LoginSecurityState[]>(
@@ -214,15 +232,41 @@ export async function POST(request: Request) {
       return Response.json({ message: "Invalid username or password." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
 
-    const successes = await supabaseRpc<LoginSecurityState[]>(
+    const rememberSession = rememberMe === true;
+    const sessionId = createClinicSessionId();
+    const expiresAt = clinicSessionExpiresAt(rememberSession);
+    const sessions = await supabaseRpc<ClinicSessionCreationResult[]>(
       url,
       key,
-      "record_clinic_login_attempt",
-      { p_username: username, p_succeeded: true },
+      "create_clinic_session",
+      {
+        p_user_id: profile.id,
+        p_token_hash: hashClinicSessionId(sessionId),
+        p_expires_at: new Date(expiresAt * 1000).toISOString(),
+      },
     );
-    const successSecurityState = successes[0];
-    if (successSecurityState && (successSecurityState.permanently_disabled || successSecurityState.is_locked)) {
-      return loginSecurityResponse(successSecurityState);
+    const sessionState = sessions[0];
+    if (!sessionState) throw new Error("Supabase returned no clinic session result.");
+    if (!sessionState.created) {
+      if (sessionState.reason === "active_session") {
+        return Response.json({
+          message: "This account is already logged in on another device or browser. Please log out from the existing session before attempting to log in again.",
+        }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
+      if (sessionState.reason === "locked" || sessionState.reason === "permanently_disabled") {
+        return loginSecurityResponse({
+          ...sessionState,
+          is_locked: sessionState.reason === "locked",
+          permanently_disabled: sessionState.reason === "permanently_disabled",
+        });
+      }
+      if (sessionState.reason === "account_disabled") {
+        return Response.json(
+          { message: "This account is disabled or no longer active." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      throw new Error(`Supabase rejected clinic session creation: ${sessionState.reason || "unknown reason"}`);
     }
 
     const profileName = profile.name || profile.username || "Clinic staff";
@@ -234,7 +278,7 @@ export async function POST(request: Request) {
       username: profile.username || username,
       status: profile.status,
       appearanceTheme: profile.appearance_theme || "forest",
-    }, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(profile.id, profileName, rememberMe === true) } });
+    }, { headers: { "Cache-Control": "no-store", "Set-Cookie": createClinicSessionCookie(profile.id, profileName, sessionId, rememberSession, expiresAt) } });
   } catch (error) {
     console.error("Unable to authenticate clinic account", error);
     return Response.json({ message: "Clinic account authentication is unavailable." }, { status: 503 });
