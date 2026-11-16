@@ -964,7 +964,7 @@ alter table public.audit_logs add column if not exists lockout_duration_minutes 
 alter table public.audit_logs drop constraint if exists audit_logs_status_check;
 alter table public.audit_logs
   add constraint audit_logs_status_check
-  check (status in ('Success', 'Warning', 'Error', 'Locked'));
+  check (status in ('Success', 'Warning', 'Error', 'Locked', 'Disabled'));
 drop trigger if exists audit_logs_prevent_mutation on public.audit_logs;
 update public.audit_logs as logs
 set role = users.role
@@ -979,38 +979,90 @@ drop policy if exists "audit_logs_all_access" on public.audit_logs;
 create table if not exists public.clinic_login_attempts (
   username text primary key,
   failed_attempts integer not null default 0 check (failed_attempts >= 0),
+  lockout_stage smallint not null default 0,
   locked_until timestamptz,
+  permanently_disabled_at timestamptz,
   updated_at timestamptz not null default now()
 );
+
+alter table public.clinic_login_attempts
+  add column if not exists lockout_stage smallint not null default 0;
+alter table public.clinic_login_attempts
+  add column if not exists permanently_disabled_at timestamptz;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.clinic_login_attempts'::regclass
+      and conname = 'clinic_login_attempts_lockout_stage_check'
+  ) then
+    alter table public.clinic_login_attempts
+      add constraint clinic_login_attempts_lockout_stage_check
+      check (lockout_stage between 0 and 4);
+  end if;
+end;
+$$;
+update public.clinic_login_attempts
+set lockout_stage = 1
+where failed_attempts >= 5 and lockout_stage = 0;
 
 alter table public.clinic_login_attempts enable row level security;
 revoke all on public.clinic_login_attempts from public, anon, authenticated;
 
+drop function if exists public.get_clinic_login_lockout(text);
 create or replace function public.get_clinic_login_lockout(p_username text)
-returns table (is_locked boolean, locked_until timestamptz)
+returns table (
+  is_locked boolean,
+  locked_until timestamptz,
+  permanently_disabled boolean,
+  lockout_stage smallint,
+  failed_attempts integer
+)
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
 declare
   v_locked_until timestamptz;
+  v_permanently_disabled boolean;
+  v_lockout_stage smallint;
+  v_failed_attempts integer;
 begin
-  select attempts.locked_until
-    into v_locked_until
+  select attempts.locked_until,
+         attempts.permanently_disabled_at is not null,
+         attempts.lockout_stage,
+         attempts.failed_attempts
+    into v_locked_until, v_permanently_disabled, v_lockout_stage, v_failed_attempts
   from public.clinic_login_attempts as attempts
   where attempts.username = p_username;
 
+  if not found then
+    return query select false, null::timestamptz, false, 0::smallint, 0;
+    return;
+  end if;
+
   return query
   select coalesce(v_locked_until > clock_timestamp(), false),
-         case when v_locked_until > clock_timestamp() then v_locked_until else null end;
+         case when v_locked_until > clock_timestamp() then v_locked_until else null end,
+         v_permanently_disabled,
+         v_lockout_stage,
+         v_failed_attempts;
 end;
 $$;
 
+drop function if exists public.record_clinic_login_attempt(text, boolean);
 create or replace function public.record_clinic_login_attempt(
   p_username text,
   p_succeeded boolean
 )
-returns table (is_locked boolean, locked_until timestamptz, newly_locked boolean)
+returns table (
+  is_locked boolean,
+  locked_until timestamptz,
+  permanently_disabled boolean,
+  lockout_stage smallint,
+  failed_attempts integer
+)
 language plpgsql
 security definer
 set search_path = public, pg_temp
@@ -1019,11 +1071,18 @@ declare
   v_username text := p_username;
   v_attempts public.clinic_login_attempts%rowtype;
   v_user public.clinic_users%rowtype;
-  v_now timestamptz := clock_timestamp();
+  v_now timestamptz;
   v_failed_attempts integer;
+  v_next_stage smallint;
+  v_stage_threshold integer;
+  v_lockout_minutes integer;
+  v_event_details text;
 begin
-  if v_username = '' then
+  if v_username is null or v_username = '' then
     raise exception 'A username is required to record a login attempt.';
+  end if;
+  if p_succeeded is null then
+    raise exception 'A login attempt result is required.';
   end if;
 
   insert into public.clinic_login_attempts (username)
@@ -1035,60 +1094,133 @@ begin
   from public.clinic_login_attempts as attempts
   where attempts.username = v_username
   for update;
+  v_now := clock_timestamp();
+
+  if v_attempts.permanently_disabled_at is not null then
+    return query select false, null::timestamptz, true,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
+    return;
+  end if;
 
   if v_attempts.locked_until > v_now then
-    return query select true, v_attempts.locked_until, false;
+    return query select true, v_attempts.locked_until, false,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
     return;
+  end if;
+
+  if v_attempts.locked_until is not null then
+    update public.clinic_login_attempts
+    set failed_attempts = 0, locked_until = null, updated_at = v_now
+    where username = v_username
+    returning * into v_attempts;
   end if;
 
   if p_succeeded then
     update public.clinic_login_attempts
-    set failed_attempts = 0, locked_until = null, updated_at = v_now
+    set failed_attempts = 0,
+        lockout_stage = 0,
+        locked_until = null,
+        updated_at = v_now
     where username = v_username;
-    return query select false, null::timestamptz, false;
+    return query select false, null::timestamptz, false, 0::smallint, 0;
     return;
   end if;
 
-  v_failed_attempts := case
-    when v_attempts.locked_until is not null then 1
-    else v_attempts.failed_attempts + 1
-  end;
+  v_failed_attempts := v_attempts.failed_attempts + 1;
+  v_stage_threshold := case when v_attempts.lockout_stage = 0 then 5 else 3 end;
 
-  if v_failed_attempts >= 5 then
+  if v_failed_attempts < v_stage_threshold then
     update public.clinic_login_attempts
-    set failed_attempts = 5,
-        locked_until = v_now + interval '10 minutes',
+    set failed_attempts = v_failed_attempts,
+        locked_until = null,
         updated_at = v_now
     where username = v_username
     returning * into v_attempts;
 
-    select users.*
-      into v_user
-    from public.clinic_users as users
-    where users.username = p_username
-    limit 1;
+    return query select false, null::timestamptz, false,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
+    return;
+  end if;
 
-    if found then
-      insert into public.audit_logs (
-        user_id, user_name, username, role, action, event_details,
-        lockout_duration_minutes, module, status, created_at
+  v_next_stage := v_attempts.lockout_stage + 1;
+  select users.*
+    into v_user
+  from public.clinic_users as users
+  where users.username = v_username
+  limit 1;
+  if not found then
+    raise exception 'The clinic account for this login attempt no longer exists.';
+  end if;
+
+  if v_next_stage < 4 then
+    v_lockout_minutes := case v_next_stage
+      when 1 then 10
+      when 2 then 15
+      when 3 then 20
+    end;
+    v_event_details := case v_next_stage
+      when 1 then format(
+        'Account locked after %s consecutive failed login attempts. Lockout stage 1 of 3; duration %s minutes.',
+        v_failed_attempts, v_lockout_minutes
       )
-      values (
-        v_user.id, v_user.username, v_user.username, v_user.role,
-        'Account Locked',
-        'Account locked after 5 consecutive failed login attempts.',
-        10, 'Authentication', 'Locked', v_now
-      );
-    end if;
+      else format(
+        'Account locked after %s additional consecutive failed login attempts following expiration of stage %s lockout. Lockout stage %s of 3; duration %s minutes.',
+        v_failed_attempts, v_attempts.lockout_stage, v_next_stage, v_lockout_minutes
+      )
+    end;
 
-    return query select true, v_attempts.locked_until, true;
+    update public.clinic_login_attempts
+    set failed_attempts = v_failed_attempts,
+        lockout_stage = v_next_stage,
+        locked_until = v_now + make_interval(mins => v_lockout_minutes),
+        updated_at = v_now
+    where username = v_username
+    returning * into v_attempts;
+
+    insert into public.audit_logs (
+      user_id, user_name, username, role, action, event_details,
+      lockout_duration_minutes, module, status, created_at
+    )
+    values (
+      v_user.id, v_user.username, v_user.username, v_user.role,
+      'Account Locked', v_event_details, v_lockout_minutes,
+      'Authentication', 'Locked', v_now
+    );
+
+    return query select true, v_attempts.locked_until, false,
+                        v_attempts.lockout_stage, v_attempts.failed_attempts;
     return;
   end if;
 
   update public.clinic_login_attempts
-  set failed_attempts = v_failed_attempts, locked_until = null, updated_at = v_now
+  set failed_attempts = v_failed_attempts,
+      lockout_stage = 4,
+      locked_until = null,
+      permanently_disabled_at = v_now,
+      updated_at = v_now
   where username = v_username;
-  return query select false, null::timestamptz, false;
+
+  perform set_config('mqc.account_security_transition', 'true', true);
+  update public.clinic_users
+  set status = 'Disabled'
+  where id = v_user.id and status <> 'Disabled';
+  perform set_config('mqc.account_security_transition', 'false', true);
+
+  v_event_details := format(
+    'Account permanently disabled after %s additional consecutive failed login attempts following expiration of stage 3 lockout. Final lockout stage 4; reason: repeated failed authentication.',
+    v_failed_attempts
+  );
+  insert into public.audit_logs (
+    user_id, user_name, username, role, action, event_details,
+    lockout_duration_minutes, module, status, created_at
+  )
+  values (
+    v_user.id, v_user.username, v_user.username, v_user.role,
+    'Account Permanently Disabled', v_event_details, null,
+    'Authentication', 'Disabled', v_now
+  );
+
+  return query select false, null::timestamptz, true, 4::smallint, v_failed_attempts;
 end;
 $$;
 
@@ -1096,6 +1228,104 @@ revoke all on function public.get_clinic_login_lockout(text) from public, anon, 
 grant execute on function public.get_clinic_login_lockout(text) to service_role;
 revoke all on function public.record_clinic_login_attempt(text, boolean) from public, anon, authenticated;
 grant execute on function public.record_clinic_login_attempt(text, boolean) to service_role;
+
+create or replace function public.reactivate_clinic_user(
+  p_user_id text,
+  p_actor_id text
+)
+returns table (id text, name text, role text, username text, status text)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor public.clinic_users%rowtype;
+  v_user public.clinic_users%rowtype;
+  v_attempts public.clinic_login_attempts%rowtype;
+  v_target_username text;
+  v_now timestamptz;
+begin
+  select users.*
+    into v_actor
+  from public.clinic_users as users
+  where users.id = p_actor_id
+    and users.status = 'Active'
+    and users.deleted_at is null
+    and users.role in ('Head Nurse', 'Super Admin')
+  limit 1;
+  if not found then
+    raise exception 'Only an active Head Nurse or Super Admin can reactivate clinic accounts.';
+  end if;
+
+  select users.username
+    into v_target_username
+  from public.clinic_users as users
+  where users.id = p_user_id and users.deleted_at is null;
+  if not found then
+    raise exception 'This clinic account is no longer available.';
+  end if;
+
+  insert into public.clinic_login_attempts (username)
+  values (v_target_username)
+  on conflict (username) do nothing;
+
+  select attempts.*
+    into v_attempts
+  from public.clinic_login_attempts as attempts
+  where attempts.username = v_target_username
+  for update;
+  v_now := clock_timestamp();
+
+  select users.*
+    into v_user
+  from public.clinic_users as users
+  where users.id = p_user_id
+    and users.deleted_at is null
+  for update;
+  if not found or v_user.status <> 'Disabled' or v_user.username <> v_target_username then
+    raise exception 'Only a disabled, non-archived account can be reactivated.';
+  end if;
+
+  if (v_user.id = 'SYS-SUPER-ADMIN' or lower(v_user.username) = 'super admin')
+    and v_attempts.permanently_disabled_at is null then
+    raise exception 'The Super Admin maintenance account can only be reactivated after a permanent security lockout.';
+  end if;
+
+  perform set_config('mqc.account_security_transition', 'true', true);
+  update public.clinic_users
+  set status = 'Active'
+  where clinic_users.id = v_user.id
+  returning * into v_user;
+  perform set_config('mqc.account_security_transition', 'false', true);
+
+  update public.clinic_login_attempts
+  set failed_attempts = 0,
+      lockout_stage = 0,
+      locked_until = null,
+      permanently_disabled_at = null,
+      updated_at = v_now
+  where username = v_user.username;
+
+  insert into public.audit_logs (
+    user_id, user_name, username, role, action, event_details,
+    module, status, created_at
+  )
+  values (
+    v_actor.id, v_actor.name, v_actor.username, v_actor.role,
+    'Account Reactivated',
+    format(
+      'Account %s reactivated by %s after administrator review; progressive login lockout reset.',
+      v_user.username, v_actor.username
+    ),
+    'Authentication', 'Success', v_now
+  );
+
+  return query select v_user.id, v_user.name, v_user.role, v_user.username, v_user.status;
+end;
+$$;
+
+revoke all on function public.reactivate_clinic_user(text, text) from public, anon, authenticated;
+grant execute on function public.reactivate_clinic_user(text, text) to service_role;
 
 create table if not exists public.clinic_settings (
   id integer primary key default 1 check (id = 1),
@@ -1510,9 +1740,12 @@ begin
     if new.id is distinct from old.id
       or new.username is distinct from old.username
       or new.role is distinct from old.role
-      or new.status is distinct from old.status
       or new.deleted_at is distinct from old.deleted_at then
-      raise exception 'The Super Admin maintenance account cannot be modified, disabled, or archived.';
+      raise exception 'The Super Admin maintenance account cannot be modified or archived.';
+    end if;
+    if new.status is distinct from old.status
+      and current_setting('mqc.account_security_transition', true) is distinct from 'true' then
+      raise exception 'The Super Admin maintenance account status can only change through authorized account security controls.';
     end if;
   elsif new.role = 'Super Admin' then
     raise exception 'The Super Admin role is reserved for the maintenance account.';

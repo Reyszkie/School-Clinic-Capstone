@@ -349,7 +349,7 @@ function openStudentForm(existing = null, returnToDetails = false) {
               editingStudent=previous;state.selectedStudent=previous;
             }
           },
-          auditAction:`Patient Record Updated — ${rec.id}`,module:"Patients",detail:rec.id,successTitle:"Patient updated",successMessage:`${rec.name}'s record has been updated.`,refresh:renderConsultTabBody,
+          auditAction:`Patient Edited — ${rec.id}`,module:"Patients",detail:rec.id,successTitle:"Patient updated",successMessage:`${rec.name}'s record has been updated.`,refresh:renderConsultTabBody,
         });
       }
     }catch(error){toast("Patient not saved",error.message||"Unable to register this patient.","err");}
@@ -1170,7 +1170,7 @@ function openConsultationForm(student, existing = null) {
       try {
         const auditActions = [
           {
-            action: `${isEdit ? "Patient Visit Revised" : "Patient Visit Created"} — ${rec.id}`,
+            action: `${isEdit ? "Patient Visit Revised" : "New Patient Visit Created"} — ${rec.id}`,
             module: "Patient Visits",
             detail: rec.id,
           },

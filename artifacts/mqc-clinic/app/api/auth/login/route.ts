@@ -32,17 +32,38 @@ async function supabaseRpc<T>(url: string, key: string, name: string, body: Reco
   return (result ? JSON.parse(result) : undefined) as T;
 }
 
-function lockedResponse(lockedUntil: string) {
-  const retryAt = new Date(lockedUntil);
+type LoginSecurityState = {
+  is_locked?: boolean;
+  locked_until?: string | null;
+  permanently_disabled?: boolean;
+  lockout_stage?: number;
+  failed_attempts?: number;
+};
+
+function loginSecurityResponse(state: LoginSecurityState) {
+  if (state.permanently_disabled) {
+    return Response.json({
+      message: `This account has been permanently disabled after ${state.failed_attempts ?? 3} additional failed login attempts in the final lockout stage. Contact an authorized administrator to reactivate it.`,
+      accountStatus: "Disabled",
+      lockoutStage: state.lockout_stage ?? 4,
+    }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
+
+  if (!state.locked_until) throw new Error("Supabase returned an invalid account lockout timestamp.");
+  const retryAt = new Date(state.locked_until);
   if (Number.isNaN(retryAt.getTime())) throw new Error("Supabase returned an invalid account lockout timestamp.");
   const retryText = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Manila",
     dateStyle: "medium",
     timeStyle: "long",
   }).format(retryAt);
+  const stage = state.lockout_stage ?? 1;
+  const failedAttempts = state.failed_attempts ?? (stage === 1 ? 5 : 3);
   return Response.json({
-    message: `This account is temporarily locked after 5 failed login attempts. Try again at ${retryText} (Asia/Manila).`,
+    message: `This account is temporarily locked at stage ${stage} after ${failedAttempts} consecutive failed login attempts. Try again at ${retryText} (Asia/Manila).`,
     lockedUntil: retryAt.toISOString(),
+    lockoutStage: stage,
+    failedAttempts,
   }, { status: 423, headers: { "Cache-Control": "no-store" } });
 }
 
@@ -95,14 +116,15 @@ export async function POST(request: Request) {
       return Response.json({ message: "Google reCAPTCHA verification failed. Please try again." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
 
-    const lockoutRows = await supabaseRpc<Array<{ is_locked?: boolean; locked_until?: string | null }>>(
+    const lockoutRows = await supabaseRpc<LoginSecurityState[]>(
       url,
       key,
       "get_clinic_login_lockout",
       { p_username: username },
     );
-    if (lockoutRows[0]?.is_locked && lockoutRows[0].locked_until) {
-      return lockedResponse(lockoutRows[0].locked_until);
+    const currentSecurityState = lockoutRows[0];
+    if (currentSecurityState && (currentSecurityState.permanently_disabled || currentSecurityState.is_locked)) {
+      return loginSecurityResponse(currentSecurityState);
     }
 
     const profileResponse = await fetch(`${url}/rest/v1/clinic_users?username=eq.${encodeURIComponent(username)}&select=id,name,role,username,status,auth_user_id,deleted_at,appearance_theme,password_hash&limit=1`, {
@@ -147,7 +169,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({ p_username: username, p_password: password }),
       cache: "no-store",
     });
-    if (!legacyAuthResponse.ok && legacyAuthResponse.status !== 404) {
+    if (!legacyAuthResponse.ok && legacyAuthResponse.status !== 404 && legacyAuthResponse.status !== 429) {
       throw new Error(`Supabase returned ${legacyAuthResponse.status}`);
     }
     if (legacyAuthResponse.ok) {
@@ -173,32 +195,34 @@ export async function POST(request: Request) {
             status: "Active",
           };
         }
-      } else if (authResponse.status >= 500 || authResponse.status === 429) {
+      } else if (authResponse.status >= 500) {
         throw new Error(`Supabase Auth returned ${authResponse.status}`);
       }
     }
 
     if (!authenticatedUser) {
-      const failures = await supabaseRpc<Array<{ is_locked?: boolean; locked_until?: string | null }>>(
+      const failures = await supabaseRpc<LoginSecurityState[]>(
         url,
         key,
         "record_clinic_login_attempt",
         { p_username: username, p_succeeded: false },
       );
-      if (failures[0]?.is_locked && failures[0].locked_until) {
-        return lockedResponse(failures[0].locked_until);
+      const failedSecurityState = failures[0];
+      if (failedSecurityState && (failedSecurityState.permanently_disabled || failedSecurityState.is_locked)) {
+        return loginSecurityResponse(failedSecurityState);
       }
       return Response.json({ message: "Invalid username or password." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
 
-    const successes = await supabaseRpc<Array<{ is_locked?: boolean; locked_until?: string | null }>>(
+    const successes = await supabaseRpc<LoginSecurityState[]>(
       url,
       key,
       "record_clinic_login_attempt",
       { p_username: username, p_succeeded: true },
     );
-    if (successes[0]?.is_locked && successes[0].locked_until) {
-      return lockedResponse(successes[0].locked_until);
+    const successSecurityState = successes[0];
+    if (successSecurityState && (successSecurityState.permanently_disabled || successSecurityState.is_locked)) {
+      return loginSecurityResponse(successSecurityState);
     }
 
     const profileName = profile.name || profile.username || "Clinic staff";

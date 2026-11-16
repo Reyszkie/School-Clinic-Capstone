@@ -25,11 +25,11 @@ function renderUsersTab() {
       <td>${u.role}</td>
       <td><span class="chip ${u.status === "Active" ? "chip-available" : "chip-void"}">${u.status}</span></td>
       ${
-        canManageAccounts && !isProtectedSuperAdmin(u)
+        canManageAccounts && (!isProtectedSuperAdmin(u) || u.status === "Disabled")
           ? `<td><div class="row-actions">
-        <button class="mini-btn" data-edit-user="${u.id}" title="Edit">${ICONS.edit}</button>
-        <button class="mini-btn" data-toggle-user="${u.id}" title="${u.status === "Active" ? "Disable" : "Enable"}">${u.status === "Active" ? ICONS.x : ICONS.check}</button>
-        ${u.id === state.currentUser?.id ? "" : `<button class="mini-btn" data-archive-user="${u.id}" title="Move to Archive">${ICONS.archive}</button>`}
+        ${isProtectedSuperAdmin(u) ? "" : `<button class="mini-btn" data-edit-user="${u.id}" title="Edit">${ICONS.edit}</button>`}
+        <button class="mini-btn" data-toggle-user="${u.id}" title="${u.status === "Active" ? "Disable" : "Reactivate"}">${u.status === "Active" ? ICONS.x : ICONS.check}</button>
+        ${isProtectedSuperAdmin(u) || u.id === state.currentUser?.id ? "" : `<button class="mini-btn" data-archive-user="${u.id}" title="Move to Archive">${ICONS.archive}</button>`}
       </div></td>`
           : canManageAccounts
             ? `<td><span class="chip chip-available">Permanent account</span></td>`
@@ -499,7 +499,9 @@ function bindUsersTab() {
     b.onclick = async () => {
       const u = state.users.find((x) => x.id === b.dataset.toggleUser);
       if (!u) return;
-      if (isProtectedSuperAdmin(u)) {
+      const previousStatus = u.status,
+        nextStatus = u.status === "Active" ? "Disabled" : "Active";
+      if (isProtectedSuperAdmin(u) && nextStatus !== "Active") {
         toast("Protected account","The Super Admin maintenance account cannot be disabled.","err");
         return;
       }
@@ -525,10 +527,27 @@ function bindUsersTab() {
         );
         return;
       }
-      const previousStatus = u.status,
-        nextStatus = u.status === "Active" ? "Disabled" : "Active";
-      const updateStatus = () =>
-        commitClinicRecordMutation({
+      const updateStatus = async () => {
+        if (nextStatus === "Active") {
+          try {
+            const response = await fetch(`/api/auth/users/${encodeURIComponent(u.id)}/reactivate`, {
+              method: "POST",
+              cache: "no-store",
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              toast("Unable to reactivate account", result.message || "The account could not be reactivated.", "err");
+              return;
+            }
+            u.status = "Active";
+            renderAdminTabBody();
+            toast("Account reactivated", `${u.name} can sign in again.`);
+          } catch (error) {
+            toast("Unable to reactivate account", error.message || "The account could not be reactivated.", "err");
+          }
+          return;
+        }
+        await commitClinicRecordMutation({
           apply: () => {
             u.status = nextStatus;
           },
@@ -542,6 +561,7 @@ function bindUsersTab() {
           successMessage: `${u.name} is now ${nextStatus.toLowerCase()}.`,
           refresh: renderAdminTabBody,
         });
+      };
       if (nextStatus === "Disabled") {
         confirmDialog({
           title: "Are you sure you want to disable this user account?",

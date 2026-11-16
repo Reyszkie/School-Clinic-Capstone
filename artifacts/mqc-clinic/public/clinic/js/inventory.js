@@ -128,7 +128,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
       else EQUIPMENT=previousRecords;
     },
     save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id,existing?previousQuantity:null),
-    auditAction:existing?`Inventory Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`Inventory Item Added — ${record.name}`,
+    auditAction:existing?`${noun} Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`${noun} Added — ${record.name}`,
     detail:itemType==="medicine"?record.code:record.id,
     module:itemType==="medicine"?"Medicines":"Medical Supplies",successTitle:existing?`${noun} updated`:`${noun} added`,
     successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh:()=>{if(state.page==="inventory")refresh();else render();},

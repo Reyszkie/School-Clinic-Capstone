@@ -862,7 +862,10 @@ function normalizeRestoredAuditRow(row: Record<string, unknown>) {
   const action = typeof row.action === "string" ? row.action : "";
   const module = typeof row.module === "string" ? row.module : "";
   const status =
-    row.status === "Warning" || row.status === "Error" || row.status === "Locked"
+    row.status === "Warning" ||
+    row.status === "Error" ||
+    row.status === "Locked" ||
+    row.status === "Disabled"
       ? row.status
       : "Success";
   if (
