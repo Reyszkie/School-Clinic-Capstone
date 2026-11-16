@@ -561,15 +561,17 @@ async function readTable(tableName: string) {
   const sortColumn =
     tableName === "medicines"
       ? "code"
-      : tableName === "audit_logs"
-        ? "id"
-        : "id";
-  const sortDirection = tableName === "audit_logs" ? "desc" : "asc";
+      : "id";
+  const sortDirection = "asc";
+  const sortOrder =
+    tableName === "audit_logs"
+      ? "created_at.desc,id.desc"
+      : `${sortColumn}.${sortDirection}`;
   const pageSize = 1000;
   const rows: Array<Record<string, unknown>> = [];
   for (let offset = 0; ; offset += pageSize) {
     const response = await supabaseRequest(
-      `${tableName}?select=*&order=${sortColumn}.${sortDirection}`,
+      `${tableName}?select=*&order=${sortOrder}`,
       {
         headers: {
           Range: `${offset}-${offset + pageSize - 1}`,
