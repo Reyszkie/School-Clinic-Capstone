@@ -685,6 +685,8 @@ function applyStoredData(data) {
   if (catalogMigrationRequired) migratedInventory = true;
   if (Array.isArray(data.consultations)) CONSULTATIONS = data.consultations;
   if (Array.isArray(data.auditLogs)) AUDIT_LOGS = data.auditLogs;
+  if (Array.isArray(data.monthlyPatientCounts))
+    MONTHLY_PATIENT_COUNTS = data.monthlyPatientCounts;
   if (Array.isArray(data.deletedStudents))
     DELETED_STUDENTS = data.deletedStudents;
   else if (Array.isArray(data.students))

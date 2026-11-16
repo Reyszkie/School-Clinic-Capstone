@@ -350,9 +350,11 @@ The clinic API requires `SUPABASE_URL` and a matching server-side key to read or
 3. Keep `sslmode=require` in `DATABASE_URL`.
 4. Import the repository into Vercel from the repository root.
 5. Add `DATABASE_URL`, `PG_POOL_MAX=1`, `SUPABASE_URL`, and a matching `SUPABASE_SECRET_KEY` (or legacy `SUPABASE_SERVICE_ROLE_KEY`) to Vercel Production, Preview, and Development environments.
-6. Run `corepack pnpm db:push` once against the target Supabase database.
-7. Deploy the Next.js application.
-8. Verify `/api/healthz` after deployment.
+6. Set a high-entropy `CRON_SECRET` in Vercel Production; the configured Vercel Cron sends it as a bearer token.
+7. Run `supabase/schema.sql` in the target Supabase SQL Editor before deploying schema-dependent changes. The scheduled job archives the prior month's patient registrations at midnight Asia/Manila on the first day of each month, and runs its six-month cleanup in January and July. The monthly dashboard count and report history remain based on patient registration dates.
+8. The cleanup writes protected row snapshots to `clinic_archive_cleanup_backups` before deleting only six-month-old archived patients with no visit rows and inventory records with no clinical references. Linked patients and inventory remain preserved; in-database snapshots are recoverable but continue to use Supabase storage.
+9. Deploy the Next.js application.
+10. Verify `/api/healthz` after deployment and confirm `CRON_SECRET` is configured.
 
 ## Verification Commands
 

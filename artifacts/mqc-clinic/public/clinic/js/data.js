@@ -152,10 +152,13 @@ function activeClinicPatients(){
   });
 }
 function activeClinicVisits(includeSuperseded=false){
-  const patientIds=new Set(activeClinicPatients().map(patient=>patient.id));
+  const patientIds=new Set([
+    ...activeClinicPatients(),
+    ...(Array.isArray(DELETED_STUDENTS)?DELETED_STUDENTS:[]),
+  ].map(patient=>patient.id));
   const seen=new Set();
   return CONSULTATIONS.filter(visit=>{
-    if(!visit.id||visit.deleted||visit.status==="Deleted"||(!includeSuperseded&&visit.status==="Superseded")||!patientIds.has(visit.studentId)||seen.has(visit.id))return false;
+    if(!visit.id||visit.deleted||visit.status==="Deleted"||(!includeSuperseded&&visit.status==="Superseded")||(!patientIds.has(visit.studentId)&&visit.patientArchived!==true)||seen.has(visit.id))return false;
     seen.add(visit.id);
     return true;
   });
@@ -184,8 +187,28 @@ function clinicMetrics(asOfDate=todayDateString()){
   };
 }
 
+function patientRegistrationCountForMonth(month,activeOnly=false){
+  const currentMonth=todayDateString().slice(0,7);
+  if(month!==currentMonth&&!activeOnly){
+    const savedCount=MONTHLY_PATIENT_COUNTS.find(entry=>String(entry.monthStart||"").slice(0,7)===month);
+    if(savedCount)return Number(savedCount.registeredCount)||0;
+  }
+  const patientsById=new Map();
+  [...STUDENTS,...(Array.isArray(DELETED_STUDENTS)?DELETED_STUDENTS:[])].forEach(patient=>{
+    if(patient?.id)patientsById.set(patient.id,patient);
+  });
+  return [...patientsById.values()].filter(patient=>{
+    if(activeOnly&&patient.deleted)return false;
+    const createdAt=patient.createdAt||patient.created_at;
+    if(!createdAt)return false;
+    const createdDate=new Date(createdAt);
+    return !Number.isNaN(createdDate.getTime())&&manilaDateParts(createdDate).date.slice(0,7)===month;
+  }).length;
+}
+
 let AUDIT_LOGS = [];
 let INVENTORY_TRANSACTIONS = [];
+let MONTHLY_PATIENT_COUNTS = [];
 
 let DELETED_CONSULTATIONS = [];
 let DELETED_MEDICINES = [];

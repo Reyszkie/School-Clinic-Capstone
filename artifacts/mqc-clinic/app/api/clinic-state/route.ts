@@ -561,6 +561,8 @@ async function readTable(tableName: string) {
   const sortColumn =
     tableName === "medicines"
       ? "code"
+      : tableName === "clinic_monthly_patient_counts"
+        ? "month_start"
       : "id";
   const sortDirection = "asc";
   const sortOrder =
@@ -697,6 +699,7 @@ function patientFromRow(row: Record<string, unknown>) {
     deleted: Boolean(row.deleted_at),
     deletedAt: row.deleted_at,
     deletedBy: row.deleted_by,
+    createdAt: row.created_at,
   };
 }
 
@@ -741,6 +744,7 @@ function visitFromRow(
     nurseId: row.nurse_id,
     studentId: row.patient_id,
     studentName: patient?.name ?? row.patient_id,
+    patientArchived: Boolean(patient?.deleted_at),
     course: patient?.course,
     institutionalCategory: patient?.institutional_category ?? patient?.course,
     personnelType: patient?.personnel_type ?? "",
@@ -1263,6 +1267,7 @@ export async function GET(request: Request) {
       auditLogs,
       settingsRows,
       syncMeta,
+      monthlyCounts,
     ] = await Promise.all([
       readTable("patients"),
       readTable("medicines"),
@@ -1272,6 +1277,7 @@ export async function GET(request: Request) {
       readTable("audit_logs"),
       readTable("clinic_settings"),
       readTable("clinic_sync_meta"),
+      readTable("clinic_monthly_patient_counts"),
     ]);
     const normalizedReady = syncMeta[0]?.normalized_ready === true;
     const hasAnyNormalizedRows = [
@@ -1283,6 +1289,10 @@ export async function GET(request: Request) {
       auditLogs,
       settingsRows,
     ].some((table) => table.length > 0);
+    const monthlyPatientCounts = monthlyCounts.map((row) => ({
+      monthStart: String(row.month_start ?? ""),
+      registeredCount: toNumber(row.registered_count) ?? 0,
+    }));
     const hasNormalizedData =
       normalizedReady || (!rows[0] && hasAnyNormalizedRows);
     if (!hasNormalizedData && !rows[0]) {
@@ -1389,6 +1399,7 @@ export async function GET(request: Request) {
                 audit.user_id === session.userId,
             )
             .map((audit) => auditFromRow(audit, users)),
+          monthlyPatientCounts,
           ...(settingsRows[0]
             ? {
                 settings: {
@@ -1431,6 +1442,8 @@ export async function GET(request: Request) {
             delete staffSnapshot.purged;
             return { ...staffSnapshot, bootstrapRequired: true };
           })();
+    (normalized as Record<string, unknown>).monthlyPatientCounts =
+      monthlyPatientCounts;
     if (!hasClinicAdminPrivileges(session.role)) {
         delete (normalized as Record<string, unknown>).purged;
     }
@@ -1454,6 +1467,7 @@ export async function GET(request: Request) {
           deletedUsers: [],
           auditLogs: [],
           purged: [],
+          monthlyPatientCounts: stateData.monthlyPatientCounts ?? [],
           settings: {
             clinicName:
               savedSettings.clinicName ?? "Mary the Queen College School Clinic",

@@ -1,4 +1,10 @@
 {
   "buildCommand": "pnpm --filter @workspace/mqc-clinic run build",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/cron/record-management",
+      "schedule": "0 16 * * *"
+    }
+  ]
 }
