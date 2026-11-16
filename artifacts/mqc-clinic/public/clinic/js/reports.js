@@ -372,11 +372,6 @@ function currentEquipmentInventory() {
     (item) => !item.deleted && item.category === "Medical Supplies",
   ).sort((a, b) => a.name.localeCompare(b.name));
 }
-function currentMedicalEquipmentInventory() {
-  return EQUIPMENT.filter(
-    (item) => !item.deleted && item.category !== "Medical Supplies",
-  ).sort((a, b) => a.name.localeCompare(b.name));
-}
 function reportInventoryQuantity(quantity) {
   if (quantity === null || quantity === undefined || quantity === "") return "—";
   const parsed = Number(quantity);
@@ -479,7 +474,6 @@ function monthlyReportData(month) {
     ),
     medicineInventory: currentMedicineInventory(),
     equipmentInventory: currentEquipmentInventory(),
-    medicalEquipmentInventory: currentMedicalEquipmentInventory(),
     inventoryAlerts,
   };
 }
@@ -520,10 +514,6 @@ function monthlyReportHtml(month) {
     (item) =>
       `<tr><td>${escapeHtml(item.name)}</td><td>${reportInventoryQuantity(item.qty)}</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
   );
-  const medicalEquipmentInventoryRows = data.medicalEquipmentInventory.map(
-    (item) =>
-      `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category || "—")}</td><td>${reportInventoryQuantity(item.qty)}</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
-  );
   const alertMedicineRows = (list) =>
     list.map(
       (item) =>
@@ -544,7 +534,6 @@ function monthlyReportHtml(month) {
     <section class="monthly-report-block"><h5>Recorded Referrals</h5>${monthlyTable(["Patient", "Date", "Disposition"], referralRows, "No referrals were recorded for this month.")}</section>
     <section class="monthly-report-block"><h5>Medicine Inventory</h5><p class="inventory-report-note">Current medicine stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Medicine", "Category", "Current Qty", "Unit", "Production Date", "Status"], medicineInventoryRows, "No medicine inventory records.")}</section>
     <section class="monthly-report-block"><h5>Medical Supplies Inventory</h5><p class="inventory-report-note">Current medical supplies stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Supply", "Current Qty", "Status"], equipmentInventoryRows, "No medical supplies inventory records.")}</section>
-    <section class="monthly-report-block"><h5>Medical Equipment Inventory</h5><p class="inventory-report-note">Current equipment stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Equipment", "Category", "Current Qty", "Status"], medicalEquipmentInventoryRows, "No medical equipment inventory records.")}</section>
     <section class="monthly-report-block"><h5>Most Frequently Used Medicines / Treatments</h5>${monthlyTable(["Medicine / Treatment", "Uses"], medicineUse)}</section>
     <section class="monthly-report-block"><h5>Most Frequently Recorded Supplies and Tools</h5>${monthlyTable(["Supply / Tool", "Uses"], equipmentUse)}</section>
     <p class="monthly-report-footnote">${monthLabel} · ${data.visits.length} active visit record(s)</p>
