@@ -840,9 +840,12 @@ function auditFromRow(
     date,
     time,
     user: row.user_name,
+    username: row.username ?? linkedUser?.username ?? row.user_name,
     userId: row.user_id,
     role: row.role ?? linkedUser?.role ?? "Unknown",
     action: row.action,
+    eventDetails: row.event_details ?? "",
+    lockoutDurationMinutes: row.lockout_duration_minutes ?? null,
     module: row.module,
     status: row.status,
     timestamp: createdAt,
@@ -857,7 +860,9 @@ function normalizeRestoredAuditRow(row: Record<string, unknown>) {
   const action = typeof row.action === "string" ? row.action : "";
   const module = typeof row.module === "string" ? row.module : "";
   const status =
-    row.status === "Warning" || row.status === "Error" ? row.status : "Success";
+    row.status === "Warning" || row.status === "Error" || row.status === "Locked"
+      ? row.status
+      : "Success";
   if (
     id === null ||
     !Number.isSafeInteger(id) ||
@@ -877,7 +882,20 @@ function normalizeRestoredAuditRow(row: Record<string, unknown>) {
         : typeof row.user_name === "string"
           ? row.user_name
           : "System",
+    username: typeof row.username === "string" ? row.username : null,
     action,
+    event_details:
+      typeof row.eventDetails === "string"
+        ? row.eventDetails
+        : typeof row.event_details === "string"
+          ? row.event_details
+          : null,
+    lockout_duration_minutes:
+      typeof row.lockoutDurationMinutes === "number"
+        ? row.lockoutDurationMinutes
+        : typeof row.lockout_duration_minutes === "number"
+          ? row.lockout_duration_minutes
+          : null,
     module,
     status,
     created_at: parsedCreatedAt.toISOString(),

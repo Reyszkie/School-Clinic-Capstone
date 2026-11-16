@@ -1,4 +1,57 @@
 /* ================= LOGIN ================= */
+let loginRecaptchaWidget = null;
+
+async function initializeLoginRecaptcha() {
+  const note = document.getElementById("login-security-note");
+  loginRecaptchaWidget = null;
+  try {
+    const configResponse = await fetch("/api/auth/captcha-config", { cache: "no-store" });
+    const config = await configResponse.json().catch(() => ({}));
+    if (!configResponse.ok || !config.siteKey) {
+      throw new Error(config.message || "Google reCAPTCHA is not configured.");
+    }
+
+    if (!window.grecaptcha) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://www.google.com/recaptcha/api.js?render=explicit";
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error("Google reCAPTCHA could not be loaded."));
+        document.head.appendChild(script);
+      });
+    }
+    window.grecaptcha.ready(() => {
+      loginRecaptchaWidget = window.grecaptcha.render("login-recaptcha", {
+        sitekey: config.siteKey,
+        theme: "light",
+        callback: () => {
+          note.textContent = "Verification complete.";
+          note.classList.remove("login-security-error");
+        },
+        "expired-callback": () => {
+          note.textContent = "Please complete the reCAPTCHA verification.";
+        },
+        "error-callback": () => {
+          note.textContent = "Google reCAPTCHA could not be verified. Please try again.";
+          note.classList.add("login-security-error");
+        },
+      });
+      note.textContent = "Complete the security check before signing in.";
+    });
+  } catch (error) {
+    note.textContent = error.message || "Google reCAPTCHA is unavailable.";
+    note.classList.add("login-security-error");
+  }
+}
+
+function resetLoginRecaptcha() {
+  if (loginRecaptchaWidget !== null && window.grecaptcha) {
+    window.grecaptcha.reset(loginRecaptchaWidget);
+  }
+}
+
 function renderLogin(){
   return `
   <div class="login-page">
@@ -36,7 +89,8 @@ function renderLoginCard(){
           <button type="button" class="toggle-pw" id="toggle-pw" aria-label="Show password">${ICONS.eye}</button>
         </div>
       </div>
-      <div class="login-security-note">Identity verification required</div>
+      <div class="login-captcha" id="login-recaptcha"></div>
+      <div class="login-security-note" id="login-security-note" aria-live="polite">Loading security verification...</div>
       <button class="btn-primary" type="submit" id="login-btn">
         <div class="spinner" id="login-spinner"></div>
         <span id="login-btn-text">Sign In</span>
@@ -50,6 +104,7 @@ function attachLoginEvents(){
 }
 
 function attachLoginFormEvents(){
+  initializeLoginRecaptcha();
   document.getElementById('toggle-pw').onclick=()=>{
     const pw=document.getElementById('login-pass');
     const btn=document.getElementById('toggle-pw');
@@ -70,15 +125,26 @@ function attachLoginFormEvents(){
     if(!user || !pass){ errEl.textContent='Please enter both username and password.'; errEl.style.display='block'; return; }
     if(user!=="super admin"&&/\s/.test(user)){errEl.textContent='Username cannot contain spaces.';errEl.style.display='block';return;}
     if(user!=="super admin"&&!/^[A-Za-z0-9._-]{3,50}$/.test(user)){errEl.textContent='Username must be 3-50 letters, numbers, dots, underscores, or hyphens.';errEl.style.display='block';return;}
-    if(/\s/.test(pass)){errEl.textContent='Password cannot contain spaces.';errEl.style.display='block';return;}
+    if(loginRecaptchaWidget===null){
+      errEl.textContent='Google reCAPTCHA is not ready. Please wait and try again.';
+      errEl.style.display='block';
+      return;
+    }
+    const recaptchaToken=window.grecaptcha.getResponse(loginRecaptchaWidget);
+    if(!recaptchaToken){
+      errEl.textContent='Please complete the reCAPTCHA verification before signing in.';
+      errEl.style.display='block';
+      return;
+    }
     spinner.style.display='block';
     btnText.textContent='Signing in...';
     loginButton.disabled=true;
     if(serverHydrationPromise) await serverHydrationPromise;
     let response;
     try{
-      response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
+      response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass,recaptchaToken})});
     }catch(err){
+      resetLoginRecaptcha();
       spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
       errEl.textContent='Unable to connect to Supabase. Please try again.';
       errEl.style.display='block';
@@ -87,6 +153,7 @@ function attachLoginFormEvents(){
     if(!response.ok){
       spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
       const result=await response.json().catch(()=>({}));
+      resetLoginRecaptcha();
       errEl.textContent=result.message||'Invalid username or password.';
       errEl.style.display='block';
       return;
@@ -100,6 +167,7 @@ function attachLoginFormEvents(){
       if(!hydrated&&!sharedStorageMissing)throw new Error('Shared clinic records could not be loaded. Check the connection and try again.');
     }catch(error){
       await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
+      resetLoginRecaptcha();
       spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
       errEl.textContent=error.message||'Shared clinic records could not be loaded.';
       errEl.style.display='block';
@@ -110,6 +178,7 @@ function attachLoginFormEvents(){
       try{await saveToClinicState(true,[],true);}
       catch(error){
         await fetch('/api/auth/logout',{method:'POST'}).catch(()=>undefined);
+        resetLoginRecaptcha();
         spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
         errEl.textContent=error.message||'Clinic data could not be initialized.';
         errEl.style.display='block';
@@ -118,8 +187,18 @@ function attachLoginFormEvents(){
       clinicDataLoaded=true;
       clinicDataStatus="ready";
     }
-    openIdentityVerification(visibleUser,pass);
+    const shouldShowAlerts = !state.loginAlertsShown;
+    state.currentUser=visibleUser;
+    applyClinicTheme();
+    state.loggedIn=true;
+    state.loginAlertsShown=true;
+    startClinicRefresh();
+    saveAuthSession(visibleUser);
     spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
+    logAudit("Signed In","Authentication","Success",false);
+    render();
+    if(shouldShowAlerts)openLoginAlertsModal();
+    toast("Signed in",`Welcome back, ${state.currentUser.name}.`,"ok");
   });
 }
 
@@ -372,58 +451,4 @@ function openLoginAlertsModal() {
       render();
     };
   });
-}
-
-function openIdentityVerification(user,loginPassword=""){
-  const roleLabel=user.role||"Clinic staff";
-  openModal(`<div class="modal-head"><div><div class="eyebrow">IDENTITY CHECK</div><h3>Verify your identity</h3></div><button class="modal-close" id="verification-close" aria-label="Close">${ICONS.x}</button></div>
-    <div class="modal-body">
-      <div class="verification-banner"><span class="verification-lock">${ICONS.lock||""}</span><div><b>${escapeHtml(user.name||user.username)}</b><span>${escapeHtml(roleLabel)}</span></div></div>
-      <p class="verification-copy">For protected clinic access, confirm your password before entering the workspace.</p>
-      <form id="identity-verification-form">
-        <div class="f-field"><label for="verification-password">Confirm password</label><div class="input-row"><input type="password" id="verification-password" autocomplete="current-password" autofocus><button type="button" class="toggle-pw" id="verification-toggle" aria-label="Show password">${ICONS.eye}</button></div></div>
-        <div class="error-msg" id="verification-error"></div>
-        <div class="modal-foot"><button type="button" class="btn" id="verification-cancel">Cancel</button><button type="submit" class="btn btn-teal" id="verification-submit">Verify and continue</button></div>
-      </form>
-    </div>`,"sm");
-  const closeVerification=()=>{
-    clearAuthSession();
-    fetch('/api/auth/logout',{method:'POST'}).catch(error=>console.error('MQC Clinic: could not clear canceled verification session.',error));
-    closeModal();
-    render();
-  };
-  document.getElementById("verification-close").onclick=closeVerification;
-  document.getElementById("verification-cancel").onclick=closeVerification;
-  document.getElementById("verification-toggle").onclick=()=>{
-    const input=document.getElementById("verification-password");
-    const button=document.getElementById("verification-toggle");
-    const showing = input.type !== 'password';
-    input.type = showing ? 'password' : 'text';
-    button.innerHTML = showing ? ICONS.eye : ICONS.eye_off;
-    button.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
-  };
-  document.getElementById("identity-verification-form").onsubmit=(e)=>{
-    e.preventDefault();
-    const password = document.getElementById("verification-password").value;
-    const error=document.getElementById("verification-error");
-    if(password!==(user.password||loginPassword)){
-      error.textContent="That password does not match this clinic account.";
-      error.style.display="block";
-      logAudit("Identity Verification Failed","Authentication","Warning",false);
-      return;
-    }
-    const shouldShowAlerts = !state.loginAlertsShown;
-    state.currentUser=ensureVisibleClinicUser(user);
-    applyClinicTheme();
-    state.loggedIn=true;
-    state.loginAlertsShown = true;
-    startClinicRefresh();
-    saveAuthSession(user);
-    closeModal();
-    logAudit("Signed In","Authentication","Success",false);
-    logAudit("Identity Verified","Authentication","Success",false);
-    render();
-    if (shouldShowAlerts) openLoginAlertsModal();
-    toast("Identity verified",`Welcome back, ${state.currentUser.name}.`,"ok");
-  };
 }

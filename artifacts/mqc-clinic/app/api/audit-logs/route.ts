@@ -49,17 +49,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const userResponse = await supabaseRequest(`clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&deleted_at=is.null&select=id,name&limit=1`);
+    const userResponse = await supabaseRequest(`clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&deleted_at=is.null&select=id,name,username&limit=1`);
     if (!userResponse.ok) throw new Error(`clinic_users lookup returned ${userResponse.status}`);
-    const users = (await userResponse.json()) as Array<{ id?: string; name?: string }>;
+    const users = (await userResponse.json()) as Array<{ id?: string; name?: string; username?: string }>;
     if (!users[0]?.id) return Response.json({ message: "This clinic account is no longer active." }, { status: 401, headers: { "Cache-Control": "no-store" } });
 
-    const response = await supabaseRequest("audit_logs?select=id,user_id,user_name,role,action,module,status,created_at", {
+    const response = await supabaseRequest("audit_logs?select=id,user_id,user_name,username,role,action,event_details,lockout_duration_minutes,module,status,created_at", {
       method: "POST",
       headers: { Prefer: "return=representation" },
       body: JSON.stringify({
         user_id: users[0].id,
         user_name: users[0].name || session.userName,
+        username: users[0].username || session.username,
         role: session.role,
         action: detail ? `${action} — ${detail}`.slice(0, 500) : action,
         module,
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
       throw new Error(`audit_logs insert returned ${response.status}: ${details}`);
     }
 
-    const [saved] = await response.json() as Array<{ id: number; user_id: string; user_name: string; role: string; action: string; module: string; status: string; created_at: string }>;
+    const [saved] = await response.json() as Array<{ id: number; user_id: string; user_name: string; username: string; role: string; action: string; event_details: string | null; lockout_duration_minutes: number | null; module: string; status: string; created_at: string }>;
     if (!saved) throw new Error("audit_logs insert returned no saved record");
     return Response.json(saved, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

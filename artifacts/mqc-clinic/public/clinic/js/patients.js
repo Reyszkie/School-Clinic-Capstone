@@ -354,9 +354,9 @@ function openStudentForm(existing = null, returnToDetails = false) {
       }
     }catch(error){toast("Patient not saved",error.message||"Unable to register this patient.","err");}
     finally{patientSaveInProgress=false;if(saveButton.isConnected){saveButton.disabled=false;saveButton.innerHTML=saveLabel;}}
-    if(saved){
+    if(saved&&wasEdit){
       closeModal();
-      if(wasEdit&&returnToDetails){
+      if(returnToDetails){
         const updated=STUDENTS.find(patient=>patient.id===rec.id)||rec;
         const detailsModal=modalStack.find(backdrop=>backdrop.querySelector("#student-detail-modal-title"));
         const detailsBody=detailsModal?.querySelector(".modal-body");
@@ -410,7 +410,10 @@ async function saveRegisteredPatient(patient){
     successTitle:"Patient added",successMessage:`Welcome, ${record.name}! Added to patient records.`,
     refresh:renderConsultTabBody,
   });
-  if(saved)closeModal();
+  if(saved){
+    closeModal();
+    openConsultationForm(record);
+  }
   return saved;
 }
 
