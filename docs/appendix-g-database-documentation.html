@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appendix G: Database Documentation</title>
+  <style>
+    :root { color-scheme: light; font-family: Arial, Helvetica, sans-serif; color: #172033; }
+    body { max-width: 1000px; margin: 0 auto; padding: 2rem; line-height: 1.55; }
+    h1, h2 { color: #123b62; line-height: 1.2; }
+    h1 { border-bottom: 3px solid #1976a5; padding-bottom: .6rem; }
+    h2 { margin-top: 2rem; border-bottom: 1px solid #cbd5e1; padding-bottom: .3rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border: 1px solid #b8c5d1; padding: .55rem; text-align: left; vertical-align: top; }
+    th { background: #eaf2f8; }
+    code { background: #f0f3f6; padding: .1rem .25rem; border-radius: 3px; }
+    .meta { background: #f4f8fb; padding: .8rem 1rem; border-left: 4px solid #1976a5; }
+    .diagram { border: 1px solid #cbd5e1; background: #f8fafc; padding: .8rem; overflow-x: auto; white-space: pre; font: 13px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    @media print { body { max-width: none; padding: 0; font-size: 10pt; } h2 { break-after: avoid; } tr { break-inside: avoid; } a { color: inherit; text-decoration: none; } }
+  </style>
+</head>
+<body>
+  <h1>Appendix G: Database Documentation</h1>
+  <div class="meta"><strong>System:</strong> MQC School Clinic Management System<br><strong>Database platform:</strong> Supabase (PostgreSQL)<br><strong>Schema source:</strong> <code>supabase/schema.sql</code><br><strong>Documentation basis:</strong> Repository schema on <code>main</code>, reviewed November 17, 2026.</div>
+
+  <h2>G.1 Purpose and scope</h2>
+  <p>This appendix documents the database structure used by the school clinic application. The schema stores staff accounts and access state, patient profiles, clinical encounters, medicine and equipment/supply inventory, audit events, clinic configuration, and compatibility/migration data. The normalized tables are the primary record structure; <code>clinic_state</code> remains for compatibility with the shared snapshot API and migration workflows.</p>
+  <p>The schema is managed in <code>supabase/schema.sql</code>. Run that file in the SQL Editor for the target Supabase project before deploying application changes that depend on the schema. Vercel deployment does not execute SQL files.</p>
+
+  <h2>G.2 Entity relationship overview</h2>
+  <p>The diagram highlights core record relationships. Supporting security, settings, migration, and scheduled-maintenance tables are described in §G.3.</p>
+  <div class="diagram">CLINIC_USERS (1) ───────&lt; (many) CLINICAL_VISITS (many) &gt;─────── (1) PATIENTS
+       │                            │
+       ├── (0..1) CLINIC_SESSIONS   ├── (0..many) INVENTORY_DEDUCTIONS
+       └── (0..many) AUDIT_LOGS     ├── optional MEDICINES reference
+                                    └── optional EQUIPMENT reference
+
+A visit records its patient and may identify the nurse and inventory used.
+Inventory deductions use (visit_id, item_type, item_id) as a composite key.</div>
+  <p>A visit's medicine and equipment references are nullable and use <code>ON DELETE SET NULL</code>; inventory deduction rows record the affected inventory key as a typed identifier rather than a foreign key. Patient deletion is restricted by a trigger while visits remain undeleted.</p>
+
+  <h2>G.3 Tables and responsibilities</h2>
+  <table><thead><tr><th>Table</th><th>Purpose and key relationships</th></tr></thead><tbody>
+    <tr><td><code>clinic_users</code></td><td>Staff identity, role, username, bcrypt password hash, active/disabled status, appearance preference, and soft-deletion metadata. Optionally links to Supabase Auth through <code>auth_user_id</code>.</td></tr>
+    <tr><td><code>patients</code></td><td>Student and campus-personnel profiles, contact and guardian details, allergies, medical conditions, symptoms, and soft-deletion metadata. Institutional category and personnel type support classifications while legacy course/year columns remain.</td></tr>
+    <tr><td><code>clinical_visits</code></td><td>Encounter record: patient and nurse, date/time, complaint, symptoms, medical history, vitals, assessment, interventions, treatment, disposition, contact notes, and revision/status metadata. References patients, clinic users, medicines, and equipment.</td></tr>
+    <tr><td><code>medicines</code></td><td>Medicine catalog and stock quantities, unit/category, production and expiration dates, legacy batch/supplier fields, and soft-deletion metadata.</td></tr>
+    <tr><td><code>equipment</code></td><td>Medical equipment and medical-supply inventory, quantity, category, condition, maintenance date, availability/status, and soft-deletion metadata. Legacy equipment records are retained.</td></tr>
+    <tr><td><code>clinical_visit_inventory_deductions</code></td><td>Idempotent record of medicine/equipment quantities deducted for a visit, including when a deduction was reversed. Supports stock restoration on visit revision, deletion, or recovery.</td></tr>
+    <tr><td><code>audit_logs</code></td><td>User, role, action, module, result, event details, optional lockout duration, and timestamp for operational/audit history.</td></tr>
+    <tr><td><code>clinic_sessions</code></td><td>Server-side session token hashes and expiration, keyed to staff accounts. Account disable/archive transitions release the account's session.</td></tr>
+    <tr><td><code>clinic_login_attempts</code></td><td>Failed-login counts, staged lockout state, lockout expiry, and permanent-disable timestamp keyed by username.</td></tr>
+    <tr><td><code>clinic_settings</code></td><td>Single-row configuration for clinic identity/contact, hours/days, patient ID prefix, inventory alerts, password length, session timeout, display preferences, and timezone.</td></tr>
+    <tr><td><code>clinic_state</code></td><td>Single-row JSONB snapshot retained for compatibility with the current shared-state API and legacy data.</td></tr>
+    <tr><td><code>clinic_sync_meta</code></td><td>Single-row marker indicating when normalized data is ready and migration/synchronization status.</td></tr>
+    <tr><td><code>clinic_monthly_patient_counts</code></td><td>Monthly patient-registration totals, keyed by local month start, for scheduled archive and count workflows.</td></tr>
+    <tr><td><code>clinic_maintenance_runs</code></td><td>Idempotency and execution record for scheduled monthly archive and six-month cleanup jobs.</td></tr>
+    <tr><td><code>clinic_archive_cleanup_backups</code></td><td>JSONB snapshots of eligible archived patient and inventory records, associated with a maintenance run before cleanup.</td></tr>
+  </tbody></table>
+
+  <h2>G.4 Key constraints and integrity rules</h2>
+  <ul>
+    <li>Primary keys identify rows; staff usernames are unique. A Supabase Auth UUID, when present, is unique and set to null if its Auth user is removed.</li>
+    <li>Clinical visits require a patient link, nurse name, date, time, and complaint. Patient deletion is guarded while undeleted visits remain; visits are normally soft-deleted.</li>
+    <li>Visit references to a deleted nurse or inventory item are set to null to preserve the clinical record.</li>
+    <li>Patient age is limited to 0–120 when provided. Medicine and equipment quantities cannot be negative. Visit usage quantities, when supplied, must be positive.</li>
+    <li>Role, status, equipment category/condition, visit status, audit status, and deduction item type are constrained to supported values.</li>
+    <li>Inventory changes are made atomically by security-definer database functions. Saves validate stock and availability, record deductions, and prevent overdraw. Revision, deletion, and restoration reverse or reapply deductions.</li>
+    <li>Visit revision/status and timestamps are maintained in the database; soft deletion preserves recoverable records.</li>
+  </ul>
+
+  <h2>G.5 Security and access</h2>
+  <p>Row-level security is enabled for protected application tables. The schema intentionally provides no direct client policies for clinic data; application access is mediated by authenticated server routes and server-side Supabase credentials. The secret/service-role key must never be embedded in browser code or shared with end users.</p>
+  <p>Sensitive functions revoke default/public execution and grant execution to the server role as specified in the schema. Passwords are stored as bcrypt hashes, not plaintext. Session tokens are stored as hashes. Database credentials and application secrets belong in environment configuration, not in this appendix or committed source.</p>
+
+  <h2>G.6 Indexes and automated behavior</h2>
+  <p>The schema includes indexes for visit lookups by patient and date, visit-date reporting, medicine expiration alerts, audit-log chronology, and archived-record cleanup. Update triggers maintain <code>updated_at</code> on relevant tables. Other triggers enforce the patient-delete guard and release sessions when an account becomes disabled or archived. Scheduled maintenance tracks each run and captures backup snapshots before eligible cleanup.</p>
+
+  <h2>G.7 Installation and migration</h2>
+  <ol>
+    <li>Create or select the intended Supabase project and verify it before applying SQL.</li>
+    <li>Review the current <code>supabase/schema.sql</code>; it contains table definitions and upgrade/migration logic for existing installations.</li>
+    <li>Run the schema in the Supabase SQL Editor. Back up production data and use the project's normal change-control process before applying changes.</li>
+    <li>Configure <code>SUPABASE_URL</code> and a matching server-side <code>SUPABASE_SECRET_KEY</code> (or documented legacy service-role variable) in the server environment. <code>DATABASE_URL</code> is used by Drizzle tooling, not the clinic API runtime.</li>
+    <li>Verify the application health endpoint and authenticated clinic workflows after deployment.</li>
+  </ol>
+  <p>Schema SQL is designed for both new and existing installations, but may perform data migrations and create/alter records. Inspect changes affecting the target environment before execution. Do not run destructive reset or cleanup scripts as routine installation steps.</p>
+
+  <h2>G.8 Backup and recovery</h2>
+  <p>Use Supabase's supported database backup/export process for database-level recovery, and retain access controls and encryption appropriate for sensitive student and health information. The application also offers a browser JSON backup of clinic data; that file contains sensitive information and must be stored, transferred, and deleted securely. A JSON application backup is not a substitute for a verified database backup.</p>
+  <p>The cleanup-backup table stores selected archived row snapshots for scheduled retention cleanup; it is not a complete database backup. Confirm that backups are current and recovery procedures have been tested before maintenance or schema upgrades.</p>
+
+  <h2>G.9 Source artifacts</h2>
+  <ul>
+    <li>Normalized schema and database functions: <code>supabase/schema.sql</code>.</li>
+    <li>Audit-log maintenance script: <code>supabase/clear_existing_audit_logs.sql</code> — a targeted one-time script, not a schema installation step. Review its date range and effect before use.</li>
+    <li>Relationship diagram: <code>appendix-g-database-erd.mmd</code>.</li>
+  </ul>
+  <hr>
+  <p><em>This appendix describes the repository schema and application design; it does not include live records, credentials, or environment-specific secrets.</em></p>
+</body>
+</html>
