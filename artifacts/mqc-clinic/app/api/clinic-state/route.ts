@@ -614,7 +614,10 @@ async function resolveClinicUsers(rows: Array<Record<string, unknown>>) {
   });
 }
 
-async function readTable(tableName: string) {
+async function readTable(
+  tableName: string,
+  filter?: { column: string; value: string },
+) {
   const sortColumn =
     tableName === "medicines"
       ? "code"
@@ -628,9 +631,12 @@ async function readTable(tableName: string) {
       : `${sortColumn}.${sortDirection}`;
   const pageSize = 1000;
   const rows: Array<Record<string, unknown>> = [];
+  const filters = filter
+    ? `&${filter.column}=eq.${encodeURIComponent(filter.value)}`
+    : "";
   for (let offset = 0; ; offset += pageSize) {
     const response = await supabaseRequest(
-      `${tableName}?select=*&order=${sortOrder}`,
+      `${tableName}?select=*&order=${sortOrder}${filters}`,
       {
         headers: {
           Range: `${offset}-${offset + pageSize - 1}`,
@@ -1358,8 +1364,18 @@ export async function GET(request: Request) {
       readTable("medicines"),
       readTable("equipment"),
       readTable("clinical_visits"),
-      readTable("clinic_users"),
-      readTable("audit_logs"),
+      readTable(
+        "clinic_users",
+        hasClinicAdminPrivileges(session.role)
+          ? undefined
+          : { column: "id", value: session.userId },
+      ),
+      readTable(
+        "audit_logs",
+        hasClinicAdminPrivileges(session.role)
+          ? undefined
+          : { column: "user_id", value: session.userId },
+      ),
       readTable("clinic_settings"),
       readTable("clinic_sync_meta"),
       readTable("clinic_monthly_patient_counts"),
@@ -1397,10 +1413,12 @@ export async function GET(request: Request) {
         .map((user) => String(user.username ?? "").toLowerCase())
         .filter(Boolean),
     );
-    const missingSnapshotUsers = snapshotUsers.filter((user) => {
+    const missingSnapshotUsers = hasClinicAdminPrivileges(session.role)
+      ? snapshotUsers.filter((user) => {
       const username = String(user.username ?? "").toLowerCase();
       return username && !storedUsernames.has(username);
-    });
+      })
+      : [];
     const usersNeedBootstrap = missingSnapshotUsers.length > 0;
     const snapshotVisitById = new Map<string, Record<string, unknown>>();
     if (Array.isArray(snapshot.consultations)) {
@@ -1615,6 +1633,98 @@ export async function PUT(request: Request) {
         { message: "Staff Nurses cannot add or edit inventory records." },
         { status: 403, headers: { "Cache-Control": "no-store" } },
       );
+    }
+    if (snapshot.patientMutation !== undefined) {
+      if (
+        Object.keys(snapshot).length !== 1 ||
+        !snapshot.patientMutation ||
+        typeof snapshot.patientMutation !== "object" ||
+        Array.isArray(snapshot.patientMutation)
+      ) {
+        return Response.json(
+          { message: "The patient update request is invalid." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      if (!hasClinicAdminPrivileges(session.role)) {
+        return Response.json(
+          { message: "Only a Head Nurse or Super Admin can edit patient records." },
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const submittedPatient = snapshot.patientMutation as Record<
+        string,
+        unknown
+      >;
+      const patientId =
+        typeof submittedPatient.id === "string" ? submittedPatient.id.trim() : "";
+      if (!patientId || patientId.length > 200) {
+        return Response.json(
+          { message: "The selected patient record is invalid." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const patient = normalizePatientRow(submittedPatient);
+      if (
+        !String(patient.first_name).trim() ||
+        !String(patient.last_name).trim()
+      ) {
+        return Response.json(
+          { message: "Enter the patient's first and last name." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const lookup = await supabaseRequest(
+        `patients?id=eq.${encodeURIComponent(patientId)}&deleted_at=is.null&select=id,guardian_contact&limit=1`,
+      );
+      if (!lookup.ok)
+        throw new Error(`Patient update lookup returned ${lookup.status}`);
+      const [existingPatient] = (await lookup.json()) as Array<{
+        id: string;
+        guardian_contact: string | null;
+      }>;
+      if (!existingPatient) {
+        return Response.json(
+          { message: "This patient record changed or is no longer active. Refresh the patient list and try again." },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      if (
+        String(patient.guardian_contact ?? "") !==
+          String(existingPatient.guardian_contact ?? "") &&
+        !/^\d{11}$/.test(String(patient.guardian_contact ?? ""))
+      ) {
+        return Response.json(
+          { message: "Parent / Guardian Contact must contain exactly 11 digits." },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const update = await supabaseRequest(
+        `patients?id=eq.${encodeURIComponent(patientId)}&deleted_at=is.null&select=id`,
+        {
+          method: "PATCH",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify(patient),
+        },
+      );
+      if (!update.ok)
+        throw new Error(`Patient update returned ${update.status}`);
+      const updatedPatients = (await update.json()) as Array<{
+        id: string;
+      }>;
+      if (
+        updatedPatients.length !== 1 ||
+        String(updatedPatients[0]?.id ?? "") !== patientId
+      ) {
+        return Response.json(
+          { message: "This patient record changed or is no longer active. Refresh the patient list and try again." },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      return new Response(null, {
+        status: 204,
+        headers: { "Cache-Control": "no-store" },
+      });
     }
     if (snapshot.recordRestoreMutation !== undefined) {
       if (

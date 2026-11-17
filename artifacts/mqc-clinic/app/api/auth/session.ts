@@ -118,6 +118,10 @@ export async function readClinicSessionStatus(
     is_valid?: boolean;
     expired?: boolean;
     last_activity_at?: string | null;
+    user_name?: string | null;
+    role?: string | null;
+    username?: string | null;
+    appearance_theme?: string | null;
   }>;
   const status = validation[0];
   if (status?.is_valid !== true) {
@@ -127,25 +131,17 @@ export async function readClinicSessionStatus(
       lastActivityAt: status?.last_activity_at ?? null,
     };
   }
-
-  const profileResponse = await fetch(`${url}/rest/v1/clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&deleted_at=is.null&select=id,name,role,username,appearance_theme&limit=1`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    cache: "no-store",
-  });
-  if (!profileResponse.ok) throw new Error(`Clinic session validation returned ${profileResponse.status}`);
-  const profiles = await profileResponse.json() as Array<{ id?: string; name?: string; role?: string; username?: string; appearance_theme?: string }>;
-  const profile = profiles[0];
-  if (!profile?.id || !profile.username) {
+  if (!status.user_name || !status.username) {
     return { session: null, expired: false, lastActivityAt: status.last_activity_at ?? null };
   }
 
   return {
     session: {
       ...session,
-      userName: profile.name || session.userName,
-      role: profile.role || "Staff Nurse",
-      username: profile.username,
-      appearanceTheme: profile.appearance_theme || "forest",
+      userName: status.user_name || session.userName,
+      role: status.role || "Staff Nurse",
+      username: status.username,
+      appearanceTheme: status.appearance_theme || "forest",
     },
     expired: false,
     lastActivityAt: status.last_activity_at ?? null,

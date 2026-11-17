@@ -186,7 +186,11 @@ function bindConsultSearch() {
       };
     });
   };
-  document.getElementById("stu-search").oninput = () => run(true);
+  let searchTimer;
+  document.getElementById("stu-search").oninput = () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => run(true), 120);
+  };
   document.getElementById("stu-course-filter").onchange = () => run(true);
   document.getElementById("stu-department-filter").onchange = (event) => {
     state.departmentFilter = event.target.value;
@@ -349,7 +353,8 @@ function openStudentForm(existing = null, returnToDetails = false) {
               editingStudent=previous;state.selectedStudent=previous;
             }
           },
-          auditAction:`Patient Edited — ${rec.id}`,module:"Patients",detail:rec.id,successTitle:"Patient updated",successMessage:`${rec.name}'s record has been updated.`,refresh:renderConsultTabBody,
+          save:()=>savePatientToClinicState(rec),
+          auditAction:`Patient Edited — ${rec.id}`,module:"Patients",detail:rec.id,auditBackground:true,successTitle:"Patient updated",successMessage:`${rec.name}'s record has been updated.`,refresh:renderConsultTabBody,
         });
       }
     }catch(error){toast("Patient not saved",error.message||"Unable to register this patient.","err");}
@@ -407,6 +412,7 @@ async function saveRegisteredPatient(patient){
     },
     save:()=>Promise.resolve(),
     auditAction:`Patient Added — ${record.id}`,module:"Patients",detail:record.id,
+    auditBackground:true,
     successTitle:"Patient added",successMessage:`Welcome, ${record.name}! Added to patient records.`,
     refresh:renderConsultTabBody,
   });

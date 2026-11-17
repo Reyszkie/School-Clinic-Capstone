@@ -124,11 +124,17 @@ export async function POST(request: Request) {
     if (!url || !key) throw new Error("Supabase server configuration is missing.");
     const recaptchaSecret = process.env.RECAPTCHA_SECRET_KEY;
     if (!recaptchaSecret) throw new Error("Google reCAPTCHA server configuration is missing.");
+    const activeSessionPromise = readActiveClinicSession(request).then(
+      (activeSession) => ({ activeSession }),
+      (error: unknown) => ({ error }),
+    );
     if (!(await verifyRecaptcha(recaptchaToken, recaptchaSecret))) {
       return Response.json({ message: "Google reCAPTCHA verification failed. Please try again." }, { status: 401, headers: { "Cache-Control": "no-store" } });
     }
-
-    if (await readActiveClinicSession(request)) {
+    const activeSessionResult = await activeSessionPromise;
+    if ("error" in activeSessionResult) throw activeSessionResult.error;
+    const { activeSession } = activeSessionResult;
+    if (activeSession) {
       return Response.json({
         message: "This browser already has an active clinic session. Please log out from the existing session before signing in to another account.",
       }, { status: 409, headers: { "Cache-Control": "no-store" } });

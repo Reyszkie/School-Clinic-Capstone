@@ -482,6 +482,7 @@ async function commitClinicRecordMutation({
   auditActions,
   module,
   status = "Success",
+  auditBackground = false,
   successTitle,
   successMessage,
   detail = "",
@@ -502,7 +503,7 @@ async function commitClinicRecordMutation({
     refresh();
     return false;
   }
-  try {
+  const persistAudit = async () => {
     const events = auditActions || [
       { action: auditAction, module, status, detail },
     ];
@@ -515,14 +516,28 @@ async function commitClinicRecordMutation({
         true,
         event.detail || detail,
       );
-  } catch {
-    toast(
-      "Record saved; audit sync failed",
-      "The change was saved, but its audit entry could not be recorded.",
-      "err",
-    );
-    refresh();
-    return true;
+  };
+  if (auditBackground) {
+    void persistAudit().catch(() => {
+      toast(
+        "Record saved; audit sync failed",
+        "The change was saved, but its audit entry could not be recorded.",
+        "err",
+      );
+      refresh();
+    });
+  } else {
+    try {
+      await persistAudit();
+    } catch {
+      toast(
+        "Record saved; audit sync failed",
+        "The change was saved, but its audit entry could not be recorded.",
+        "err",
+      );
+      refresh();
+      return true;
+    }
   }
   toast(successTitle, successMessage, status === "Warning" ? "warn" : "ok");
   refresh();
@@ -557,6 +572,13 @@ function saveInventoryItemStatusToClinicState(itemType, itemId, deleted) {
     {
       inventoryStatusMutation: { itemType, itemId, deleted },
     },
+    true,
+  );
+}
+
+function savePatientToClinicState(patient) {
+  return queueClinicStateSave(
+    { patientMutation: patient },
     true,
   );
 }

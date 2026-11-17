@@ -1515,12 +1515,21 @@ end;
 $$;
 
 drop function if exists public.validate_clinic_session(text, text);
-create or replace function public.validate_clinic_session(
+drop function if exists public.validate_clinic_session(text, text, boolean);
+create function public.validate_clinic_session(
   p_user_id text,
   p_token_hash text,
   p_record_activity boolean default false
 )
-returns table (is_valid boolean, expired boolean, last_activity_at timestamptz)
+returns table (
+  is_valid boolean,
+  expired boolean,
+  last_activity_at timestamptz,
+  user_name text,
+  role text,
+  username text,
+  appearance_theme text
+)
 language plpgsql
 security definer
 set search_path = public, pg_temp
@@ -1538,7 +1547,8 @@ begin
   for update;
 
   if not found then
-    return query select false, false, null::timestamptz;
+    return query select false, false, null::timestamptz,
+      null::text, null::text, null::text, null::text;
     return;
   end if;
 
@@ -1564,7 +1574,8 @@ begin
       );
     end if;
 
-    return query select false, true, v_session.last_activity_at;
+    return query select false, true, v_session.last_activity_at,
+      null::text, null::text, null::text, null::text;
     return;
   end if;
 
@@ -1575,7 +1586,8 @@ begin
     and users.status = 'Active'
     and users.deleted_at is null;
   if not found or v_session.expires_at <= v_now then
-    return query select false, false, v_session.last_activity_at;
+    return query select false, false, v_session.last_activity_at,
+      null::text, null::text, null::text, null::text;
     return;
   end if;
 
@@ -1584,9 +1596,11 @@ begin
     set last_activity_at = v_now
     where sessions.user_id = p_user_id
       and sessions.token_hash = p_token_hash;
-    return query select true, false, v_now;
+    return query select true, false, v_now,
+      v_user.name, v_user.role, v_user.username, v_user.appearance_theme;
   else
-    return query select true, false, v_session.last_activity_at;
+    return query select true, false, v_session.last_activity_at,
+      v_user.name, v_user.role, v_user.username, v_user.appearance_theme;
   end if;
 end;
 $$;
@@ -2277,10 +2291,23 @@ create index if not exists clinical_visits_patient_date_idx
   on public.clinical_visits (patient_id, visit_date desc);
 create index if not exists clinical_visits_date_idx
   on public.clinical_visits (visit_date desc);
+create index if not exists patients_active_name_match_idx
+  on public.patients (
+    lower(regexp_replace(btrim(last_name), '[[:space:]]+', ' ', 'g')),
+    lower(regexp_replace(btrim(first_name), '[[:space:]]+', ' ', 'g'))
+  )
+  where deleted_at is null;
+create index if not exists patients_active_guardian_contact_match_idx
+  on public.patients (
+    regexp_replace(coalesce(guardian_contact, ''), '[^0-9]', '', 'g')
+  )
+  where deleted_at is null;
 create index if not exists medicines_expiration_idx
   on public.medicines (expiration_date);
 create index if not exists audit_logs_created_at_idx
   on public.audit_logs (created_at desc);
+create index if not exists audit_logs_user_created_idx
+  on public.audit_logs (user_id, created_at desc, id desc);
 
 -- RLS is enabled without client policies; access flows through the authenticated server API.
 alter table public.clinic_users enable row level security;
@@ -2533,9 +2560,9 @@ declare
   v_course text;
   v_year_level text;
   v_guardian_contact text;
+  v_normalized_last_name text;
+  v_normalized_first_name text;
 begin
-  perform pg_advisory_xact_lock(7401842, 1);
-
   if p_selected_patient_id is not null then
     select patient.* into v_patient
     from public.patients as patient
@@ -2573,6 +2600,19 @@ begin
   if v_guardian_contact is null or v_guardian_contact !~ '^[0-9]{11}$' then
     raise exception 'Parent / Guardian Contact must contain exactly 11 digits.';
   end if;
+
+  v_normalized_last_name := lower(regexp_replace(v_last_name, '[[:space:]]+', ' ', 'g'));
+  v_normalized_first_name := lower(regexp_replace(v_first_name, '[[:space:]]+', ' ', 'g'));
+  perform pg_advisory_xact_lock(hashtextextended(
+    'patient-name:' || length(v_normalized_last_name)::text || ':' ||
+      v_normalized_last_name || ':' || length(v_normalized_first_name)::text || ':' ||
+      v_normalized_first_name,
+    0
+  ));
+  perform pg_advisory_xact_lock(hashtextextended(
+    'patient-contact:' || v_guardian_contact,
+    0
+  ));
 
   select
     coalesce(array_agg(patient.id order by patient.created_at, patient.id), '{}'),

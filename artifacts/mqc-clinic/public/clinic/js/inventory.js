@@ -129,7 +129,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
     },
     save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id,existing?previousQuantity:null),
     auditAction:existing?`${noun} Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`${noun} Added — ${record.name}`,
-    detail:itemType==="medicine"?record.code:record.id,
+    detail:itemType==="medicine"?record.code:record.id,auditBackground:true,
     module:itemType==="medicine"?"Medicines":"Medical Supplies",successTitle:existing?`${noun} updated`:`${noun} added`,
     successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh:()=>{if(state.page==="inventory")refresh();else render();},
   });
@@ -186,7 +186,12 @@ function bindMedicinesTab(){
       if(el){ el.focus(); if(selStart!==null && el.setSelectionRange) el.setSelectionRange(selStart, selStart); }
     }
   };
-  const s=document.getElementById('med-search'); if(s) s.oninput=rerender;
+  const s=document.getElementById('med-search');
+  let searchTimer;
+  if(s) s.oninput=()=>{
+    window.clearTimeout(searchTimer);
+    searchTimer=window.setTimeout(rerender,120);
+  };
   const st=document.getElementById('med-status'); if(st) st.onchange=rerender;
   document.getElementById('add-med-btn')?.addEventListener('click',()=>openMedicineForm());
   document.querySelectorAll('[data-mpage]').forEach(b=> b.onclick=()=>{ state.medPage += b.dataset.mpage==='next'?1:-1; if(state.medPage<1) state.medPage=1; rerender(); });
@@ -300,7 +305,12 @@ function bindEquipmentTab(){
       if(el){ el.focus(); if(selStart!==null && el.setSelectionRange) el.setSelectionRange(selStart, selStart); }
     }
   };
-  const s=document.getElementById('eq-search'); if(s) s.oninput=rerender;
+  const s=document.getElementById('eq-search');
+  let searchTimer;
+  if(s) s.oninput=()=>{
+    window.clearTimeout(searchTimer);
+    searchTimer=window.setTimeout(rerender,120);
+  };
   const st=document.getElementById('eq-status'); if(st) st.onchange=rerender;
   document.getElementById('add-eq-btn')?.addEventListener('click',()=>openEquipmentForm());
   document.querySelectorAll('[data-eqpage]').forEach(b=> b.onclick=()=>{ state.eqPage += b.dataset.eqpage==='next'?1:-1; if(state.eqPage<1) state.eqPage=1; rerender(); });
