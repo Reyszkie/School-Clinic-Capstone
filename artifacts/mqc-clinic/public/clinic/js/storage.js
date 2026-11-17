@@ -832,6 +832,8 @@ async function restoreAuthSession() {
     }
     const response = await fetch("/api/auth/session", { cache: "no-store" });
     if (response.status === 401 || response.status === 403) {
+      const result = await response.json().catch(() => ({}));
+      if (result.sessionExpired === true) sessionExpiredNoticePending = true;
       clearAuthSession();
       return false;
     }
@@ -850,7 +852,7 @@ async function restoreAuthSession() {
     state.currentUser = user;
     state.loggedIn = true;
     applyClinicTheme();
-    return true;
+    return user;
   } catch (err) {
     console.warn("MQC Clinic: couldn't restore the login session.", err);
     throw err;

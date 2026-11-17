@@ -1,15 +1,66 @@
-import { readActiveClinicSession } from "../session";
+import {
+  clearClinicSessionCookie,
+  readActiveClinicSession,
+  readClinicSessionStatus,
+} from "../session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const session = await readActiveClinicSession(request);
-    if (!session) return Response.json({ message: "No active clinic session." }, { status: 401, headers: { "Cache-Control": "no-store" } });
-    return Response.json({ id: session.userId, name: session.userName, role: session.role, username: session.username, status: "Active", appearanceTheme: session.appearanceTheme }, { headers: { "Cache-Control": "no-store" } });
+    const status = await readClinicSessionStatus(request);
+    if (!status.session) {
+      return Response.json(
+        { message: "No active clinic session.", sessionExpired: status.expired },
+        {
+          status: 401,
+          headers: {
+            "Cache-Control": "no-store",
+            ...(status.expired ? { "Set-Cookie": clearClinicSessionCookie() } : {}),
+          },
+        },
+      );
+    }
+    return Response.json({
+      id: status.session.userId,
+      name: status.session.userName,
+      role: status.session.role,
+      username: status.session.username,
+      status: "Active",
+      appearanceTheme: status.session.appearanceTheme,
+      lastActivityAt: status.lastActivityAt,
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Unable to restore clinic session", error);
     return Response.json({ message: "Clinic session validation is unavailable." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const status = await readClinicSessionStatus(request, true);
+    if (!status.session) {
+      return Response.json(
+        { message: "No active clinic session.", sessionExpired: status.expired },
+        {
+          status: 401,
+          headers: {
+            "Cache-Control": "no-store",
+            ...(status.expired ? { "Set-Cookie": clearClinicSessionCookie() } : {}),
+          },
+        },
+      );
+    }
+    return Response.json(
+      { lastActivityAt: status.lastActivityAt },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    console.error("Unable to record clinic session activity", error);
+    return Response.json(
+      { message: "Clinic session activity could not be recorded." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
 

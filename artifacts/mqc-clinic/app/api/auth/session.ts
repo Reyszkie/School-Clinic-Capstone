@@ -11,6 +11,12 @@ export function hasClinicAdminPrivileges(role: string) {
   return role === "Head Nurse" || role === "Super Admin";
 }
 
+export type ClinicSessionStatus = {
+  session: ActiveClinicSession | null;
+  expired: boolean;
+  lastActivityAt: string | null;
+};
+
 function sessionSecret() {
   const secret = process.env.AUDIT_SESSION_SECRET || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret) throw new Error("A server-side session signing key is not configured.");
@@ -86,13 +92,41 @@ export function readClinicSession(request: Request): ClinicSession | null {
   }
 }
 
-export async function readActiveClinicSession(request: Request): Promise<ActiveClinicSession | null> {
+export async function readClinicSessionStatus(
+  request: Request,
+  recordActivity = false,
+): Promise<ClinicSessionStatus> {
   const session = readClinicSession(request);
-  if (!session) return null;
+  if (!session) return { session: null, expired: false, lastActivityAt: null };
 
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) throw new Error("Supabase server configuration is missing.");
+
+  const sessionResponse = await fetch(`${url}/rest/v1/rpc/validate_clinic_session`, {
+    method: "POST",
+    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      p_user_id: session.userId,
+      p_token_hash: hashClinicSessionId(session.sessionId),
+      p_record_activity: recordActivity,
+    }),
+    cache: "no-store",
+  });
+  if (!sessionResponse.ok) throw new Error(`Clinic session record validation returned ${sessionResponse.status}`);
+  const validation = await sessionResponse.json() as Array<{
+    is_valid?: boolean;
+    expired?: boolean;
+    last_activity_at?: string | null;
+  }>;
+  const status = validation[0];
+  if (status?.is_valid !== true) {
+    return {
+      session: null,
+      expired: status?.expired === true,
+      lastActivityAt: status?.last_activity_at ?? null,
+    };
+  }
 
   const profileResponse = await fetch(`${url}/rest/v1/clinic_users?id=eq.${encodeURIComponent(session.userId)}&status=eq.Active&deleted_at=is.null&select=id,name,role,username,appearance_theme&limit=1`, {
     headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
@@ -101,20 +135,24 @@ export async function readActiveClinicSession(request: Request): Promise<ActiveC
   if (!profileResponse.ok) throw new Error(`Clinic session validation returned ${profileResponse.status}`);
   const profiles = await profileResponse.json() as Array<{ id?: string; name?: string; role?: string; username?: string; appearance_theme?: string }>;
   const profile = profiles[0];
-  if (!profile?.id || !profile.username) return null;
+  if (!profile?.id || !profile.username) {
+    return { session: null, expired: false, lastActivityAt: status.last_activity_at ?? null };
+  }
 
-  const sessionResponse = await fetch(`${url}/rest/v1/rpc/validate_clinic_session`, {
-    method: "POST",
-    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      p_user_id: session.userId,
-      p_token_hash: hashClinicSessionId(session.sessionId),
-    }),
-    cache: "no-store",
-  });
-  if (!sessionResponse.ok) throw new Error(`Clinic session record validation returned ${sessionResponse.status}`);
-  const validation = await sessionResponse.json() as Array<{ is_valid?: boolean }>;
-  if (validation[0]?.is_valid !== true) return null;
+  return {
+    session: {
+      ...session,
+      userName: profile.name || session.userName,
+      role: profile.role || "Staff Nurse",
+      username: profile.username,
+      appearanceTheme: profile.appearance_theme || "forest",
+    },
+    expired: false,
+    lastActivityAt: status.last_activity_at ?? null,
+  };
+}
 
-  return { ...session, userName: profile.name || session.userName, role: profile.role || "Staff Nurse", username: profile.username, appearanceTheme: profile.appearance_theme || "ocean" };
+export async function readActiveClinicSession(request: Request): Promise<ActiveClinicSession | null> {
+  const { session } = await readClinicSessionStatus(request);
+  return session;
 }

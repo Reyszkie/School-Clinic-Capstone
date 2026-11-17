@@ -8,6 +8,17 @@ let clinicBootstrapStarted=false;
 let systemTabMessage="The system is already open in another tab. Please use your existing active session.";
 let systemTabStorageListenerInstalled=false;
 let preserveSystemTabIdOnNextInit=false;
+const CLINIC_INACTIVITY_LIMIT_MS=300000;
+const CLINIC_ACTIVITY_SYNC_INTERVAL_MS=5000;
+const CLINIC_SESSION_EXPIRED_MESSAGE="Your session has expired due to 5 minutes of inactivity. Please log in again to continue.";
+let clinicLastActivityAt=0;
+let clinicLastActivitySyncAt=0;
+let clinicInactivityTimer=null;
+let clinicActivitySyncTimer=null;
+let clinicActivityRequestInProgress=false;
+let clinicActivitySyncPending=false;
+let clinicSessionEnding=false;
+let sessionExpiredNoticePending=false;
 const SYSTEM_TAB_LOCK_NAME="mqc-clinic-single-system-tab";
 const SYSTEM_TAB_LEASE_KEY="mqc_clinic_system_tab_lease_v1";
 const SYSTEM_TAB_ID_KEY="mqc_clinic_system_tab_id_v1";
@@ -47,6 +58,144 @@ function render(){
   app.innerHTML = renderShell();
   attachShellEvents();
   renderPage();
+}
+
+function stopClinicInactivityMonitor(){
+  if(clinicInactivityTimer)window.clearTimeout(clinicInactivityTimer);
+  if(clinicActivitySyncTimer)window.clearTimeout(clinicActivitySyncTimer);
+  clinicInactivityTimer=null;
+  clinicActivitySyncTimer=null;
+  clinicLastActivityAt=0;
+  clinicLastActivitySyncAt=0;
+  clinicActivitySyncPending=false;
+}
+
+function scheduleClinicInactivityCheck(){
+  if(clinicInactivityTimer)window.clearTimeout(clinicInactivityTimer);
+  if(!state.loggedIn||!clinicLastActivityAt)return;
+  const remaining=CLINIC_INACTIVITY_LIMIT_MS-(Date.now()-clinicLastActivityAt);
+  if(remaining<=0){
+    void expireClinicSession();
+    return;
+  }
+  clinicInactivityTimer=window.setTimeout(()=>{
+    if(Date.now()-clinicLastActivityAt>=CLINIC_INACTIVITY_LIMIT_MS){
+      void expireClinicSession();
+      return;
+    }
+    scheduleClinicInactivityCheck();
+  },remaining);
+}
+
+async function syncClinicSessionActivity(){
+  if(!state.loggedIn||clinicSessionEnding)return;
+  if(clinicActivityRequestInProgress){
+    clinicActivitySyncPending=true;
+    return;
+  }
+  clinicActivityRequestInProgress=true;
+  clinicLastActivitySyncAt=Date.now();
+  try{
+    const response=await fetch("/api/auth/session",{method:"POST",cache:"no-store"});
+    const result=await response.json().catch(()=>({}));
+    if(response.status===401){
+      if(result.sessionExpired)await expireClinicSession();
+      else await endClinicSession(false);
+      return;
+    }
+    if(!response.ok)throw new Error(result.message||`Session activity returned ${response.status}.`);
+    const serverActivityAt=Date.parse(result.lastActivityAt);
+    if(Number.isFinite(serverActivityAt)){
+      clinicLastActivityAt=Math.max(clinicLastActivityAt,serverActivityAt);
+      scheduleClinicInactivityCheck();
+    }
+  }catch(error){
+    console.error("MQC Clinic: session activity could not be synchronized.",error);
+  }finally{
+    clinicActivityRequestInProgress=false;
+    if(clinicActivitySyncPending){
+      clinicActivitySyncPending=false;
+      scheduleClinicActivitySync();
+    }
+  }
+}
+
+function scheduleClinicActivitySync(){
+  if(!state.loggedIn||clinicSessionEnding||clinicActivitySyncTimer)return;
+  const elapsed=Date.now()-clinicLastActivitySyncAt;
+  const delay=Math.max(250,CLINIC_ACTIVITY_SYNC_INTERVAL_MS-elapsed);
+  clinicActivitySyncTimer=window.setTimeout(()=>{
+    clinicActivitySyncTimer=null;
+    void syncClinicSessionActivity();
+  },delay);
+}
+
+function startClinicInactivityMonitor(lastActivityAt=Date.now()){
+  stopClinicInactivityMonitor();
+  clinicSessionEnding=false;
+  const parsed=typeof lastActivityAt==="number"?lastActivityAt:Date.parse(lastActivityAt);
+  clinicLastActivityAt=Number.isFinite(parsed)?parsed:Date.now();
+  scheduleClinicInactivityCheck();
+  scheduleClinicActivitySync();
+}
+
+async function endClinicSession(showExpirationNotice){
+  clinicSessionEnding=true;
+  stopClinicInactivityMonitor();
+  if(window.__clinicRefreshTimer){
+    window.clearInterval(window.__clinicRefreshTimer);
+    window.__clinicRefreshTimer=null;
+  }
+  clearAuthSession();
+  state.loggedIn=false;
+  state.currentUser=null;
+  state.page="dashboard";
+  state.loginAlertsShown=false;
+  render();
+  if(showExpirationNotice)toast("Session expired",CLINIC_SESSION_EXPIRED_MESSAGE,"warn");
+}
+
+async function expireClinicSession(){
+  if(clinicSessionEnding)return;
+  clinicSessionEnding=true;
+  try{
+    const response=await fetch("/api/auth/logout",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({reason:"inactivity_timeout"}),
+      cache:"no-store",
+    });
+    if(!response.ok){
+      const result=await response.json().catch(()=>({}));
+      throw new Error(result.message||`Session release returned ${response.status}.`);
+    }
+  }catch(error){
+    console.error("MQC Clinic: automatic session release could not be confirmed.",error);
+  }
+  await endClinicSession(true);
+}
+
+function recordClinicUserActivity(event){
+  if(!state.loggedIn||clinicSessionEnding)return;
+  const now=Date.now();
+  if(now-clinicLastActivityAt>=CLINIC_INACTIVITY_LIMIT_MS){
+    void expireClinicSession();
+    return;
+  }
+  if(event.type==="mousemove"&&now-clinicLastActivityAt<1000)return;
+  clinicLastActivityAt=now;
+  scheduleClinicInactivityCheck();
+  scheduleClinicActivitySync();
+}
+
+function installClinicActivityListeners(){
+  ["mousemove","mousedown","click","keydown","scroll","touchstart","touchmove","pointerdown"].forEach(type=>{
+    document.addEventListener(type,recordClinicUserActivity,{capture:true,passive:true});
+  });
+  document.addEventListener("visibilitychange",()=>{
+    if(document.visibilityState==="visible")scheduleClinicInactivityCheck();
+  });
+  window.addEventListener("focus",scheduleClinicInactivityCheck);
 }
 
 function startClinicApplication(){
@@ -218,6 +367,10 @@ async function bootstrapClinicSession(){
     if(!restored){
       authRestoreStatus="ready";
       render();
+      if(sessionExpiredNoticePending){
+        sessionExpiredNoticePending=false;
+        toast("Session expired",CLINIC_SESSION_EXPIRED_MESSAGE,"warn");
+      }
       return false;
     }
     const hydrated=await hydrateFromSharedStorage();
@@ -228,7 +381,12 @@ async function bootstrapClinicSession(){
     }
     authRestoreStatus="ready";
     render();
+    startClinicInactivityMonitor(restored.lastActivityAt);
     startClinicRefresh();
+    if(sessionExpiredNoticePending){
+      sessionExpiredNoticePending=false;
+      toast("Session expired",CLINIC_SESSION_EXPIRED_MESSAGE,"warn");
+    }
     return hydrated;
   }catch(error){
     console.error("MQC Clinic: session restoration failed.",error);
@@ -259,6 +417,7 @@ function afterPageRender(){
 
 /* ================= INIT ================= */
 initializeSystemTabGuard();
+installClinicActivityListeners();
 window.addEventListener("pagehide",()=>{
   if(systemTabLockRelease){
     const release=systemTabLockRelease;

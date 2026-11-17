@@ -8,6 +8,25 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
+    let reason = "manual";
+    const rawBody = await request.text();
+    if (rawBody) {
+      let body: unknown;
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        return Response.json({ message: "Logout request must be valid JSON." }, { status: 400 });
+      }
+      if (
+        body &&
+        typeof body === "object" &&
+        !Array.isArray(body) &&
+        (body as { reason?: unknown }).reason === "inactivity_timeout"
+      ) {
+        reason = "inactivity_timeout";
+      }
+    }
+
     const session = readClinicSession(request);
     if (session) {
       const url = process.env.SUPABASE_URL;
@@ -24,6 +43,7 @@ export async function POST(request: Request) {
         body: JSON.stringify({
           p_user_id: session.userId,
           p_token_hash: hashClinicSessionId(session.sessionId),
+          p_reason: reason,
         }),
         cache: "no-store",
       });

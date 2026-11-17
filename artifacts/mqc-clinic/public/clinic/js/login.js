@@ -212,6 +212,7 @@ function attachLoginFormEvents(){
     state.loginAlertsShown=true;
     startClinicRefresh();
     saveAuthSession(visibleUser);
+    startClinicInactivityMonitor(Date.now());
     spinner.style.display='none'; btnText.textContent='Sign In'; loginButton.disabled=false;
     render();
     if(shouldShowAlerts)openLoginAlertsModal();

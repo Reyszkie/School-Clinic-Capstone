@@ -980,8 +980,12 @@ create table if not exists public.clinic_sessions (
   user_id text primary key references public.clinic_users(id) on delete cascade,
   token_hash text not null unique check (token_hash ~ '^[0-9a-f]{64}$'),
   expires_at timestamptz not null,
+  last_activity_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
+
+alter table public.clinic_sessions
+  add column if not exists last_activity_at timestamptz not null default now();
 
 alter table public.clinic_sessions enable row level security;
 revoke all on public.clinic_sessions from public, anon, authenticated;
@@ -1346,7 +1350,9 @@ begin
   where sessions.user_id = p_user_id
   for update;
 
-  if found and v_existing_session.expires_at > v_now then
+  if found
+    and v_existing_session.expires_at > v_now
+    and v_existing_session.last_activity_at > v_now - interval '5 minutes' then
     insert into public.audit_logs (
       user_id, user_name, username, role, action, event_details,
       module, status, created_at
@@ -1370,9 +1376,23 @@ begin
     )
     values (
       v_user.id, v_user.name, v_user.username, v_user.role,
-      'Session Expired',
-      'The previous clinic session expired and was released when a new session was established.',
-      'Authentication', 'Warning', v_now
+      case
+        when v_existing_session.last_activity_at <= v_now - interval '5 minutes'
+          then 'Automatic Logout'
+        else 'Session Expired'
+      end,
+      case
+        when v_existing_session.last_activity_at <= v_now - interval '5 minutes'
+          then 'The session was automatically terminated after 5 consecutive minutes of inactivity.'
+        else 'The previous clinic session expired and was released when a new session was established.'
+      end,
+      'Authentication',
+      case
+        when v_existing_session.last_activity_at <= v_now - interval '5 minutes'
+          then 'Success'
+        else 'Warning'
+      end,
+      v_now
     );
   end if;
 
@@ -1381,6 +1401,7 @@ begin
   on conflict (user_id) do update
   set token_hash = excluded.token_hash,
       expires_at = excluded.expires_at,
+      last_activity_at = excluded.last_activity_at,
       created_at = excluded.created_at;
 
   update public.clinic_login_attempts
@@ -1405,33 +1426,88 @@ begin
 end;
 $$;
 
-create or replace function public.validate_clinic_session(
+drop function if exists public.validate_clinic_session(text, text);
+create function public.validate_clinic_session(
   p_user_id text,
-  p_token_hash text
+  p_token_hash text,
+  p_record_activity boolean default false
 )
-returns table (is_valid boolean)
+returns table (is_valid boolean, expired boolean, last_activity_at timestamptz)
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_session public.clinic_sessions%rowtype;
+  v_user public.clinic_users%rowtype;
+  v_now timestamptz := clock_timestamp();
 begin
-  return query
-  select exists (
-    select 1
-    from public.clinic_sessions as sessions
-    join public.clinic_users as users on users.id = sessions.user_id
+  select sessions.*
+    into v_session
+  from public.clinic_sessions as sessions
+  where sessions.user_id = p_user_id
+    and sessions.token_hash = p_token_hash
+  for update;
+
+  if not found then
+    return query select false, false, null::timestamptz;
+    return;
+  end if;
+
+  if v_session.last_activity_at <= v_now - interval '5 minutes' then
+    delete from public.clinic_sessions as sessions
     where sessions.user_id = p_user_id
-      and sessions.token_hash = p_token_hash
-      and sessions.expires_at > clock_timestamp()
-      and users.status = 'Active'
-      and users.deleted_at is null
-  );
+      and sessions.token_hash = p_token_hash;
+
+    select users.*
+      into v_user
+    from public.clinic_users as users
+    where users.id = p_user_id;
+    if found then
+      insert into public.audit_logs (
+        user_id, user_name, username, role, action, event_details,
+        module, status, created_at
+      )
+      values (
+        v_user.id, v_user.name, v_user.username, v_user.role,
+        'Automatic Logout',
+        'The session was automatically terminated after 5 consecutive minutes of inactivity.',
+        'Authentication', 'Success', v_now
+      );
+    end if;
+
+    return query select false, true, v_session.last_activity_at;
+    return;
+  end if;
+
+  select users.*
+    into v_user
+  from public.clinic_users as users
+  where users.id = p_user_id
+    and users.status = 'Active'
+    and users.deleted_at is null;
+  if not found or v_session.expires_at <= v_now then
+    return query select false, false, v_session.last_activity_at;
+    return;
+  end if;
+
+  if p_record_activity then
+    update public.clinic_sessions as sessions
+    set last_activity_at = v_now
+    where sessions.user_id = p_user_id
+      and sessions.token_hash = p_token_hash;
+    return query select true, false, v_now;
+  else
+    return query select true, false, v_session.last_activity_at;
+  end if;
 end;
 $$;
 
-create or replace function public.release_clinic_session(
+drop function if exists public.release_clinic_session(text, text);
+create function public.release_clinic_session(
   p_user_id text,
-  p_token_hash text
+  p_token_hash text,
+  p_reason text default 'manual'
 )
 returns table (released boolean)
 language plpgsql
@@ -1439,10 +1515,25 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
+  v_session public.clinic_sessions%rowtype;
   v_user public.clinic_users%rowtype;
   v_released_user_id text;
+  v_automatic boolean;
   v_now timestamptz := clock_timestamp();
 begin
+  select sessions.*
+    into v_session
+  from public.clinic_sessions as sessions
+  where sessions.user_id = p_user_id
+    and sessions.token_hash = p_token_hash
+  for update;
+  if not found then
+    return query select false;
+    return;
+  end if;
+
+  v_automatic := p_reason = 'inactivity_timeout'
+    or v_session.last_activity_at <= v_now - interval '5 minutes';
   delete from public.clinic_sessions as sessions
   where sessions.user_id = p_user_id
     and sessions.token_hash = p_token_hash
@@ -1464,7 +1555,11 @@ begin
     )
     values (
       v_user.id, v_user.name, v_user.username, v_user.role,
-      'Logout', 'The active clinic session was ended by the account holder.',
+      case when v_automatic then 'Automatic Logout' else 'Logout' end,
+      case when v_automatic
+        then 'The session was automatically terminated after 5 consecutive minutes of inactivity.'
+        else 'The active clinic session was ended by the account holder.'
+      end,
       'Authentication', 'Success', v_now
     );
   end if;
@@ -1475,10 +1570,10 @@ $$;
 
 revoke all on function public.create_clinic_session(text, text, timestamptz) from public, anon, authenticated;
 grant execute on function public.create_clinic_session(text, text, timestamptz) to service_role;
-revoke all on function public.validate_clinic_session(text, text) from public, anon, authenticated;
-grant execute on function public.validate_clinic_session(text, text) to service_role;
-revoke all on function public.release_clinic_session(text, text) from public, anon, authenticated;
-grant execute on function public.release_clinic_session(text, text) to service_role;
+revoke all on function public.validate_clinic_session(text, text, boolean) from public, anon, authenticated;
+grant execute on function public.validate_clinic_session(text, text, boolean) to service_role;
+revoke all on function public.release_clinic_session(text, text, text) from public, anon, authenticated;
+grant execute on function public.release_clinic_session(text, text, text) to service_role;
 
 create or replace function public.reactivate_clinic_user(
   p_user_id text,
