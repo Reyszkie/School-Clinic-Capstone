@@ -1515,7 +1515,7 @@ end;
 $$;
 
 drop function if exists public.validate_clinic_session(text, text);
-create function public.validate_clinic_session(
+create or replace function public.validate_clinic_session(
   p_user_id text,
   p_token_hash text,
   p_record_activity boolean default false
@@ -1592,7 +1592,7 @@ end;
 $$;
 
 drop function if exists public.release_clinic_session(text, text);
-create function public.release_clinic_session(
+create or replace function public.release_clinic_session(
   p_user_id text,
   p_token_hash text,
   p_reason text default 'manual'
