@@ -1,0 +1,63 @@
+erDiagram
+    CLINIC_USERS ||--o{ CLINICAL_VISITS : records
+    PATIENTS ||--o{ CLINICAL_VISITS : has
+    MEDICINES o|--o{ CLINICAL_VISITS : referenced_by
+    EQUIPMENT o|--o{ CLINICAL_VISITS : referenced_by
+    CLINICAL_VISITS ||--o{ CLINICAL_VISIT_INVENTORY_DEDUCTIONS : tracks
+    CLINIC_USERS o|--o{ AUDIT_LOGS : performs
+    CLINIC_USERS ||--o| CLINIC_SESSIONS : authenticates
+
+    CLINIC_USERS {
+        text id PK
+        text username UK
+        text role
+        text status
+        timestamptz deleted_at
+    }
+    PATIENTS {
+        text id PK
+        text name
+        text institutional_category
+        text personnel_type
+        timestamptz deleted_at
+    }
+    CLINICAL_VISITS {
+        text id PK
+        text patient_id FK
+        text nurse_id FK
+        date visit_date
+        text status
+        integer revision
+    }
+    MEDICINES {
+        text code PK
+        text name
+        integer quantity
+        date expiration_date
+    }
+    EQUIPMENT {
+        text id PK
+        text name
+        text category
+        integer quantity
+        text status
+    }
+    CLINICAL_VISIT_INVENTORY_DEDUCTIONS {
+        text visit_id PK, FK
+        text item_type PK
+        text item_id PK
+        integer quantity
+        timestamptz reversed_at
+    }
+    AUDIT_LOGS {
+        bigint id PK
+        text user_id FK
+        text action
+        text module
+        timestamptz created_at
+    }
+    CLINIC_SESSIONS {
+        text user_id PK, FK
+        text token_hash UK
+        timestamptz expires_at
+    }
