@@ -139,6 +139,12 @@ export const clinicalVisitsTable = pgTable("clinical_visits", {
 	notes: text("notes"),
 	interventions: jsonb("interventions").$type<string[]>().notNull().default([]),
 	treatmentGiven: text("treatment_given"),
+	treatmentItems: jsonb("treatment_items").$type<Array<{
+		item_type: "medicine" | "equipment";
+		item_id: string;
+		item_name: string;
+		quantity: number;
+	}>>().notNull().default([]),
 	medicineCode: text("medicine_code").references(() => medicinesTable.code, { onDelete: "set null" }),
 	medicineName: text("medicine_name"),
 	medicineQuantity: integer("medicine_quantity"),

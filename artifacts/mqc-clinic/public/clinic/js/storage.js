@@ -151,6 +151,40 @@ function visitInventoryRequirements(visit) {
       quantity: Math.max(prior?.quantity || 0, quantity),
     });
   };
+  if (Array.isArray(visit.treatmentItems) && visit.treatmentItems.length) {
+    visit.treatmentItems.forEach((treatment) => {
+      if (treatment.itemType === "medicine") {
+        const item = MEDICINES.find(
+          (candidate) =>
+            candidate.code ===
+            (treatment.itemId || treatment.item_id),
+        );
+        if (item)
+          add("medicine", item, Number(treatment.quantity) || 0);
+      } else if (treatment.itemType === "equipment") {
+        const item = EQUIPMENT.find(
+          (candidate) =>
+            candidate.id === (treatment.itemId || treatment.item_id),
+        );
+        if (item)
+          add("equipment", item, Number(treatment.quantity) || 0);
+      }
+    });
+    const toolNames = Array.isArray(visit.equipmentUsed)
+      ? visit.equipmentUsed
+      : visit.equipmentUsed
+        ? [visit.equipmentUsed]
+        : [];
+    toolNames.forEach((name) => {
+      const item = EQUIPMENT.find(
+        (candidate) =>
+          candidate.id === name || candidate.name === name,
+      );
+      if (item)
+        add("equipment", item, Math.max(1, Number(visit.equipmentQty) || 1));
+    });
+    return [...requirements.values()];
+  }
   if (visit.medicine || visit.medicineCode) {
     const medicine = MEDICINES.find(
       (item) =>

@@ -157,6 +157,7 @@ create table if not exists public.clinical_visits (
   notes text,
   interventions jsonb not null default '[]'::jsonb,
   treatment_given text,
+  treatment_items jsonb not null default '[]'::jsonb,
   medicine_code text references public.medicines(code) on delete set null,
   medicine_name text,
   medicine_quantity integer check (medicine_quantity is null or medicine_quantity > 0),
@@ -183,6 +184,9 @@ create table if not exists public.clinical_visits (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.clinical_visits
+  add column if not exists treatment_items jsonb not null default '[]'::jsonb;
 
 -- Visit outcome is optional clinical information; legacy rows remain unchanged.
 alter table public.clinical_visits
@@ -271,9 +275,15 @@ create table if not exists public.clinical_visit_inventory_deductions (
 
 alter table public.clinical_visit_inventory_deductions enable row level security;
 
+drop function if exists public.save_clinical_visit_with_inventory(jsonb, text);
+
 create or replace function public.save_clinical_visit_with_inventory(
   p_visit jsonb,
-  p_patient_allergies text
+  p_patient_allergies text,
+  p_user_id text,
+  p_username text,
+  p_user_name text,
+  p_role text
 )
 returns void
 language plpgsql
@@ -289,6 +299,8 @@ declare
   v_item_id text;
   v_item_name text;
   v_has_deductions boolean;
+  v_treatment jsonb;
+  v_treatment_type text;
 begin
   v_visit := jsonb_populate_record(null::public.clinical_visits, p_visit);
   if v_visit.id is null or v_visit.patient_id is null then
@@ -303,6 +315,18 @@ begin
   if v_visit.guardian_contacted is not null
     and v_visit.guardian_contacted not in ('Yes', 'No', 'Not Applicable') then
     raise exception 'Parent / Guardian Contacted must be Yes, No, or Not Applicable.';
+  end if;
+  v_visit.treatment_items := coalesce(v_visit.treatment_items, '[]'::jsonb);
+  if jsonb_typeof(v_visit.treatment_items) <> 'array' then
+    raise exception 'Treatment items must be a list.';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(v_visit.treatment_items) as items(value)
+    group by value->>'item_type', value->>'item_id'
+    having count(*) > 1
+  ) then
+    raise exception 'An inventory item cannot be selected more than once.';
   end if;
   perform pg_advisory_xact_lock(hashtextextended(v_visit.id, 0));
 
@@ -401,7 +425,7 @@ begin
   insert into public.clinical_visits
   select (v_visit).*;
 
-  if v_visit.medicine_code is not null then
+  if jsonb_array_length(v_visit.treatment_items) = 0 and v_visit.medicine_code is not null then
     v_quantity := v_visit.medicine_quantity;
     if v_quantity is null or v_quantity <= 0 then
       raise exception 'Medication quantity must be a positive whole number.';
@@ -424,7 +448,7 @@ begin
     values (v_visit.id, 'medicine', v_visit.medicine_code, v_quantity);
   end if;
 
-  if v_visit.supply_item_id is not null then
+  if jsonb_array_length(v_visit.treatment_items) = 0 and v_visit.supply_item_id is not null then
     v_quantity := v_visit.supply_quantity;
     if v_quantity is null or v_quantity <= 0 then
       raise exception 'Supply quantity must be a positive whole number.';
@@ -473,6 +497,70 @@ begin
       values (v_visit.id, 'equipment', v_item_id, v_quantity);
     end loop;
   end if;
+
+  for v_treatment in
+    select value from jsonb_array_elements(v_visit.treatment_items) as items(value)
+  loop
+    v_treatment_type := v_treatment->>'item_type';
+    v_item_id := nullif(btrim(v_treatment->>'item_id'), '');
+    v_item_name := nullif(btrim(v_treatment->>'item_name'), '');
+    if v_treatment_type is null or v_treatment_type not in ('medicine', 'equipment') or v_item_id is null
+      or coalesce(v_treatment->>'quantity', '') !~ '^[1-9][0-9]{0,9}$' then
+      raise exception 'Every treatment item requires a valid inventory record and positive whole-number quantity.';
+    end if;
+    if (v_treatment->>'quantity')::numeric > 2147483647 then
+      raise exception 'Treatment quantity exceeds the maximum supported inventory quantity.';
+    end if;
+    v_quantity := (v_treatment->>'quantity')::integer;
+    if v_treatment_type = 'medicine' then
+      update public.medicines
+      set quantity = quantity - v_quantity
+      where code = v_item_id
+        and name = v_item_name
+        and quantity >= v_quantity
+        and deleted_at is null
+        and (expiration_date is null or expiration_date >= current_date)
+      returning quantity + v_quantity into v_stock;
+    else
+      update public.equipment
+      set quantity = quantity - v_quantity
+      where id = v_item_id
+        and name = v_item_name
+        and category = 'Medical Supplies'
+        and quantity >= v_quantity
+        and status = 'Available'
+        and deleted_at is null
+      returning quantity + v_quantity into v_stock;
+    end if;
+    if not found then
+      if v_treatment_type = 'medicine' then
+        select quantity into v_stock from public.medicines where code = v_item_id;
+      else
+        select quantity into v_stock from public.equipment where id = v_item_id;
+      end if;
+      raise exception 'Insufficient stock or unavailable inventory for %: % available, % requested.',
+        coalesce(v_item_name, v_item_id), coalesce(v_stock, 0), v_quantity
+        using errcode = 'P0001';
+    end if;
+    insert into public.clinical_visit_inventory_deductions
+      (visit_id, item_type, item_id, quantity)
+    values
+      (v_visit.id, v_treatment_type, v_item_id, v_quantity);
+    insert into public.audit_logs (
+      user_id, user_name, username, role, action, event_details, module, status
+    ) values (
+      p_user_id,
+      coalesce(nullif(btrim(p_user_name), ''), v_visit.nurse_name),
+      nullif(btrim(p_username), ''),
+      coalesce(nullif(btrim(p_role), ''), 'Unknown'),
+      format('Treatment inventory deducted — %s × %s — visit %s',
+        v_item_name, v_quantity, v_visit.id),
+      format('Inventory record %s; quantity deducted: %s; patient visit: %s',
+        v_item_id, v_quantity, v_visit.id),
+      case when v_treatment_type = 'medicine' then 'Medicines' else 'Medical Supplies' end,
+      'Success'
+    );
+  end loop;
 
   update public.patients
   set allergies = coalesce(p_patient_allergies, allergies)
@@ -936,8 +1024,8 @@ begin
 end;
 $$;
 
-revoke all on function public.save_clinical_visit_with_inventory(jsonb, text) from public;
-grant execute on function public.save_clinical_visit_with_inventory(jsonb, text) to service_role;
+revoke all on function public.save_clinical_visit_with_inventory(jsonb, text, text, text, text, text) from public;
+grant execute on function public.save_clinical_visit_with_inventory(jsonb, text, text, text, text, text) to service_role;
 revoke all on function public.update_clinical_visit_with_inventory(jsonb, text) from public;
 grant execute on function public.update_clinical_visit_with_inventory(jsonb, text) to service_role;
 revoke all on function public.set_clinical_visit_inventory_status(text, boolean, boolean) from public;

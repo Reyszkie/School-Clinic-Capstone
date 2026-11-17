@@ -588,113 +588,59 @@ function bindOptionFreeText(group, initialValue = "") {
   return update;
 }
 
-function visitInventoryCard({
-  id,
-  label,
-  items,
-  selected,
-  quantityId,
-  quantity,
-  unitForItem,
-  availableForItem,
-  multiple = false,
-}) {
-  const itemKey = (item) => item.code || item.id || item.name;
-  const selectedKeys = multiple
-    ? Array.isArray(selected)
-      ? selected
-      : [selected]
-    : [selected];
-  const selectedItems = items.filter(
-    (item) =>
-      selectedKeys.includes(itemKey(item)) || selectedKeys.includes(item.name),
-  );
-  const stockText = selectedItems.length
-    ? `Available Stock: ${selectedItems.map((item) => `${item.name} ${availableForItem(item)} ${unitForItem(item)}`).join("; ")}`
-    : "Available Stock: Select an item";
-  return `<section class="visit-inventory-card">
-    <div class="visit-inventory-heading"><label for="${id}">${label}</label>
-      <select id="${id}" aria-label="${label}" ${multiple ? 'multiple size="4"' : ""}>${multiple ? "" : '<option value="">None</option>'}${items.map((item) => `<option value="${escapeHtml(itemKey(item))}" ${selectedKeys.includes(itemKey(item)) || selectedKeys.includes(item.name) ? "selected" : ""} ${item.deleted || item.unavailable || (availableForItem(item) < 1 && !selectedKeys.includes(itemKey(item)) && !selectedKeys.includes(item.name)) ? "disabled" : ""}>${escapeHtml(item.name)}${item.deleted || item.unavailable ? " (Unavailable — historical record)" : ""}</option>`).join("")}</select>
-      <span class="visit-inventory-stock" id="${id}-stock" aria-live="polite">${stockText}</span>
+function visitTreatmentCard(row, medicines, supplies, medicineAvailable, equipmentAvailable) {
+  const rowId = String(row.rowId),
+    itemType = row.itemType || "",
+    itemId = row.itemId || "",
+    items =
+      itemType === "medicine"
+        ? medicines
+        : itemType === "equipment"
+          ? supplies
+          : [],
+    selectedItem = items.find((item) =>
+      itemType === "medicine" ? item.code === itemId : item.id === itemId,
+    ),
+    itemOptions = items
+      .map((item) => {
+        const key = itemType === "medicine" ? item.code : item.id;
+        const available = Math.max(
+          0,
+          Number(
+            itemType === "medicine"
+              ? medicineAvailable(item)
+              : equipmentAvailable(item),
+          ) || 0,
+        );
+        const unavailable = item.deleted || item.unavailable;
+        return `<option value="${escapeHtml(key)}" ${key === itemId ? "selected" : ""} ${unavailable || (available < 1 && key !== itemId) ? "disabled" : ""}>${escapeHtml(item.name)}${unavailable ? " (Unavailable — historical record)" : ""}</option>`;
+      })
+      .join("");
+  return `<section class="visit-inventory-card" data-treatment-row="${escapeHtml(rowId)}">
+    <div class="visit-inventory-heading">
+      <label for="cf-treatment-type-${escapeHtml(rowId)}">Treatment Item</label>
+      <select id="cf-treatment-type-${escapeHtml(rowId)}" data-treatment-type aria-label="Treatment item type">
+        <option value="">Select item type</option>
+        <option value="medicine" ${itemType === "medicine" ? "selected" : ""}>Medicine</option>
+        <option value="equipment" ${itemType === "equipment" ? "selected" : ""}>Medical Supply</option>
+      </select>
+      <select id="cf-treatment-item-${escapeHtml(rowId)}" data-treatment-item aria-label="Treatment item" ${itemType ? "" : "disabled"}>
+        <option value="">Select an item</option>${itemOptions}
+      </select>
+      <span class="visit-inventory-stock" data-treatment-stock aria-live="polite">${selectedItem ? `Available Stock: ${Math.max(0, Number(itemType === "medicine" ? medicineAvailable(selectedItem) : equipmentAvailable(selectedItem)) || 0)} ${itemType === "medicine" ? escapeHtml(selectedItem.unit || "unit(s)") : "items"}` : "Available Stock: Select an item"}
+      </span>
     </div>
-    <div class="visit-inventory-quantity"><label for="${quantityId}">Treatment Quantity</label><div class="visit-quantity-control">
-      <input id="${quantityId}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" value="${Math.max(0, Number(quantity) || 0)}" aria-label="${label} treatment quantity" autocomplete="off">
-    </div></div><div class="field-error hidden" id="${quantityId}-error" role="alert"></div>
+    <div class="visit-inventory-quantity">
+      <label for="cf-treatment-quantity-${escapeHtml(rowId)}">Treatment Quantity</label>
+      <div class="visit-quantity-control">
+        <button type="button" class="visit-quantity-step" data-quantity-step="-1" aria-label="Decrease treatment quantity" title="Decrease quantity">−</button>
+        <input id="cf-treatment-quantity-${escapeHtml(rowId)}" type="number" min="0" step="1" value="${Math.max(0, Number(row.quantity) || 0)}" data-treatment-quantity aria-label="Treatment quantity" autocomplete="off">
+        <button type="button" class="visit-quantity-step" data-quantity-step="1" aria-label="Increase treatment quantity" title="Increase quantity">+</button>
+      </div>
+      ${rowId === "1" ? "" : `<button type="button" class="btn visit-treatment-remove" data-remove-treatment="${escapeHtml(rowId)}" aria-label="Remove treatment item">Remove</button>`}
+    </div>
+    <div class="field-error hidden" data-treatment-error role="alert"></div>
   </section>`;
-}
-
-function bindVisitInventoryCard({
-  id,
-  quantityId,
-  items,
-  unitForItem,
-  availableForItem,
-  defaultQuantity = 1,
-  multiple = false,
-}) {
-  const select = document.getElementById(id),
-    quantity = document.getElementById(quantityId),
-    stock = document.getElementById(`${id}-stock`);
-  if (!select || !quantity || !stock) return;
-  const error = document.getElementById(`${quantityId}-error`);
-  const update = () => {
-    const selectedItems = multiple
-      ? [...select.selectedOptions]
-          .map((option) =>
-            items.find(
-              (candidate) =>
-                (candidate.code || candidate.id || candidate.name) ===
-                  option.value || candidate.name === option.value,
-            ),
-          )
-          .filter(Boolean)
-      : [
-          items.find(
-            (candidate) =>
-              (candidate.code || candidate.id || candidate.name) ===
-                select.value || candidate.name === select.value,
-          ),
-        ].filter(Boolean);
-    const available = selectedItems.length
-      ? Math.min(...selectedItems.map(availableForItem))
-      : 0;
-    stock.textContent = selectedItems.length
-      ? `Available Stock: ${selectedItems.map((item) => `${item.name} ${availableForItem(item)} ${unitForItem(item)}`).join("; ")}`
-      : "Available Stock: Select an item";
-    quantity.max = selectedItems.length ? String(available) : "";
-    quantity.required = Boolean(selectedItems.length);
-    const validQuantity = /^[1-9]\d*$/.test(quantity.value);
-    const current = validQuantity ? Number(quantity.value) : 0;
-    const invalid = Boolean(
-      selectedItems.length &&
-      (!validQuantity ||
-        selectedItems.some((item) => current > availableForItem(item))),
-    );
-    quantity.setAttribute("aria-invalid", String(invalid));
-    quantity.setCustomValidity(
-      invalid
-        ? validQuantity
-          ? `Requested quantity exceeds available inventory stock.`
-          : "Enter a positive whole-number quantity."
-        : "",
-    );
-    error.textContent = invalid
-      ? validQuantity
-        ? `Requested quantity exceeds available inventory stock.`
-        : "Enter a positive whole-number quantity."
-      : "";
-    error.classList.toggle("hidden", !invalid);
-  };
-  select.addEventListener("change", () => {
-    quantity.value = String(defaultQuantity);
-    update();
-  });
-  quantity.addEventListener("input", () => {
-    quantity.value = quantity.value.replace(/\D/g, "");
-    update();
-  });
-  update();
-  return update;
 }
 
 function normalizeGuardianContacted(value) {
@@ -760,7 +706,7 @@ function openConsultationForm(student, existing = null) {
       notes: "",
       interventions: [],
       supplyUsed: "",
-      supplyQty: 1,
+      supplyQty: 0,
       equipmentUsed: [],
       equipmentQty: 1,
       treatmentGiven: "",
@@ -774,7 +720,8 @@ function openConsultationForm(student, existing = null) {
       staffRecord: state.currentUser.name,
       position: state.currentUser.role || "Staff Nurse",
       medicine: "",
-      medQty: 1,
+      medQty: 0,
+      treatmentItems: [],
     };
   }
   if (isEdit && (f.medicine || f.medicineCode)) {
@@ -808,6 +755,47 @@ function openConsultationForm(student, existing = null) {
     if (!supply) f.supplyQty = 0;
   }
   const allergyHistory = String(f.allergiesHistory || "");
+  const treatmentItems =
+    Array.isArray(f.treatmentItems) && f.treatmentItems.length
+      ? f.treatmentItems.map((item, index) => ({
+          rowId: String(index + 1),
+          itemType: item.itemType || item.item_type || "",
+          itemId: item.itemId || item.item_id || "",
+          itemName: item.itemName || item.item_name || "",
+          quantity: Math.max(0, Number(item.quantity) || 0),
+        }))
+      : [
+          ...(f.medicine || f.medicineCode
+            ? [
+                {
+                  rowId: "1",
+                  itemType: "medicine",
+                  itemId: f.medicineCode || "",
+                  itemName: f.medicine || "",
+                  quantity: Math.max(0, Number(f.medQty) || 0),
+                },
+              ]
+            : []),
+          ...(f.supplyUsed || f.supplyItemId
+            ? [
+                {
+                  rowId: String((f.medicine || f.medicineCode ? 2 : 1)),
+                  itemType: "equipment",
+                  itemId: f.supplyItemId || "",
+                  itemName: f.supplyUsed || "",
+                  quantity: Math.max(0, Number(f.supplyQty) || 0),
+                },
+              ]
+            : []),
+        ];
+  if (!treatmentItems.length)
+    treatmentItems.push({
+      rowId: "1",
+      itemType: "",
+      itemId: "",
+      itemName: "",
+      quantity: 0,
+    });
   const allergyAnswer = /^yes\b/i.test(allergyHistory)
     ? "Yes"
     : /^no\b/i.test(allergyHistory)
@@ -828,14 +816,24 @@ function openConsultationForm(student, existing = null) {
     (Number(item.qty) || 0) + returnedQuantity("medicine", item.code);
   const equipmentAvailable = (item) =>
     (Number(item.qty) || 0) + returnedQuantity("equipment", item.id);
+  const selectedTreatmentMedicine = treatmentItems.find(
+    (item) => item.itemType === "medicine",
+  );
+  const selectedTreatmentSupply = treatmentItems.find(
+    (item) => item.itemType === "equipment",
+  );
   const selectedMedicine =
     MEDICINES.find(
       (item) => item.code === f.medicineCode || item.name === f.medicine,
     ) ||
-    (isEdit && f.medicineCode
+    MEDICINES.find((item) => item.code === selectedTreatmentMedicine?.itemId) ||
+    (isEdit && (f.medicineCode || selectedTreatmentMedicine?.itemId)
       ? {
-          code: f.medicineCode,
-          name: f.medicine || "Unavailable medicine",
+          code: f.medicineCode || selectedTreatmentMedicine?.itemId,
+          name:
+            f.medicine ||
+            selectedTreatmentMedicine?.itemName ||
+            "Unavailable medicine",
           qty: 0,
           deleted: true,
         }
@@ -846,6 +844,7 @@ function openConsultationForm(student, existing = null) {
       !item.deleted &&
       item.status === "Available" &&
       (item.id === f.supplyItemId ||
+        item.id === selectedTreatmentSupply?.itemId ||
         item.id === existingSupply ||
         item.name === existingSupply),
   );
@@ -853,7 +852,7 @@ function openConsultationForm(student, existing = null) {
     (item) =>
       !item.deleted &&
       !medicineIsExpired(item) &&
-      (Number(item.qty) > 0 || item.code === selectedMedicine?.code),
+      (medicineAvailable(item) > 0 || item.code === selectedMedicine?.code),
   );
   if (selectedMedicine && !meds.includes(selectedMedicine))
     meds.push({ ...selectedMedicine, unavailable: true });
@@ -866,6 +865,29 @@ function openConsultationForm(student, existing = null) {
   );
   if (selectedSupply && !supplies.includes(selectedSupply))
     supplies.push({ ...selectedSupply, unavailable: true });
+  treatmentItems.forEach((treatment) => {
+    if (treatment.itemType === "medicine") {
+      const item = MEDICINES.find((candidate) => candidate.code === treatment.itemId);
+      if (item && !meds.includes(item))
+        meds.push({
+          ...item,
+          unavailable:
+            item.deleted ||
+            medicineIsExpired(item) ||
+            medicineAvailable(item) < 1,
+        });
+    } else if (treatment.itemType === "equipment") {
+      const item = EQUIPMENT.find((candidate) => candidate.id === treatment.itemId);
+      if (item && !supplies.includes(item))
+        supplies.push({
+          ...item,
+          unavailable:
+            item.deleted ||
+            item.status !== "Available" ||
+            equipmentAvailable(item) < 1,
+        });
+    }
+  });
   const html = `<div class="modal-head"><h3>${isEdit ? "Record Follow-up Visit" : "New Patient Visit"} — ${escapeHtml(student.name)}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body"><form id="consult-form" class="form-grid">
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
@@ -888,10 +910,10 @@ function openConsultationForm(student, existing = null) {
       <input type="hidden" id="cf-weight" value="${escapeHtml(f.weight || "")}"><input type="hidden" id="cf-height" value="${escapeHtml(f.height || "")}">
     </div></div>
     <div class="f-field full"><label>Treatment / Intervention</label><div style="padding-top:5px">${optionListHtml(INTERVENTIONS, f.interventions || [], "intervention")}<label class="option-check"><input type="checkbox" id="cf-intervention-other" data-free-text-toggle="intervention-other" ${f.interventions?.some((x) => x === "Other" || x.startsWith("Other: ")) ? "checked" : ""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="intervention-other" placeholder="Enter other intervention" value="${escapeHtml((f.interventions || []).find((x) => x.startsWith("Other: "))?.replace("Other: ", "") || "")}"></div></div>
-    <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4><div class="visit-inventory-grid">
-      ${visitInventoryCard({ id: "cf-medicine", label: "Medicines", items: meds, selected: selectedMedicine?.code || f.medicine, quantityId: "cf-medqty", quantity: f.medQty, unitForItem: (item) => item.unit || "unit(s)", availableForItem: medicineAvailable })}
-      ${visitInventoryCard({ id: "cf-supply", label: "Medical Supplies", items: supplies, selected: selectedSupply?.id || existingSupply, quantityId: "cf-supply-qty", quantity: f.supplyQty, unitForItem: () => "items", availableForItem: equipmentAvailable })}
-    </div></div>
+    <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4>
+      <div class="visit-inventory-grid" id="cf-treatment-items">${treatmentItems.map((item) => visitTreatmentCard(item, meds, supplies, medicineAvailable, equipmentAvailable)).join("")}</div>
+      <button type="button" class="btn visit-treatment-add" id="cf-add-treatment">Add Another Item (+)</button>
+    </div>
     <div class="f-field full"><label>Clinic Disposition — Outcome</label><select id="cf-outcome"><option value="">Not recorded</option>${DISPOSITIONS.map((x) => `<option ${f.outcome === x ? "selected" : ""}>${x}</option>`).join("")}<option ${f.outcome === "Other" ? "selected" : ""}>Other</option></select></div>
     <div class="f-field full"><label>Remarks</label><textarea id="cf-remarks">${escapeHtml(f.remarks || "")}</textarea></div>
     <div class="f-field full"><label>Parent / Guardian Notification</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
@@ -922,20 +944,169 @@ function openConsultationForm(student, existing = null) {
       .find((x) => x.startsWith("Other: "))
       ?.replace("Other: ", "") || "",
   );
-  const updateMedicineCard = bindVisitInventoryCard({
-    id: "cf-medicine",
-    quantityId: "cf-medqty",
-    items: meds,
-    unitForItem: (item) => item.unit || "unit(s)",
-    availableForItem: medicineAvailable,
+  const treatmentContainer = document.getElementById("cf-treatment-items");
+  let nextTreatmentRowId =
+    Math.max(0, ...treatmentItems.map((item) => Number(item.rowId) || 0)) + 1;
+  const readTreatmentRows = () =>
+    [...treatmentContainer.querySelectorAll("[data-treatment-row]")].map(
+      (row) => ({
+        rowId: row.dataset.treatmentRow,
+        itemType: row.querySelector("[data-treatment-type]").value,
+        itemId: row.querySelector("[data-treatment-item]").value,
+        itemName:
+          row.querySelector("[data-treatment-item]").selectedOptions[0]
+            ?.textContent.replace(/ \(Unavailable.*\)$/, "") || "",
+        quantity: row.querySelector("[data-treatment-quantity]").value,
+      }),
+    );
+  const renderTreatmentRows = (rows) => {
+    treatmentContainer.innerHTML = rows
+      .map((item) =>
+        visitTreatmentCard(
+          item,
+          meds,
+          supplies,
+          medicineAvailable,
+          equipmentAvailable,
+        ),
+      )
+      .join("");
+    updateTreatmentRows();
+  };
+  const findTreatmentInventoryItem = (type, id) =>
+    (type === "medicine" ? meds : supplies).find((item) =>
+      type === "medicine" ? item.code === id : item.id === id,
+    );
+  const updateTreatmentRows = () => {
+    const rows = [...treatmentContainer.querySelectorAll("[data-treatment-row]")];
+    const selected = new Set();
+    rows.forEach((row) => {
+      const type = row.querySelector("[data-treatment-type]").value;
+      const itemSelect = row.querySelector("[data-treatment-item]");
+      const quantity = row.querySelector("[data-treatment-quantity]");
+      const stock = row.querySelector("[data-treatment-stock]");
+      const error = row.querySelector("[data-treatment-error]");
+      const item = findTreatmentInventoryItem(type, itemSelect.value);
+      const key = item ? `${type}:${type === "medicine" ? item.code : item.id}` : "";
+      const duplicate = Boolean(key && selected.has(key));
+      if (key) selected.add(key);
+      const available = item
+        ? Math.max(
+            0,
+            Number(
+              type === "medicine"
+                ? medicineAvailable(item)
+                : equipmentAvailable(item),
+            ) || 0,
+          )
+        : 0;
+      [...itemSelect.options].forEach((option) => {
+        if (!option.value) return;
+        const optionKey = `${type}:${option.value}`;
+        option.disabled =
+          optionKey !== key &&
+          rows.some(
+            (other) =>
+              other !== row &&
+              other.querySelector("[data-treatment-type]").value === type &&
+              other.querySelector("[data-treatment-item]").value === option.value,
+          );
+      });
+      stock.textContent = item
+        ? `Available Stock: ${available} ${type === "medicine" ? item.unit || "unit(s)" : "items"}`
+        : "Available Stock: Select an item";
+      const value = Number(quantity.value);
+      const invalidQuantity =
+        Boolean(item) &&
+        (!Number.isInteger(value) || value < 1 || value > available);
+      const invalid = duplicate || invalidQuantity;
+      quantity.setAttribute("aria-invalid", String(invalid));
+      quantity.setCustomValidity(
+        duplicate
+          ? "Select each inventory item only once."
+          : invalidQuantity
+            ? value > available
+              ? "Requested quantity exceeds available inventory stock."
+              : "Enter a positive whole-number quantity."
+            : "",
+      );
+      itemSelect.setAttribute("aria-invalid", String(duplicate));
+      itemSelect.setCustomValidity(
+        duplicate ? "Select each inventory item only once." : "",
+      );
+      error.textContent = duplicate
+        ? "This inventory item is already selected. Choose a different item."
+        : invalidQuantity
+          ? value > available
+            ? `Requested quantity exceeds the ${available} available.`
+            : "Enter a positive whole-number quantity."
+          : "";
+      error.classList.toggle("hidden", !invalid);
+      row.querySelectorAll("[data-quantity-step]").forEach((button) => {
+        button.disabled =
+          button.dataset.quantityStep === "-1" &&
+          (!Number.isFinite(value) || value <= 0);
+      });
+    });
+  };
+  treatmentContainer.addEventListener("change", (event) => {
+    const row = event.target.closest("[data-treatment-row]");
+    if (event.target.matches("[data-treatment-type]") && row) {
+      const rows = readTreatmentRows().map((item) =>
+        item.rowId === row.dataset.treatmentRow
+          ? { ...item, itemId: "", itemName: "", quantity: 0 }
+          : item,
+      );
+      renderTreatmentRows(rows);
+    } else if (event.target.matches("[data-treatment-item]") && row) {
+      row.querySelector("[data-treatment-quantity]").value = "0";
+      updateTreatmentRows();
+    } else updateTreatmentRows();
   });
-  const updateSupplyCard = bindVisitInventoryCard({
-    id: "cf-supply",
-    quantityId: "cf-supply-qty",
-    items: supplies,
-    unitForItem: () => "items",
-    availableForItem: equipmentAvailable,
+  treatmentContainer.addEventListener("input", updateTreatmentRows);
+  treatmentContainer.addEventListener("click", (event) => {
+    const step = event.target.closest("[data-quantity-step]");
+    const row = event.target.closest("[data-treatment-row]");
+    if (step && row) {
+      const quantity = row.querySelector("[data-treatment-quantity]");
+      const next = Math.max(
+        0,
+        (Number.parseInt(quantity.value, 10) || 0) +
+          Number(step.dataset.quantityStep),
+      );
+      quantity.value = String(next);
+      updateTreatmentRows();
+      return;
+    }
+    const remove = event.target.closest("[data-remove-treatment]");
+    if (remove) {
+      const rows = readTreatmentRows().filter(
+        (item) => item.rowId !== remove.dataset.removeTreatment,
+      );
+      if (!rows.length)
+        rows.push({
+          rowId: String(nextTreatmentRowId++),
+          itemType: "",
+          itemId: "",
+          itemName: "",
+          quantity: 0,
+        });
+      renderTreatmentRows(rows);
+    }
   });
+  document.getElementById("cf-add-treatment").onclick = () => {
+    renderTreatmentRows([
+      ...readTreatmentRows(),
+      {
+        rowId: String(nextTreatmentRowId++),
+        itemType: "",
+        itemId: "",
+        itemName: "",
+        quantity: 0,
+      },
+    ]);
+  };
+  updateTreatmentRows();
   let visitSaveInProgress = false;
   let pendingVisitId = "";
   document.getElementById("cf-clear").onclick = () => {
@@ -964,15 +1135,20 @@ function openConsultationForm(student, existing = null) {
         });
         document.getElementById("cf-date").value = todayDateString();
         document.getElementById("cf-time").value = currentTimeString();
-        document.getElementById("cf-medqty").value = "0";
-        document.getElementById("cf-supply-qty").value = "0";
+        renderTreatmentRows([
+          {
+            rowId: String(nextTreatmentRowId++),
+            itemType: "",
+            itemId: "",
+            itemName: "",
+            quantity: 0,
+          },
+        ]);
         form.querySelectorAll(".field-error").forEach((error) => {
           error.textContent = "";
           error.classList.add("hidden");
         });
         syncInterventionFreeText?.();
-        updateMedicineCard?.();
-        updateSupplyCard?.();
       },
     });
   };
@@ -1006,41 +1182,49 @@ function openConsultationForm(student, existing = null) {
       return;
     }
     const outcome = document.getElementById("cf-outcome").value;
-    const medicineKey = document.getElementById("cf-medicine").value,
-      medQty = Number(document.getElementById("cf-medqty").value),
-      med =
-        MEDICINES.find(
-          (item) => item.code === medicineKey || item.name === medicineKey,
-        ) ||
-        (isEdit && medicineKey === f.medicineCode ? selectedMedicine : null);
-    const supplyKey = document.getElementById("cf-supply").value,
-      supplyQty = Number(document.getElementById("cf-supply-qty").value),
-      supplyItem =
-        EQUIPMENT.find(
-          (item) =>
-            item.category === "Medical Supplies" &&
-            !item.deleted &&
-            item.status === "Available" &&
-            (item.id === supplyKey || item.name === supplyKey),
-        ) || (isEdit && supplyKey === f.supplyItemId ? selectedSupply : null);
-    const medName = med?.name || "",
-      supplyName = supplyItem?.name || "";
-    if (medName && (!Number.isInteger(medQty) || medQty < 1)) {
+    const treatmentItems = readTreatmentRows()
+      .filter((row) => row.itemId)
+      .map((row) => {
+        const item = findTreatmentInventoryItem(row.itemType, row.itemId);
+        return item
+          ? {
+              itemType: row.itemType,
+              itemId: row.itemType === "medicine" ? item.code : item.id,
+              itemName: item.name,
+              quantity: Number(row.quantity),
+              inventoryItem: item,
+            }
+          : null;
+      });
+    if (treatmentItems.some((item) => !item)) {
+      toast("Invalid treatment item", "Choose an item from the inventory list.", "err");
+      return;
+    }
+    const selectedTreatments = treatmentItems;
+    if (
+      selectedTreatments.some(
+        (item) => !Number.isInteger(item.quantity) || item.quantity < 1,
+      )
+    ) {
       toast(
         "Invalid quantity",
-        "Enter a whole-number medication quantity of at least 1.",
+        "Enter a whole-number treatment quantity of at least 1 for each selected item.",
         "err",
       );
       return;
     }
-    if (supplyName && (!Number.isInteger(supplyQty) || supplyQty < 1)) {
-      toast(
-        "Invalid quantity",
-        "Enter a whole-number supply quantity of at least 1.",
-        "err",
-      );
-      return;
-    }
+    const medTreatment = selectedTreatments.find(
+      (item) => item.itemType === "medicine",
+    );
+    const supplyTreatment = selectedTreatments.find(
+      (item) => item.itemType === "equipment",
+    );
+    const med = medTreatment?.inventoryItem;
+    const supplyItem = supplyTreatment?.inventoryItem;
+    const medName = medTreatment?.itemName || "";
+    const supplyName = supplyTreatment?.itemName || "";
+    const medQty = medTreatment?.quantity || 0;
+    const supplyQty = supplyTreatment?.quantity || 0;
     const previous = isEdit
       ? CONSULTATIONS.find((c) => c.id === existing.id)
       : null;
@@ -1065,8 +1249,13 @@ function openConsultationForm(student, existing = null) {
       ?.value.trim();
     if (interventionOther) interventions.push(`Other: ${interventionOther}`);
     if (
-      (medName && med && medQty > medicineAvailable(med)) ||
-      (supplyName && supplyItem && supplyQty > equipmentAvailable(supplyItem))
+      selectedTreatments.some(
+        (item) =>
+          item.quantity >
+          (item.itemType === "medicine"
+            ? medicineAvailable(item.inventoryItem)
+            : equipmentAvailable(item.inventoryItem)),
+      )
     ) {
       toast(
         "Insufficient inventory",
@@ -1109,6 +1298,9 @@ function openConsultationForm(student, existing = null) {
       supplyUsed: supplyName || null,
       supplyItemId: supplyItem?.id || null,
       supplyQty,
+      treatmentItems: selectedTreatments.map(
+        ({ inventoryItem: _inventoryItem, ...item }) => item,
+      ),
       equipmentUsed: isEdit ? f.equipmentUsed || [] : [],
       equipmentQty: isEdit ? f.equipmentQty || 1 : 1,
       outcome,
@@ -1232,6 +1424,29 @@ function openConsultationForm(student, existing = null) {
 }
 
 function consultationRows(c) {
+  const treatmentItems =
+    Array.isArray(c.treatmentItems) && c.treatmentItems.length
+      ? c.treatmentItems
+      : [
+          ...(c.medicine
+            ? [
+                {
+                  itemType: "medicine",
+                  itemName: c.medicine,
+                  quantity: c.medQty,
+                },
+              ]
+            : []),
+          ...(c.supplyUsed
+            ? [
+                {
+                  itemType: "equipment",
+                  itemName: c.supplyUsed,
+                  quantity: c.supplyQty,
+                },
+              ]
+            : []),
+        ];
   return [
     ["Record No.", c.id],
     ["Date / Time", `${fmtDate(c.date)} · ${c.time || "—"}`],
@@ -1272,10 +1487,24 @@ function consultationRows(c) {
       (c.interventions || []).join(", ") || c.treatment || "—",
     ],
     [
-      "Medical Supplies",
-      c.supplyUsed
-        ? `${c.supplyUsed} × ${c.supplyQty ?? "Not recorded"}`
-        : "—",
+      "Treatment Given — Medicines",
+      treatmentItems
+        .filter((item) => item.itemType === "medicine")
+        .map(
+          (item) =>
+            `${item.itemName || item.item_name || "Medicine"} × ${item.quantity ?? "Not recorded"}`,
+        )
+        .join(", ") || "—",
+    ],
+    [
+      "Treatment Given — Medical Supplies",
+      treatmentItems
+        .filter((item) => item.itemType === "equipment")
+        .map(
+          (item) =>
+            `${item.itemName || item.item_name || "Medical supply"} × ${item.quantity ?? "Not recorded"}`,
+        )
+        .join(", ") || "—",
     ],
     [
       "Medical Equipment",
@@ -1287,12 +1516,7 @@ function consultationRows(c) {
         .join(", ") || "—",
     ],
     ["Additional Treatment Details", c.treatmentGiven || "—"],
-    [
-      "Medicines",
-      c.medicine
-        ? `${c.medicine} × ${c.medQty ?? "Not recorded"} · ${c.dosage || ""}`
-        : "—",
-    ],
+    ["Dosage", c.dosage || "—"],
     ["Outcome", c.outcome || "—"],
     ["Time Released / Referred", c.releasedAt || "—"],
     [

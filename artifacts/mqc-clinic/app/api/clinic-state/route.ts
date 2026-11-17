@@ -414,6 +414,62 @@ function normalizeVisitRow(
   const hasSupplySelection = Boolean(
     (typeof supplyName === "string" && supplyName.trim()) || supplyItemId,
   );
+  const rawTreatmentItems = row.treatmentItems ?? row.treatment_items;
+  const treatmentItemsInput = Array.isArray(rawTreatmentItems)
+    ? rawTreatmentItems
+    : [
+        ...(medicineName
+          ? [
+              {
+                itemType: "medicine",
+                itemId: medicineCode,
+                itemName: medicineName,
+                quantity: medicineQuantity,
+              },
+            ]
+          : []),
+        ...(hasSupplySelection
+          ? [
+              {
+                itemType: "equipment",
+                itemId: supplyItemId || supplyName,
+                itemName: supplyName,
+                quantity: supplyQuantity,
+              },
+            ]
+          : []),
+      ];
+  const treatmentItems = treatmentItemsInput.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      throw new Error("A treatment item is invalid.");
+    const treatment = item as Record<string, unknown>;
+    const itemType = treatment.itemType ?? treatment.item_type;
+    const itemId = treatment.itemId ?? treatment.item_id;
+    const itemName = treatment.itemName ?? treatment.item_name;
+    const quantity = toNumber(treatment.quantity);
+    if (itemType !== "medicine" && itemType !== "equipment")
+      throw new Error("Treatment items must be a medicine or medical supply.");
+    if (typeof itemId !== "string" || !itemId.trim())
+      throw new Error("Every treatment item must be linked to an inventory record.");
+    if (
+      requireOtherReason &&
+      (!Number.isSafeInteger(Number(quantity)) ||
+        Number(quantity) <= 0 ||
+        Number(quantity) > 2147483647)
+    )
+      throw new Error("Treatment quantity must be a positive whole number within the inventory limit.");
+    return {
+      item_type: itemType,
+      item_id: itemId.trim(),
+      item_name: typeof itemName === "string" ? itemName.trim() : "",
+      quantity,
+    };
+  });
+  const treatmentItemKeys = treatmentItems.map(
+    (item) => `${item.item_type}:${item.item_id}`,
+  );
+  if (new Set(treatmentItemKeys).size !== treatmentItemKeys.length)
+    throw new Error("An inventory item cannot be selected more than once.");
   if (
     requireOtherReason &&
     hasSupplySelection &&
@@ -455,6 +511,7 @@ function normalizeVisitRow(
     notes: row.notes ?? null,
     interventions: Array.isArray(row.interventions) ? row.interventions : [],
     treatment_given: row.treatmentGiven ?? row.treatment_given ?? null,
+    treatment_items: treatmentItems,
     medicine_code: medicineCode,
     medicine_name: medicineName,
     medicine_quantity: medicineName ? medicineQuantity : null,
@@ -736,6 +793,33 @@ function visitFromRow(
   patients: Array<Record<string, unknown>>,
 ) {
   const patient = patients.find((candidate) => candidate.id === row.patient_id);
+  const treatmentItems = Array.isArray(row.treatment_items)
+    ? row.treatment_items.map((item) => {
+        const treatment = item as Record<string, unknown>;
+        return {
+          itemType: treatment.item_type,
+          itemId: treatment.item_id,
+          itemName: treatment.item_name,
+          quantity: treatment.quantity,
+        };
+      })
+    : [];
+  if (!treatmentItems.length) {
+    if (row.medicine_code && row.medicine_name)
+      treatmentItems.push({
+        itemType: "medicine",
+        itemId: row.medicine_code,
+        itemName: row.medicine_name,
+        quantity: row.medicine_quantity,
+      });
+    if (row.supply_used)
+      treatmentItems.push({
+        itemType: "equipment",
+        itemId: row.supply_item_id ?? row.supply_used,
+        itemName: row.supply_used,
+        quantity: row.supply_quantity,
+      });
+  }
   return {
     id: row.id,
     date: row.visit_date,
@@ -773,6 +857,7 @@ function visitFromRow(
     notes: row.notes,
     interventions: row.interventions,
     treatmentGiven: row.treatment_given,
+    treatmentItems,
     medicineCode: row.medicine_code,
     medicine: row.medicine_name,
     medQty: row.medicine_quantity,
@@ -2397,6 +2482,43 @@ export async function PUT(request: Request) {
         normalizedVisit.medicine_code = matchedCode;
         normalizedVisit.medicine_name = matchedName;
       }
+      if (normalizedVisit.treatment_items.length) {
+        const [medicineRows, equipmentRows] = await Promise.all([
+          readTable("medicines"),
+          readTable("equipment"),
+        ]);
+        for (const treatment of normalizedVisit.treatment_items) {
+          if (treatment.item_type === "medicine") {
+            const medicine = medicineRows.find(
+              (row) => String(row.code ?? "") === treatment.item_id,
+            );
+            if (!medicine) {
+              return Response.json(
+                { message: "The selected medicine is not a valid inventory record." },
+                { status: 400, headers: { "Cache-Control": "no-store" } },
+              );
+            }
+            treatment.item_name = String(medicine.name ?? "").trim();
+          } else {
+            const matches = equipmentRows.filter(
+              (row) =>
+                row.category === "Medical Supplies" &&
+                (String(row.id ?? "") === treatment.item_id ||
+                  String(row.name ?? "").trim().toLowerCase() ===
+                    treatment.item_id.trim().toLowerCase()),
+            );
+            const supply = matches.length === 1 ? matches[0] : undefined;
+            if (!supply) {
+              return Response.json(
+                { message: "The selected item is not a valid medical supplies inventory record." },
+                { status: 400, headers: { "Cache-Control": "no-store" } },
+              );
+            }
+            treatment.item_id = String(supply.id ?? "").trim();
+            treatment.item_name = String(supply.name ?? "").trim();
+          }
+        }
+      }
       const patient = affectedPatients.find(
         (row) => String(row.id) === String(normalizedVisit.patient_id),
       );
@@ -2433,12 +2555,19 @@ export async function PUT(request: Request) {
       const rpcName = updateVisit
         ? "update_clinical_visit_with_inventory"
         : "save_clinical_visit_with_inventory";
+      const rpcPayload: Record<string, unknown> = {
+        p_visit: normalizedVisit,
+        p_patient_allergies: patient?.allergies ?? "Not Yet Assessed",
+      };
+      if (!updateVisit) {
+        rpcPayload.p_user_id = session.userId;
+        rpcPayload.p_username = session.username;
+        rpcPayload.p_user_name = session.userName;
+        rpcPayload.p_role = session.role;
+      }
       const rpcResponse = await supabaseRequest(`rpc/${rpcName}`, {
         method: "POST",
-        body: JSON.stringify({
-          p_visit: normalizedVisit,
-          p_patient_allergies: patient?.allergies ?? "Not Yet Assessed",
-        }),
+        body: JSON.stringify(rpcPayload),
       });
       if (!rpcResponse.ok) {
         const details = await rpcResponse.text();
