@@ -24,6 +24,7 @@ function snapshotData(includeAuditLogs = true) {
   ensureInventoryLedger();
   const clinicSettings = { ...state.settings };
   delete clinicSettings.appearanceTheme;
+  delete clinicSettings.treatmentRecommendations;
   const normalizedAuditLogs = (AUDIT_LOGS || []).map((log) => ({
     ...log,
     timestamp: normalizeAuditTimestamp(log),
@@ -783,6 +784,7 @@ function applyStoredData(data) {
   if (Array.isArray(data.users)) state.users = data.users;
   if (data.settings && typeof data.settings === "object")
     state.settings = { ...state.settings, ...data.settings };
+  delete state.settings.treatmentRecommendations;
   applyClinicTheme();
   ensureInventoryLedger();
   return migratedInventory;

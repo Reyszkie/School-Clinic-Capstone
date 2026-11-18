@@ -920,7 +920,6 @@ function openConsultationForm(student, existing = null) {
     </div></div>
     <div class="f-field full"><label>Treatment / Intervention</label><div style="padding-top:5px">${optionListHtml(INTERVENTIONS, f.interventions || [], "intervention")}<label class="option-check"><input type="checkbox" id="cf-intervention-other" data-free-text-toggle="intervention-other" ${f.interventions?.some((x) => x === "Other" || x.startsWith("Other: ")) ? "checked" : ""}><span>Other</span></label><input class="option-free-text hidden" data-free-text="intervention-other" placeholder="Enter other intervention" value="${escapeHtml((f.interventions || []).find((x) => x.startsWith("Other: "))?.replace("Other: ", "") || "")}"></div></div>
     <div class="f-field full visit-treatment-group"><h4>Treatment Given</h4>
-      <div class="treatment-recommendations" id="cf-treatment-recommendations" aria-live="polite"></div>
       <div class="visit-inventory-grid" id="cf-treatment-items">${treatmentItems.map((item) => visitTreatmentCard(item, meds, supplies, medicineAvailable, equipmentAvailable)).join("")}</div>
       <button type="button" class="btn visit-treatment-add" id="cf-add-treatment">Add Another Item (+)</button>
     </div>
@@ -1059,96 +1058,6 @@ function openConsultationForm(student, existing = null) {
       });
     });
   };
-  const recommendationPanel = document.getElementById("cf-treatment-recommendations");
-  const recommendationsForReason = () => {
-    const mapping = state.settings?.treatmentRecommendations;
-    if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) return [];
-    const reason = complaintSelect.value.trim().replace(/\s+/g, " ").toLowerCase();
-    const configuredReason = Object.keys(mapping).find(
-      (key) => key.trim().replace(/\s+/g, " ").toLowerCase() === reason,
-    );
-    return configuredReason && Array.isArray(mapping[configuredReason])
-      ? mapping[configuredReason].filter((entry) =>
-          entry &&
-          ["medicine", "equipment"].includes(entry.itemType) &&
-          typeof entry.itemName === "string" &&
-          entry.itemName.trim(),
-        )
-      : [];
-  };
-  const renderTreatmentRecommendations = () => {
-    const reason = complaintSelect.value.trim();
-    const recommendations = recommendationsForReason();
-    if (!reason) {
-      recommendationPanel.innerHTML = `<p>Select a reason for the visit to see any configured suggestions. Suggestions are not prescriptions; assess the patient and follow clinic protocols.</p>`;
-      return;
-    }
-    if (!recommendations.length) {
-      recommendationPanel.innerHTML = `<p>No suggestions are configured for <b>${escapeHtml(reason)}</b>. You can select items manually below. Changing the reason keeps existing treatment selections. Suggestions are not prescriptions; assess the patient and follow clinic protocols.</p>`;
-      return;
-    }
-    const selectedRows = readTreatmentRows();
-    recommendationPanel.innerHTML = `<p>Suggestions for <b>${escapeHtml(reason)}</b> — review the patient assessment and applicable clinic protocols. Changing the reason keeps existing treatment selections.</p><div class="recommendation-list">${recommendations.map((recommendation) => {
-      const inventory = recommendation.itemType === "medicine" ? MEDICINES : EQUIPMENT;
-      const item = inventory.find((candidate) =>
-        !candidate.deleted &&
-        (recommendation.itemType !== "equipment" ||
-          candidate.category === "Medical Supplies") &&
-        candidate.name.trim().toLowerCase() === recommendation.itemName.trim().toLowerCase(),
-      );
-      const itemId = item
-        ? recommendation.itemType === "medicine" ? item.code : item.id
-        : "";
-      const available = item
-        ? recommendation.itemType === "medicine"
-          ? medicineAvailable(item)
-          : item.status === "Available" ? equipmentAvailable(item) : 0
-        : 0;
-      const alreadySelected = Boolean(item && selectedRows.some((row) =>
-        row.itemType === recommendation.itemType &&
-        (row.itemId === itemId ||
-          row.itemName.trim().toLowerCase() === item.name.trim().toLowerCase()),
-      ));
-      const stockLabel = !item
-        ? "Not in current inventory"
-        : available > 0
-          ? `Available stock: ${available} ${recommendation.itemType === "medicine" ? item.unit || "unit(s)" : "items"}`
-          : "Unavailable / out of stock";
-      const buttonLabel = alreadySelected
-        ? "Already selected"
-        : available > 0 ? "Add to Treatment" : "Unavailable";
-      return `<article class="recommendation-item"><div><b>${escapeHtml(recommendation.itemName)}</b><div class="lbl">${recommendation.itemType === "medicine" ? "Medicine" : "Medical supply"} · ${escapeHtml(stockLabel)}</div></div><button type="button" class="btn btn-teal" data-recommendation-add data-item-type="${recommendation.itemType}" data-item-id="${escapeHtml(itemId)}" ${!item || available < 1 || alreadySelected ? "disabled" : ""}>${buttonLabel}</button></article>`;
-    }).join("")}</div>`;
-  };
-  recommendationPanel.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-recommendation-add]");
-    if (!button) return;
-    const itemType = button.dataset.itemType;
-    const itemId = button.dataset.itemId;
-    const item = itemType === "medicine"
-      ? MEDICINES.find((candidate) => candidate.code === itemId && !candidate.deleted)
-      : EQUIPMENT.find((candidate) => candidate.id === itemId && !candidate.deleted);
-    if (!item) return;
-    const available = itemType === "medicine"
-      ? medicineAvailable(item)
-      : item.status === "Available" ? equipmentAvailable(item) : 0;
-    if (available < 1) return;
-    const rows = readTreatmentRows();
-    const emptyRow = rows.find((row) => !row.itemId);
-    const newRow = {
-      rowId: emptyRow?.rowId || String(nextTreatmentRowId++),
-      itemType,
-      itemId,
-      itemName: item.name,
-      quantity: 1,
-    };
-    renderTreatmentRows(emptyRow
-      ? rows.map((row) => row.rowId === emptyRow.rowId ? newRow : row)
-      : [...rows, newRow]);
-    renderTreatmentRecommendations();
-  });
-  complaintSelect.addEventListener("input", renderTreatmentRecommendations);
-  complaintSelect.addEventListener("change", renderTreatmentRecommendations);
   treatmentContainer.addEventListener("change", (event) => {
     const row = event.target.closest("[data-treatment-row]");
     if (event.target.matches("[data-treatment-type]") && row) {
@@ -1162,11 +1071,9 @@ function openConsultationForm(student, existing = null) {
       row.querySelector("[data-treatment-quantity]").value = "0";
       updateTreatmentRows();
     } else updateTreatmentRows();
-    renderTreatmentRecommendations();
   });
   treatmentContainer.addEventListener("input", () => {
     updateTreatmentRows();
-    renderTreatmentRecommendations();
   });
   treatmentContainer.addEventListener("click", (event) => {
     const step = event.target.closest("[data-quantity-step]");
@@ -1180,7 +1087,6 @@ function openConsultationForm(student, existing = null) {
       );
       quantity.value = String(next);
       updateTreatmentRows();
-      renderTreatmentRecommendations();
       return;
     }
     const remove = event.target.closest("[data-remove-treatment]");
@@ -1197,7 +1103,6 @@ function openConsultationForm(student, existing = null) {
           quantity: 0,
         });
       renderTreatmentRows(rows);
-      renderTreatmentRecommendations();
     }
   });
   document.getElementById("cf-add-treatment").onclick = () => {
@@ -1213,7 +1118,6 @@ function openConsultationForm(student, existing = null) {
     ]);
   };
   updateTreatmentRows();
-  renderTreatmentRecommendations();
   let visitSaveInProgress = false;
   let pendingVisitId = "";
   document.getElementById("cf-clear").onclick = () => {

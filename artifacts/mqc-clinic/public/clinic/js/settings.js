@@ -3,21 +3,9 @@ function settingField(label,id,value,type="text"){
   return `<div class="f-field"><label>${label}</label><input type="${type}" id="${id}" value="${escapeHtml(value??"")}"></div>`;
 }
 function renderSettings(){
-  const recommendations = state.settings.treatmentRecommendations &&
-    typeof state.settings.treatmentRecommendations === "object" &&
-    !Array.isArray(state.settings.treatmentRecommendations)
-    ? state.settings.treatmentRecommendations
-    : {};
   return `${hasClinicAdminPrivileges(state.currentUser?.role)?`<div class="card settings-admin-entry"><div class="panel-title"><h4>Administration</h4></div>
       <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Manage users, review audit logs, and archive or restore clinic records.</p>
       <button class="btn btn-dark" id="settings-admin-btn">${ICONS.users} Open Administration</button>
-    </div>
-    <div class="card"><div class="panel-title"><h4>Visit Treatment Suggestions</h4></div>
-      <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Configure suggestions from clinic-approved protocols. Suggestions do not prescribe or administer treatment; nurses must assess the patient and choose items. Leave the mapping empty until approved items are configured.</p>
-      <label for="treatment-recommendations">Reason-to-inventory mapping (JSON)</label>
-      <textarea id="treatment-recommendations" rows="10" spellcheck="false">${escapeHtml(JSON.stringify(recommendations, null, 2))}</textarea>
-      <p style="font-size:12px;color:var(--ink-soft)">Format: {"Reason":[{"itemType":"medicine","itemName":"Exact inventory name"}]}. Use "equipment" for medical supplies.</p>
-      <button class="btn btn-dark" id="save-treatment-recommendations">${ICONS.check} Save Suggestions</button>
     </div>`:""}<div class="grid grid-2">
     <div class="card"><div class="panel-title"><h4>Backup & Restore</h4></div>
       <p style="font-size:13px;color:var(--ink-soft);line-height:1.6">Download a copy of the clinic records saved in this browser, or restore a previous JSON backup.</p>
@@ -29,52 +17,6 @@ function renderSettings(){
 }
 function bindSettings(){
   document.getElementById("settings-admin-btn")?.addEventListener("click",()=>{state.page="admin";render();});
-  document.getElementById("save-treatment-recommendations")?.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    const textarea = document.getElementById("treatment-recommendations");
-    let parsed;
-    try {
-      parsed = JSON.parse(textarea.value);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-        throw new Error("The mapping must be a JSON object.");
-      for (const [reason, entries] of Object.entries(parsed)) {
-        if (!reason.trim() || !Array.isArray(entries))
-          throw new Error("Each non-empty reason must map to an array of inventory items.");
-        for (const entry of entries) {
-          if (
-            !entry ||
-            typeof entry !== "object" ||
-            !["medicine", "equipment"].includes(entry.itemType) ||
-            typeof entry.itemName !== "string" ||
-            !entry.itemName.trim()
-          )
-            throw new Error('Each item needs itemType ("medicine" or "equipment") and an exact itemName.');
-        }
-      }
-    } catch (error) {
-      toast("Invalid recommendation mapping", error.message || "Enter a valid JSON mapping.", "err");
-      return;
-    }
-
-    const previous = state.settings.treatmentRecommendations;
-    state.settings.treatmentRecommendations = parsed;
-    button.disabled = true;
-    try {
-      await queueClinicStateSave(snapshotData(true), true);
-    } catch (error) {
-      state.settings.treatmentRecommendations = previous;
-      toast("Suggestions not saved", error.message || "Unable to save the recommendation mapping.", "err");
-      button.disabled = false;
-      return;
-    }
-    try {
-      await logAudit("Visit Treatment Suggestions Updated", "Settings", "Success", false, true);
-      toast("Suggestions saved", "The clinic-approved recommendation mapping was saved.", "ok");
-    } catch {
-      toast("Suggestions saved; audit sync failed", "The mapping was saved, but its audit entry could not be recorded.", "err");
-    }
-    button.disabled = false;
-  });
   document.getElementById("backup-btn")?.addEventListener("click",async()=>{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`mqc-clinic-backup-${todayDateString()}.json`;a.click();URL.revokeObjectURL(a.href);try{await logAudit("Clinic Data Backup Exported","Settings","Success",false,true);toast("Backup created","A JSON backup of clinic records was downloaded.","ok");}catch{toast("Backup created; audit sync failed","The backup downloaded, but its audit entry could not be recorded.","err");}});
   document.getElementById("restore-file")?.addEventListener("change",event=>{
     const file=event.target.files[0];
@@ -98,6 +40,7 @@ function bindSettings(){
         DELETED_USERS=deletedUsers;
         if(Array.isArray(backup.purged))PURGED_RECORDS=backup.purged;
         if(backup.settings)state.settings={...state.settings,...backup.settings};
+        delete state.settings.treatmentRecommendations;
         await queueClinicStateSave(snapshotData(true),true);
         try{await logAudit("Backup Restored","Settings","Success",false,true);toast("Backup restored","Clinic records were restored successfully.","ok");}
         catch{toast("Backup restored; audit sync failed","Clinic records were restored, but the audit entry could not be recorded.","err");}
