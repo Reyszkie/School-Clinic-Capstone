@@ -66,8 +66,6 @@ where institutional_category is null;
 create table if not exists public.medicines (
   code text primary key,
   name text not null,
-  strength text not null default '',
-  dosage_form text not null default '',
   category text not null default 'General',
   quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
@@ -97,10 +95,6 @@ create table if not exists public.equipment (
 
 alter table public.medicines
   add column if not exists production_date date;
-
-alter table public.medicines
-  add column if not exists strength text not null default '',
-  add column if not exists dosage_form text not null default '';
 
 alter table public.medicines
   add column if not exists batches jsonb not null default '[]'::jsonb;
@@ -3523,8 +3517,6 @@ begin
     v_identity := concat_ws(
       '|',
       lower(regexp_replace(btrim(coalesce(p_incoming->>'name', '')), '\s+', ' ', 'g')),
-      lower(regexp_replace(btrim(coalesce(p_incoming->>'strength', '')), '\s+', ' ', 'g')),
-      lower(regexp_replace(btrim(coalesce(p_incoming->>'dosage_form', '')), '\s+', ' ', 'g')),
       lower(regexp_replace(btrim(coalesce(p_incoming->>'category', 'General')), '\s+', ' ', 'g')),
       lower(regexp_replace(btrim(coalesce(p_incoming->>'unit', 'piece')), '\s+', ' ', 'g'))
     );
@@ -3535,10 +3527,6 @@ begin
     where deleted_at is null
       and lower(regexp_replace(btrim(name), '\s+', ' ', 'g')) =
           lower(regexp_replace(btrim(coalesce(p_incoming->>'name', '')), '\s+', ' ', 'g'))
-      and lower(regexp_replace(btrim(strength), '\s+', ' ', 'g')) =
-          lower(regexp_replace(btrim(coalesce(p_incoming->>'strength', '')), '\s+', ' ', 'g'))
-      and lower(regexp_replace(btrim(dosage_form), '\s+', ' ', 'g')) =
-          lower(regexp_replace(btrim(coalesce(p_incoming->>'dosage_form', '')), '\s+', ' ', 'g'))
       and lower(regexp_replace(btrim(category), '\s+', ' ', 'g')) =
           lower(regexp_replace(btrim(coalesce(p_incoming->>'category', 'General')), '\s+', ' ', 'g'))
       and lower(regexp_replace(btrim(unit), '\s+', ' ', 'g')) =
@@ -3550,14 +3538,12 @@ begin
     v_merged := found;
     if not v_merged then
       insert into public.medicines (
-        code, name, strength, dosage_form, category, quantity, unit,
+        code, name, category, quantity, unit,
         production_date, expiration_date, batches, deleted_at, updated_at
       )
       values (
         v_incoming_id,
         coalesce(p_incoming->>'name', ''),
-        coalesce(p_incoming->>'strength', ''),
-        coalesce(p_incoming->>'dosage_form', ''),
         coalesce(p_incoming->>'category', 'General'),
         greatest(0, coalesce(nullif(p_incoming->>'quantity', '')::integer, 0)),
         coalesce(p_incoming->>'unit', 'piece'),

@@ -323,8 +323,6 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
   return {
     code: row.code ?? null,
     name: row.name ?? "",
-    strength: row.strength ?? "",
-    dosage_form: row.dosageForm ?? row.dosage_form ?? "",
     category: row.category ?? "General",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
     unit: row.unit ?? "piece",
@@ -792,8 +790,6 @@ function medicineFromRow(row: Record<string, unknown>) {
   return {
     code: row.code,
     name: row.name,
-    strength: row.strength ?? "",
-    dosageForm: row.dosage_form ?? "",
     category: row.category,
     qty: row.quantity,
     unit: row.unit,

@@ -4,7 +4,7 @@ function inventoryIdentityPart(value) {
   return String(value || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 }
 function sameMedicineIdentity(left, right) {
-  return ["name", "strength", "dosageForm", "category", "unit"].every(
+  return ["name", "category", "unit"].every(
     (key) => inventoryIdentityPart(left[key]) === inventoryIdentityPart(right[key]),
   );
 }
@@ -143,8 +143,6 @@ function renderMedicinesTab(){
     const st=medStatus(m).label;
     const matchQ=!q || [
       m.name,
-      m.strength,
-      m.dosageForm,
       m.category,
       m.qty,
       m.unit,
@@ -160,12 +158,10 @@ function renderMedicinesTab(){
   const totalPages=Math.max(1,Math.ceil(list.length/perPage));
   if(state.medPage>totalPages) state.medPage=totalPages;
   const pageItems=list.slice((state.medPage-1)*perPage, state.medPage*perPage);
-  const rows = pageItems.length===0? `<tr><td colspan="10">${emptyState("No medicines match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="8">${emptyState("No medicines match your filters.")}</td></tr>` :
     pageItems.map(m=>{ const st=medStatus(m); const batches=medicineBatches(m); const earliest=batches.slice().sort((a,b)=>(a.exp||"9999").localeCompare(b.exp||"9999"))[0]; return `
     <tr>
       <td>${escapeHtml(m.name)}</td>
-      <td>${escapeHtml(m.strength || "—")}</td>
-      <td>${escapeHtml(m.dosageForm || "—")}</td>
       <td>${escapeHtml(m.category)}</td>
       <td class="mono">${medicineAvailableQuantity(m)} ${m.unit}</td>
       <td>${fmtDate(m.productionDate)}</td>
@@ -181,7 +177,7 @@ function renderMedicinesTab(){
   return `
   <div class="card">
     <div class="toolbar">
-      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="med-search" placeholder="Search medicines by name, strength, form, category, quantity, expiration, or status..." value="${escapeHtml(rawQ)}"></div>
+      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="med-search" placeholder="Search medicines by name, category, quantity, expiration, or status..." value="${escapeHtml(rawQ)}"></div>
       <select class="select-sm" id="med-status">
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Low Stock","Out of Stock","Expiring Soon","Expired"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
@@ -190,7 +186,7 @@ function renderMedicinesTab(){
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Medicine</th><th>Strength</th><th>Dosage Form</th><th>Category</th><th>Total Quantity</th><th>Production Date</th><th>Nearest Expiration</th><th>Status</th><th>Batches</th><th></th></tr></thead>
+        <thead><tr><th>Medicine</th><th>Category</th><th>Total Quantity</th><th>Production Date</th><th>Nearest Expiration</th><th>Status</th><th>Batches</th><th></th></tr></thead>
         <tbody id="med-tbody">${rows}</tbody>
       </table>
     </div>
@@ -253,14 +249,12 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
 function openMedicineForm(existing=null){
   if(existing?!canManageInventory():!canAddInventoryItem())return;
   const isEdit=!!existing;
-  const f = existing || {code:uid("MED"), name:"", strength:"", dosageForm:"", category:"", qty:0, unit:"tablet", productionDate:"", exp:""};
+  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", productionDate:"", exp:""};
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} Medicine</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
     <form class="form-grid" id="med-form">
       <div class="f-field full"><label>Medicine Name <span class="req">*</span></label><input type="text" id="mf-name" value="${escapeHtml(f.name)}" required></div>
-      <div class="f-field"><label>Strength</label><input type="text" id="mf-strength" value="${escapeHtml(f.strength || "")}" placeholder="e.g. 500 mg"></div>
-      <div class="f-field"><label>Dosage Form</label><input type="text" id="mf-dosage-form" value="${escapeHtml(f.dosageForm || "")}" placeholder="e.g. tablet"></div>
       <div class="f-field"><label>Category</label><input type="text" id="mf-category" value="${escapeHtml(f.category)}" placeholder="e.g. Analgesic"></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="mf-qty" value="${f.qty}"></div>
       <div class="f-field"><label>Unit</label><select id="mf-unit">${["tablet","bottle","tube","piece","roll","sachet","box"].map(u=>`<option ${f.unit===u?'selected':''}>${u}</option>`).join("")}</select></div>
@@ -277,8 +271,6 @@ function openMedicineForm(existing=null){
     if(!name){ toast('Missing information','Medicine name is required.','err'); return; }
     const rec={
       code: existing?.code || f.code, name,
-      strength: document.getElementById('mf-strength').value.trim(),
-      dosageForm: document.getElementById('mf-dosage-form').value.trim(),
       category: document.getElementById('mf-category').value || "General",
       qty: parseInt(document.getElementById('mf-qty').value)||0,
       unit: document.getElementById('mf-unit').value,
