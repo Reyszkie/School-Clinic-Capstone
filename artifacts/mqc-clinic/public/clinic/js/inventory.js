@@ -167,7 +167,7 @@ function renderMedicinesTab(){
       <td>${fmtDate(m.productionDate)}</td>
       <td>${earliest ? fmtDate(earliest.exp) : fmtDate(m.exp)}</td>
       <td><span class="chip ${st.chip}">${st.label}</span></td>
-      <td><button class="mini-btn" data-view-med-batches="${escapeHtml(m.code)}" title="View batches">${ICONS.search}</button></td>
+      <td><button type="button" class="btn btn-teal" data-view-med-batches="${escapeHtml(m.code)}" title="View batches" aria-label="View batches for ${escapeHtml(m.name)}">${ICONS.search}<span>View Batches</span></button></td>
       <td><div class="row-actions">
         ${canManageInventory()?`<button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>`:""}
         ${canDeleteClinicRecords()?`<button class="mini-btn" data-archive-med="${m.code}" title="Move to Archive">${ICONS.archive}</button>`:""}
