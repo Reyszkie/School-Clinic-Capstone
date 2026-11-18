@@ -519,9 +519,24 @@ function monthlyReportHtml(month) {
     (visit) =>
       `<tr><td>${escapeHtml(visit.studentName || "—")}</td><td>${escapeHtml(fmtDate(visit.date))}</td><td>${escapeHtml(visit.outcome || "—")}</td></tr>`,
   );
-  const medicineInventoryRows = data.medicineInventory.map(
-    ({ item, status }) =>
-      `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category || "—")}</td><td>${reportInventoryQuantity(item.qty)}</td><td>${escapeHtml(item.unit || "—")}</td><td>${escapeHtml(fmtDate(item.productionDate))}</td><td>${escapeHtml(status)}</td></tr>`,
+  const medicineInventoryRows = data.medicineInventory.flatMap(
+    ({ item, status }) => {
+      const batches = medicineBatches(item);
+      const totalAvailable = medicineAvailableQuantity(item);
+      if (!batches.length)
+        return [
+          `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category || "—")}</td><td>${reportInventoryQuantity(totalAvailable)}</td><td>—</td><td>${escapeHtml(item.unit || "—")}</td><td>—</td><td>—</td><td>${escapeHtml(status)}</td></tr>`,
+        ];
+      return batches.map((batch) => {
+        const batchStatus =
+          batch.status === "Available" &&
+          batch.exp &&
+          clinicDateDaysUntil(batch.exp) < 0
+            ? "Expired"
+            : batch.status;
+        return `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category || "—")}</td><td>${reportInventoryQuantity(totalAvailable)}</td><td>${reportInventoryQuantity(batch.qty)}</td><td>${escapeHtml(item.unit || "—")}</td><td>${batch.productionDate ? escapeHtml(fmtDate(batch.productionDate)) : "—"}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td>${escapeHtml(batchStatus)}</td></tr>`;
+      });
+    },
   );
   const equipmentInventoryRows = data.equipmentInventory.map(
     (item) =>
@@ -544,7 +559,7 @@ function monthlyReportHtml(month) {
     <section class="monthly-report-block"><h5>Most Frequent Visitors</h5>${monthlyTable(["Student / Patient", "Year Level", "Section / Course", "Visits"], visitors)}</section>
     <section class="monthly-report-block"><h5>Common Reasons for Clinic Visits</h5>${monthlyTable(["Reason / Symptom", "Occurrences"], reasons)}</section>
     <section class="monthly-report-block"><h5>Recorded Referrals</h5>${monthlyTable(["Patient", "Date", "Disposition"], referralRows, "No referrals were recorded for this month.")}</section>
-    <section class="monthly-report-block"><h5>Medicine Inventory</h5><p class="inventory-report-note">Current medicine stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Medicine", "Category", "Current Qty", "Unit", "Production Date", "Status"], medicineInventoryRows, "No medicine inventory records.")}</section>
+    <section class="monthly-report-block"><h5>Medicine Inventory</h5><p class="inventory-report-note">Current medicine stock and batch details as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Medicine", "Category", "Total Available Qty", "Batch Qty", "Unit", "Production Date", "Expiration Date", "Batch Status"], medicineInventoryRows, "No medicine inventory records.")}</section>
     <section class="monthly-report-block"><h5>Medical Supplies Inventory</h5><p class="inventory-report-note">Current medical supplies stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Supply", "Current Qty", "Status"], equipmentInventoryRows, "No medical supplies inventory records.")}</section>
     <section class="monthly-report-block"><h5>Most Frequently Used Medicines / Treatments</h5>${monthlyTable(["Medicine / Treatment", "Uses"], medicineUse)}</section>
     <section class="monthly-report-block"><h5>Most Frequently Recorded Supplies and Tools</h5>${monthlyTable(["Supply / Tool", "Uses"], equipmentUse)}</section>

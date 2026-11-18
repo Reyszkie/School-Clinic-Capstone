@@ -28,6 +28,7 @@ const state = {
     logo: "",
     patientIdPrefix: "",
     lowStockThreshold: 15,
+    treatmentRecommendations: {},
     expirationAlertDays: 14,
     passwordMinLength: 8,
     sessionTimeout: 30,

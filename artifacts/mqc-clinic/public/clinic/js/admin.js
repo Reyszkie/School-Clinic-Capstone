@@ -742,11 +742,11 @@ function renderDeletedTab() {
         .join("")}</tbody>`
     : "";
   const medRows = delMeds.length
-    ? `<thead><tr><th>Name</th><th>Production Date</th><th>Archived</th><th></th></tr></thead><tbody>${delMeds
+    ? `<thead><tr><th>Name</th><th>Archived</th><th></th></tr></thead><tbody>${delMeds
         .map(
           (
             m,
-          ) => `<tr><td>${escapeHtml(m.name)}</td><td>${fmtDate(m.productionDate)}</td><td>${fmtDeletedDate(m.deletedAt)}</td>
+          ) => `<tr><td>${escapeHtml(m.name)}</td><td>${fmtDeletedDate(m.deletedAt)}</td>
     <td>${rowActions("restore-dm", m.code)}</td></tr>`,
         )
         .join("")}</tbody>`

@@ -69,9 +69,8 @@ create table if not exists public.medicines (
   category text not null default 'General',
   quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
-  -- Batch and supplier are retained for legacy rows; production and expiration dates support current inventory workflows.
+  -- Legacy row-level metadata is retained only for migration into batch records.
   batch_number text,
-  production_date date,
   expiration_date date,
   supplier text,
   deleted_at timestamptz,
@@ -93,6 +92,7 @@ create table if not exists public.equipment (
   updated_at timestamptz not null default now()
 );
 
+-- Temporary legacy column used to migrate existing item-level dates to batches below.
 alter table public.medicines
   add column if not exists production_date date;
 
@@ -3170,6 +3170,7 @@ create table if not exists public.medicine_batches (
   id text primary key,
   medicine_code text not null references public.medicines(code) on delete restrict,
   quantity integer not null default 0 check (quantity >= 0),
+  production_date date,
   expiration_date date,
   status text not null default 'Available' check (status in ('Available', 'Voided', 'Expired')),
   voided_quantity integer not null default 0 check (voided_quantity >= 0),
@@ -3177,6 +3178,9 @@ create table if not exists public.medicine_batches (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.medicine_batches
+  add column if not exists production_date date;
 
 alter table public.medicine_batches
   drop constraint if exists medicine_batches_medicine_code_expiration_date_key;
@@ -3217,7 +3221,7 @@ alter table public.supply_batches enable row level security;
 alter table public.medicine_batch_deductions enable row level security;
 
 insert into public.medicine_batches (
-  id, medicine_code, quantity, expiration_date, status, voided_quantity, voided_at
+  id, medicine_code, quantity, production_date, expiration_date, status, voided_quantity, voided_at
 )
 select
   coalesce(nullif(batch.value->>'id', ''), medicines.code || '-B' || batch.ordinality::text),
@@ -3225,6 +3229,11 @@ select
   case when coalesce(batch.value->>'qty', batch.value->>'quantity', '') ~ '^[0-9]{1,10}$'
     then least(coalesce(batch.value->>'qty', batch.value->>'quantity')::numeric, 2147483647)::integer
     else 0 end,
+  case
+    when coalesce(batch.value->>'productionDate', batch.value->>'production_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      then coalesce(batch.value->>'productionDate', batch.value->>'production_date')::date
+    else medicines.production_date
+  end,
   case when coalesce(batch.value->>'exp', batch.value->>'expirationDate', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
     then coalesce(batch.value->>'exp', batch.value->>'expirationDate')::date
     else null end,
@@ -3241,29 +3250,72 @@ from public.medicines
 cross join lateral jsonb_array_elements(
   case when jsonb_typeof(medicines.batches) = 'array' then medicines.batches else '[]'::jsonb end
 ) with ordinality as batch(value, ordinality)
-on conflict (id) do nothing;
+on conflict (id) do update
+set production_date = coalesce(
+  public.medicine_batches.production_date,
+  excluded.production_date
+);
 
-insert into public.medicine_batches (id, medicine_code, quantity, expiration_date)
-select medicines.code || '-LEGACY', medicines.code, medicines.quantity, medicines.expiration_date
+insert into public.medicine_batches (
+  id, medicine_code, quantity, production_date, expiration_date
+)
+select
+  medicines.code || '-LEGACY',
+  medicines.code,
+  medicines.quantity,
+  medicines.production_date,
+  medicines.expiration_date
 from public.medicines
-where medicines.quantity > 0
+where (medicines.quantity > 0 or medicines.production_date is not null or medicines.expiration_date is not null)
   and not exists (
     select 1 from public.medicine_batches
     where medicine_code = medicines.code
   )
-on conflict (id) do nothing;
+on conflict (id) do update
+set production_date = coalesce(
+  public.medicine_batches.production_date,
+  excluded.production_date
+);
+
+drop trigger if exists medicines_sync_batches on public.medicines;
+
+update public.medicine_batches as batches
+set production_date = medicines.production_date
+from public.medicines
+where batches.medicine_code = medicines.code
+  and batches.production_date is null
+  and medicines.production_date is not null;
 
 update public.medicines
 set quantity = coalesce((
-  select sum(batches.quantity)::integer
-  from public.medicine_batches as batches
-  where batches.medicine_code = medicines.code
-    and batches.status = 'Available'
-), 0)
+      select sum(batches.quantity)::integer
+      from public.medicine_batches as batches
+      where batches.medicine_code = medicines.code
+        and batches.status = 'Available'
+    ), 0),
+    batches = coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'id', batches.id,
+          'qty', batches.quantity,
+          'productionDate', batches.production_date,
+          'exp', batches.expiration_date,
+          'status', batches.status,
+          'voidedQuantity', batches.voided_quantity,
+          'voidedAt', batches.voided_at
+        )
+        order by batches.expiration_date asc nulls last, batches.id
+      )
+      from public.medicine_batches as batches
+      where batches.medicine_code = medicines.code
+    ), '[]'::jsonb)
 where exists (
   select 1 from public.medicine_batches as batches
   where batches.medicine_code = medicines.code
 );
+
+alter table public.medicines
+  drop column if exists production_date;
 
 create or replace function public.refresh_medicine_batch_snapshot(p_medicine_code text)
 returns void
@@ -3287,6 +3339,7 @@ begin
           jsonb_build_object(
             'id', batches.id,
             'qty', batches.quantity,
+            'productionDate', batches.production_date,
             'exp', batches.expiration_date,
             'status', batches.status,
             'voidedQuantity', batches.voided_quantity,
@@ -3316,6 +3369,7 @@ as $$
 declare
   v_batch jsonb;
   v_batch_id text;
+  v_batch_production date;
   v_batch_expiration date;
   v_batch_quantity integer;
   v_batch_status text;
@@ -3342,6 +3396,11 @@ begin
         from jsonb_array_elements(new.batches) with ordinality as entries(value, ordinality)
       loop
         v_batch_id := coalesce(nullif(v_batch->>'id', ''), new.code || '-B' || v_index::text);
+        v_batch_production := case
+          when coalesce(v_batch->>'productionDate', v_batch->>'production_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            then coalesce(v_batch->>'productionDate', v_batch->>'production_date')::date
+          else null
+        end;
         v_batch_expiration := case
           when coalesce(v_batch->>'exp', v_batch->>'expirationDate', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
             then coalesce(v_batch->>'exp', v_batch->>'expirationDate')::date
@@ -3363,16 +3422,21 @@ begin
           else 0
         end;
         insert into public.medicine_batches (
-          id, medicine_code, quantity, expiration_date, status, voided_quantity, voided_at
+          id, medicine_code, quantity, production_date, expiration_date, status, voided_quantity, voided_at
         )
         values (
-          v_batch_id, new.code, v_batch_quantity, v_batch_expiration,
+          v_batch_id, new.code, v_batch_quantity, v_batch_production, v_batch_expiration,
           v_batch_status, v_voided_quantity,
           case when nullif(v_batch->>'voidedAt', '') is null then null
             else (v_batch->>'voidedAt')::timestamptz end
         )
         on conflict (id) do update
         set quantity = excluded.quantity,
+            production_date = case
+              when v_batch ? 'productionDate' or v_batch ? 'production_date'
+                then excluded.production_date
+              else public.medicine_batches.production_date
+            end,
             expiration_date = excluded.expiration_date,
             status = excluded.status,
             voided_quantity = excluded.voided_quantity,
@@ -3382,10 +3446,10 @@ begin
       end loop;
     elsif tg_op = 'INSERT' and new.quantity > 0 then
       insert into public.medicine_batches (
-        id, medicine_code, quantity, expiration_date
+        id, medicine_code, quantity, production_date, expiration_date
       )
       values (
-        new.code || '-LEGACY', new.code, new.quantity, new.expiration_date
+        new.code || '-LEGACY', new.code, new.quantity, null, new.expiration_date
       )
       on conflict (id) do nothing;
     end if;
@@ -3451,6 +3515,7 @@ begin
           jsonb_build_object(
             'id', batches.id,
             'qty', batches.quantity,
+            'productionDate', batches.production_date,
             'exp', batches.expiration_date,
             'status', batches.status,
             'voidedQuantity', batches.voided_quantity,
@@ -3492,6 +3557,7 @@ declare
   v_batches jsonb;
   v_incoming_batches jsonb;
   v_batch jsonb;
+  v_batch_production date;
   v_batch_expiration date;
   v_batch_number text;
   v_batch_quantity integer;
@@ -3539,7 +3605,7 @@ begin
     if not v_merged then
       insert into public.medicines (
         code, name, category, quantity, unit,
-        production_date, expiration_date, batches, deleted_at, updated_at
+        expiration_date, batches, deleted_at, updated_at
       )
       values (
         v_incoming_id,
@@ -3547,7 +3613,6 @@ begin
         coalesce(p_incoming->>'category', 'General'),
         greatest(0, coalesce(nullif(p_incoming->>'quantity', '')::integer, 0)),
         coalesce(p_incoming->>'unit', 'piece'),
-        nullif(p_incoming->>'production_date', '')::date,
         nullif(p_incoming->>'expiration_date', '')::date,
         case when jsonb_typeof(p_incoming->'batches') = 'array'
           then p_incoming->'batches' else '[]'::jsonb end,
@@ -3586,6 +3651,11 @@ begin
 
     for v_batch in select value from jsonb_array_elements(v_incoming_batches)
     loop
+      v_batch_production := case
+        when coalesce(v_batch->>'productionDate', v_batch->>'production_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+          then coalesce(v_batch->>'productionDate', v_batch->>'production_date')::date
+        else null
+      end;
       v_batch_expiration := nullif(coalesce(
         v_batch->>'exp',
         v_batch->>'expirationDate',
@@ -3600,6 +3670,11 @@ begin
         select (entry.ordinality - 1)::integer into v_batch_index
         from jsonb_array_elements(v_batches) with ordinality as entry(value, ordinality)
         where lower(coalesce(entry.value->>'status', 'available')) = 'available'
+          and case
+            when coalesce(entry.value->>'productionDate', entry.value->>'production_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+              then coalesce(entry.value->>'productionDate', entry.value->>'production_date')::date
+            else null
+          end is not distinct from v_batch_production
           and nullif(coalesce(
             entry.value->>'exp',
             entry.value->>'expirationDate',

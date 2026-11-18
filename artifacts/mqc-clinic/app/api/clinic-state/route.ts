@@ -326,9 +326,6 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
     category: row.category ?? "General",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
     unit: row.unit ?? "piece",
-    production_date: toDateValue(
-      row.productionDate ?? row.production_date,
-    ),
     expiration_date: toDateValue(
       row.exp ?? row.expirationDate ?? row.expiration_date,
     ),
@@ -787,15 +784,35 @@ function patientFromRow(row: Record<string, unknown>) {
 }
 
 function medicineFromRow(row: Record<string, unknown>) {
+  const storedBatches = Array.isArray(row.batches) ? row.batches : [];
+  const batches = storedBatches.length
+    ? storedBatches.map((batch) => {
+        if (!batch || typeof batch !== "object" || Array.isArray(batch))
+          return batch;
+        const batchRow = batch as Record<string, unknown>;
+        return {
+          ...batchRow,
+          productionDate:
+            batchRow.productionDate ?? batchRow.production_date ?? null,
+        };
+      })
+    : Number(row.quantity) > 0
+      ? [{
+          id: `${String(row.code ?? "medicine")}-LEGACY`,
+          qty: row.quantity,
+          productionDate: null,
+          exp: row.expiration_date ?? null,
+          status: "Available",
+        }]
+      : [];
   return {
     code: row.code,
     name: row.name,
     category: row.category,
     qty: row.quantity,
     unit: row.unit,
-    productionDate: row.production_date,
     exp: row.expiration_date,
-    batches: Array.isArray(row.batches) ? row.batches : [],
+    batches,
     deleted: Boolean(row.deleted_at),
     deletedAt: row.deleted_at,
   };
