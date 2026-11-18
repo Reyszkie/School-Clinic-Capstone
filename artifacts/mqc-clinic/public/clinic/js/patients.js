@@ -894,8 +894,9 @@ function openConsultationForm(student, existing = null) {
         });
     }
   });
+  const patientIdentity = !isEdit ? `<div class="card" style="margin:0 0 14px;padding:12px 14px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px" aria-label="Read-only patient identification"><div><div class="lbl">Patient</div><div class="val"><b>${escapeHtml(student.name || "Unknown")}</b></div></div><div><div class="lbl">Sex</div><div class="val">${escapeHtml(student.gender || student.sex || "—")}</div></div><div><div class="lbl">Institutional Category</div><div class="val">${escapeHtml(student.institutionalCategory || student.course || "—")}</div></div><div><div class="lbl">Year / Personnel Type</div><div class="val">${escapeHtml(student.personnelType || student.year || "—")}</div></div></div>` : "";
   const html = `<div class="modal-head"><h3>${isEdit ? "Record Follow-up Visit" : "New Patient Visit"} — ${escapeHtml(student.name)}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
-  <div class="modal-body"><form id="consult-form" class="form-grid">
+  <div class="modal-body">${patientIdentity}<form id="consult-form" class="form-grid">
     <div class="f-field"><label>Visit Date <span class="req">*</span></label><input type="date" id="cf-date" value="${f.date}" required></div>
     <div class="f-field"><label>Visit Time <span class="req">*</span></label><input id="cf-time" value="${escapeHtml(f.time)}" required></div>
     <div class="f-field"><label>Nurse on Duty</label><input value="${escapeHtml(f.nurse || state.currentUser.name)}" readonly style="background:#F7FAFD"></div>

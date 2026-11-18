@@ -98,7 +98,7 @@ function renderReports() {
     ["Visits by Grade Level / Section", Object.keys(d.levels).length, "levels"],
     ["Patient Disposition", Object.keys(d.outcomes).length, "disposition"],
   ];
-  return `${clinicDataStatus === "stale" ? '<div class="sync-warning">The latest database refresh failed. Report figures may be out of date.</div>' : ""}<div class="toolbar" style="justify-content:flex-end"><button class="btn btn-dark" id="print-reports">${ICONS.print} Print Report Copy</button></div>
+  return `${clinicDataStatus === "stale" ? '<div class="sync-warning">The latest database refresh failed. Report figures may be out of date.</div>' : ""}<div class="toolbar" style="justify-content:flex-end"><label for="report-print-category" style="font-size:12px;font-weight:700">Print category</label><select class="select-sm" id="report-print-category" aria-label="Report category"><option value="all">Full Clinical Report</option><option value="low-stock">Low Stock Medicines Only</option><option value="expiring">Expiring Medicines Only</option><option value="expired">Expired Medicines Only</option></select><button class="btn btn-dark" id="print-reports">${ICONS.print} Print Report Copy</button></div>
   <div class="grid grid-4">${cards.map((c) => `<button class="card stat-card report-card-clickable" data-report-detail="${c[2]}" style="text-align:left"><div class="stat-label">${c[0]}</div><div class="stat-value">${c[1]}</div><div style="font-size:11.5px;color:var(--blue);margin-top:auto">View details ${ICONS.chevright}</div></button>`).join("")}</div>
   <div class="report-summary-grid">
     <div class="card"><div class="panel-title"><h4>Common Reasons for Visits</h4></div><div class="table-wrap report-summary-table-wrap"><table class="report-summary-table"><colgroup><col><col class="report-summary-count-column"></colgroup><thead><tr><th>Reason</th><th class="report-count">Visits</th></tr></thead><tbody>${summaryList(d.reasons, "reason")}</tbody></table></div></div>
@@ -301,7 +301,7 @@ function reportDetail(key) {
       );
   }
 }
-function printReports() {
+function printReports(category = "all") {
   const d = reportData(),
     flagged = referralConcernList();
   const table = (title, headers, rows) =>
@@ -340,10 +340,22 @@ function printReports() {
     ["Frequent Visitors", d.metrics.frequentVisitors],
     ["Referrals", d.metrics.referrals.length],
   ];
-  const html = `<p class="report-meta">Clinical reports · Printed ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</p><p class="summary"><b>Total Patients:</b> ${d.metrics.patients.length}<br><b>Clinic Visits Today:</b> ${d.metrics.todayVisits.length}<br><b>Total Visits This Month:</b> ${d.metrics.monthVisits.length}<br><b>Returning Patients:</b> ${d.metrics.returningPatients}<br><b>Frequent Visitors:</b> ${d.metrics.frequentVisitors}<br><b>Referrals:</b> ${d.metrics.referrals.length}<br><b>Total Clinic Visits:</b> ${d.visits.length}<br><b>Unique Patients Served:</b> ${d.unique}<br><b>Common Reasons:</b> ${Object.keys(d.reasons).length}<br><b>Grade Levels / Sections:</b> ${Object.keys(d.levels).length}<br><b>Patient Dispositions:</b> ${Object.keys(d.outcomes).length}</p>${table("Common Reasons for Visits", ["Reason", "Visits"], summaryRows(d.reasons))}${table("Patient Disposition", ["Outcome", "Visits"], summaryRows(d.outcomes))}${table("Visits by Grade Level / Section", ["Year / Grade", "Visits"], summaryRows(d.levels))}${table("Clinic Visit Trends", ["Record", "Date", "Patient", "Reason", "Outcome"], visitRows)}${table("Frequent Clinic Visitors", ["Patient", "Institutional Category / Year or Personnel Type", "Visits"], frequentRows)}${table("Recorded Referrals This Month", ["Patient", "Referral Visits"], referralRows)}`;
+  let html;
+  let printTitle = "MQCQC Clinic Report";
+  let printSubtitle = "School Clinic · Clinical Reports Summary";
+  if (category === "low-stock" || category === "expiring" || category === "expired") {
+    const alert = medicineAlertData();
+    const list = category === "low-stock" ? alert.lowStock : category === "expiring" ? alert.expiring : alert.expired;
+    const title = category === "low-stock" ? "Low Stock Medicines" : category === "expiring" ? "Expiring Medicines" : "Expired Medicines";
+    printTitle = `MQCQC Clinic — ${title}`;
+    printSubtitle = `School Clinic · ${title} Only`;
+    html = `<p class="report-meta">${title} · Printed ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</p>${table(title, ["Code", "Medicine", "Category", "Available Quantity", "Unit", "Expiration Date", "Status"], list.map((item) => [escapeHtml(item.code), escapeHtml(item.name), escapeHtml(item.category || "—"), reportInventoryQuantity(item.qty), escapeHtml(item.unit || "—"), item.exp ? escapeHtml(fmtDate(item.exp)) : "—", escapeHtml(medStatus(item).label)]))}`;
+  } else {
+    html = `<p class="report-meta">Clinical reports · Printed ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</p><p class="summary"><b>Total Patients:</b> ${d.metrics.patients.length}<br><b>Clinic Visits Today:</b> ${d.metrics.todayVisits.length}<br><b>Total Visits This Month:</b> ${d.metrics.monthVisits.length}<br><b>Returning Patients:</b> ${d.metrics.returningPatients}<br><b>Frequent Visitors:</b> ${d.metrics.frequentVisitors}<br><b>Referrals:</b> ${d.metrics.referrals.length}<br><b>Total Clinic Visits:</b> ${d.visits.length}<br><b>Unique Patients Served:</b> ${d.unique}<br><b>Common Reasons:</b> ${Object.keys(d.reasons).length}<br><b>Grade Levels / Sections:</b> ${Object.keys(d.levels).length}<br><b>Patient Dispositions:</b> ${Object.keys(d.outcomes).length}</p>${table("Common Reasons for Visits", ["Reason", "Visits"], summaryRows(d.reasons))}${table("Patient Disposition", ["Outcome", "Visits"], summaryRows(d.outcomes))}${table("Visits by Grade Level / Section", ["Year / Grade", "Visits"], summaryRows(d.levels))}${table("Clinic Visit Trends", ["Record", "Date", "Patient", "Reason", "Outcome"], visitRows)}${table("Frequent Clinic Visitors", ["Patient", "Institutional Category / Year or Personnel Type", "Visits"], frequentRows)}${table("Recorded Referrals This Month", ["Patient", "Referral Visits"], referralRows)}`;
+  }
   printTemplate({
-    title: "MQCQC Clinic Report",
-    subtitle: "School Clinic · Clinical Reports Summary",
+    title: printTitle,
+    subtitle: printSubtitle,
     body: `<div class="clinic-print-kpis">${kpis.map(([label, value]) => `<div class="clinic-print-kpi"><div class="kpi-label">${escapeHtml(label)}</div><div class="kpi-value">${value}</div></div>`).join("")}</div>${html}`,
     footnote: `Confidential clinic record — for authorized personnel only.${clinicDataStatus === "stale" ? " The latest database refresh failed; data reflects the last successful synchronization." : ""}`,
   });
@@ -559,7 +571,7 @@ function bindReports() {
   if (!clinicDataLoaded) return;
   document
     .getElementById("print-reports")
-    ?.addEventListener("click", printReports);
+    ?.addEventListener("click", () => printReports(document.getElementById("report-print-category")?.value || "all"));
   document
     .querySelectorAll("[data-report-detail]")
     .forEach((b) => (b.onclick = () => reportDetail(b.dataset.reportDetail)));

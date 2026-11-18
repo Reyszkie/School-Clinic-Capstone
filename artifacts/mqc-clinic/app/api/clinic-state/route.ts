@@ -314,6 +314,7 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
     expiration_date: toDateValue(
       row.exp ?? row.expirationDate ?? row.expiration_date,
     ),
+    batches: Array.isArray(row.batches) ? row.batches : [],
     deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
   };
@@ -336,6 +337,7 @@ function normalizeEquipmentRow(row: Record<string, unknown>) {
       row.lastMaint ?? row.lastMaintenanceDate ?? row.last_maintenance_date,
     ),
     status: row.status ?? "Available",
+    batches: Array.isArray(row.batches) ? row.batches : [],
     deleted_at: normalizeDeletedAt(row),
     updated_at: new Date().toISOString(),
   };
@@ -775,6 +777,7 @@ function medicineFromRow(row: Record<string, unknown>) {
     unit: row.unit,
     productionDate: row.production_date,
     exp: row.expiration_date,
+    batches: Array.isArray(row.batches) ? row.batches : [],
     deleted: Boolean(row.deleted_at),
     deletedAt: row.deleted_at,
   };
@@ -789,6 +792,7 @@ function equipmentFromRow(row: Record<string, unknown>) {
     condition: row.condition,
     lastMaint: row.last_maintenance_date,
     status: row.status,
+    batches: Array.isArray(row.batches) ? row.batches : [],
     deleted: Boolean(row.deleted_at),
     deletedAt: row.deleted_at,
   };

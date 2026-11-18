@@ -1,5 +1,70 @@
 /* ================= INVENTORY ================= */
 const MEDICINE_EXPIRY_ALERT_DAYS=30;
+function monitorAndVoidMedicineBatches() {
+  let changed = false;
+  MEDICINES.forEach((medicine) => {
+    if (!Array.isArray(medicine.batches) || !medicine.batches.length) {
+      if (medicine.exp) {
+        medicine.batches = [{
+          id: `${medicine.code}-B1`,
+          qty: Number(medicine.qty) || 0,
+          exp: medicine.exp,
+          status: "Available",
+        }];
+      }
+    }
+    medicine.batches.forEach((batch) => {
+      if (!batch.exp || batch.status === "Voided") return;
+      const days = clinicDateDaysUntil(batch.exp);
+      if (days === 3) {
+        const quantity = Number(batch.qty ?? batch.quantity) || 0;
+        batch.voidedQuantity = quantity;
+        batch.qty = 0;
+        batch.quantity = 0;
+        batch.status = "Voided";
+        batch.voidedAt = new Date().toISOString();
+        if (quantity > 0) {
+          logAudit(
+            `Automatic Medicine Voiding — ${medicine.name} — Batch ${batch.id}`,
+            "Medicines",
+            "Warning",
+            false,
+          );
+        }
+        changed = true;
+      }
+    });
+    medicine.qty = medicine.batches
+      .filter((batch) => batch.status !== "Voided")
+      .reduce((total, batch) => total + (Number(batch.qty ?? batch.quantity) || 0), 0);
+  });
+  return changed;
+}
+function medicineBatches(medicine) {
+  if (!medicine) return [];
+  if (Array.isArray(medicine.batches) && medicine.batches.length) {
+    return medicine.batches
+      .filter((batch) => !batch.deleted && batch.status !== "Voided")
+      .map((batch, index) => ({
+        id: batch.id || `${medicine.code}-B${index + 1}`,
+        qty: Math.max(0, Number(batch.qty ?? batch.quantity) || 0),
+        exp: batch.exp ?? batch.expirationDate ?? batch.expiration_date ?? "",
+      }));
+  }
+  return medicine.exp || Number(medicine.qty) > 0
+    ? [{ id: `${medicine.code}-B1`, qty: Number(medicine.qty) || 0, exp: medicine.exp || "" }]
+    : [];
+}
+function medicineAvailableQuantity(medicine) {
+  if (!medicine || medicine.deleted) return 0;
+  return medicineBatches(medicine)
+    .filter((batch) => {
+      if (!batch.exp) return true;
+      const days = clinicDateDaysUntil(batch.exp);
+      return days !== null && days >= 0 && days !== 3;
+    })
+    .reduce((total, batch) => total + batch.qty, 0);
+}
 function medicineExpiryDays(medicine){return medicine?clinicDateDaysUntil(medicine.exp):null;}
 function medicineIsExpired(medicine){const remaining=medicineExpiryDays(medicine);return remaining!==null&&remaining<0;}
 function medicineAlertData(today=todayDateString()){
@@ -61,16 +126,17 @@ function renderMedicinesTab(){
   const totalPages=Math.max(1,Math.ceil(list.length/perPage));
   if(state.medPage>totalPages) state.medPage=totalPages;
   const pageItems=list.slice((state.medPage-1)*perPage, state.medPage*perPage);
-  const rows = pageItems.length===0? `<tr><td colspan="8">${emptyState("No medicines match your filters.")}</td></tr>` :
-    pageItems.map(m=>{ const st=medStatus(m); return `
+  const rows = pageItems.length===0? `<tr><td colspan="9">${emptyState("No medicines match your filters.")}</td></tr>` :
+    pageItems.map(m=>{ const st=medStatus(m); const batches=medicineBatches(m); const earliest=batches.slice().sort((a,b)=>(a.exp||"9999").localeCompare(b.exp||"9999"))[0]; return `
     <tr>
       <td class="mono">${m.code}</td>
       <td>${escapeHtml(m.name)}</td>
       <td>${escapeHtml(m.category)}</td>
-      <td class="mono">${m.qty} ${m.unit}</td>
+      <td class="mono">${medicineAvailableQuantity(m)} ${m.unit}</td>
       <td>${fmtDate(m.productionDate)}</td>
-      <td>${fmtDate(m.exp)}</td>
+      <td>${earliest ? fmtDate(earliest.exp) : fmtDate(m.exp)}</td>
       <td><span class="chip ${st.chip}">${st.label}</span></td>
+      <td><button class="mini-btn" data-view-med-batches="${escapeHtml(m.code)}" title="View batches">${ICONS.search}</button></td>
       <td><div class="row-actions">
         ${canManageInventory()?`<button class="mini-btn" data-edit-med="${m.code}" title="Edit">${ICONS.edit}</button>`:""}
         ${canDeleteClinicRecords()?`<button class="mini-btn" data-archive-med="${m.code}" title="Move to Archive">${ICONS.archive}</button>`:""}
@@ -89,7 +155,7 @@ function renderMedicinesTab(){
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Quantity</th><th>Production Date</th><th>Expiration</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Total Quantity</th><th>Production Date</th><th>Nearest Expiration</th><th>Status</th><th>Batches</th><th></th></tr></thead>
         <tbody id="med-tbody">${rows}</tbody>
       </table>
     </div>
@@ -108,6 +174,12 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
   const inventorySnapshot=captureInventoryState();
   const previousQuantity=existing?Number(existing.qty)||0:0;
   const noun=itemType==="medicine"?"Medicine":"Medical Supply";
+  const mergedQuantity = existing && record.qty !== previousQuantity;
+  const inventoryAction = mergedQuantity
+    ? `${noun} Duplicate Merged — ${record.name} (${previousQuantity} → ${record.qty})`
+    : existing
+      ? `${noun} Updated — ${record.name} (${previousQuantity} → ${record.qty})`
+      : `${noun} Added — ${record.name}`;
   const saved=await commitClinicRecordMutation({
     apply:()=>{
       ensureInventoryLedger();
@@ -128,7 +200,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
       else EQUIPMENT=previousRecords;
     },
     save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id,existing?previousQuantity:null),
-    auditAction:existing?`${noun} Updated — ${record.name} (${previousQuantity} → ${record.qty})`:`${noun} Added — ${record.name}`,
+    auditAction:inventoryAction,
     detail:itemType==="medicine"?record.code:record.id,auditBackground:true,
     module:itemType==="medicine"?"Medicines":"Medical Supplies",successTitle:existing?`${noun} updated`:`${noun} added`,
     successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh:()=>{if(state.page==="inventory")refresh();else render();},
@@ -168,6 +240,30 @@ function openMedicineForm(existing=null){
       exp: document.getElementById('mf-exp').value,
       deleted:false,
     };
+    if (!isEdit) {
+      const normalizedName = name.trim().toLowerCase();
+      const duplicate = MEDICINES.find((item) =>
+        !item.deleted &&
+        item.name.trim().toLowerCase() === normalizedName &&
+        (item.category || "General").trim().toLowerCase() === (rec.category || "General").trim().toLowerCase() &&
+        (item.unit || "tablet").trim().toLowerCase() === rec.unit.trim().toLowerCase()
+      );
+      if (duplicate) {
+        const existingBatches = medicineBatches(duplicate).map((batch) => ({ ...batch }));
+        const incomingExpiration = rec.exp || null;
+        const matchingBatch = existingBatches.find((batch) => (batch.exp || "") === (incomingExpiration || ""));
+        if (matchingBatch) matchingBatch.qty += rec.qty;
+        else if (incomingExpiration) existingBatches.push({ id: `${duplicate.code}-B${existingBatches.length + 1}`, qty: rec.qty, exp: incomingExpiration });
+        rec.code = duplicate.code;
+        rec.qty = existingBatches.reduce((total, batch) => total + batch.qty, 0);
+        rec.exp = rec.exp || duplicate.exp;
+        rec.batches = [
+          ...existingBatches,
+          ...(Array.isArray(duplicate.batches) ? duplicate.batches.filter((batch) => batch.status === "Voided").map((batch) => ({ ...batch })) : []),
+        ];
+        existing = duplicate;
+      }
+    }
     const saveButton=document.getElementById('mf-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     saving=true;
     try{const saved=await saveInventoryRecord({itemType:"medicine",records:MEDICINES,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}
@@ -194,6 +290,21 @@ function bindMedicinesTab(){
   };
   const st=document.getElementById('med-status'); if(st) st.onchange=rerender;
   document.getElementById('add-med-btn')?.addEventListener('click',()=>openMedicineForm());
+  document.querySelectorAll('[data-view-med-batches]').forEach((button) => {
+    button.onclick = () => {
+      const medicine = MEDICINES.find((item) => item.code === button.dataset.viewMedBatches);
+      if (!medicine) return;
+      const batches = medicineBatches(medicine);
+      const voided = Array.isArray(medicine.batches)
+        ? medicine.batches.filter((batch) => batch.status === "Voided")
+        : [];
+      const rows = [
+        ...batches.map((batch) => `<tr><td class="mono">${escapeHtml(batch.id)}</td><td class="mono">${batch.qty} ${escapeHtml(medicine.unit || "unit")}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td><span class="chip chip-available">Available</span></td></tr>`),
+        ...voided.map((batch) => `<tr><td class="mono">${escapeHtml(batch.id)}</td><td class="mono">${Number(batch.voidedQuantity ?? batch.qty) || 0} ${escapeHtml(medicine.unit || "unit")}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td><span class="chip chip-void">Voided / Expiring – 3 Days Remaining</span></td></tr>`),
+      ].join("");
+      openModal(`<div class="modal-head"><h3>${escapeHtml(medicine.name)} — Inventory Batches</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div><div class="modal-body"><p><b>Total available quantity:</b> ${medicineAvailableQuantity(medicine)} ${escapeHtml(medicine.unit || "unit")}</p><div class="table-wrap"><table><thead><tr><th>Batch</th><th>Quantity</th><th>Expiration</th><th>Status</th></tr></thead><tbody>${rows || `<tr><td colspan="4">${emptyState("No batch records.")}</td></tr>`}</tbody></table></div></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button></div>`, "record-detail-modal");
+    };
+  });
   document.querySelectorAll('[data-mpage]').forEach(b=> b.onclick=()=>{ state.medPage += b.dataset.mpage==='next'?1:-1; if(state.medPage<1) state.medPage=1; rerender(); });
   document.querySelectorAll('[data-edit-med]').forEach(b=> b.onclick=()=>openMedicineForm(MEDICINES.find(m=>m.code===b.dataset.editMed)));
   document.querySelectorAll('[data-archive-med]').forEach(b=>{
@@ -287,6 +398,23 @@ function openEquipmentForm(existing=null){
     const rec={ id:document.getElementById('ef-id').value, name, category:"Medical Supplies", qty:parseInt(document.getElementById('ef-qty').value)||0,
       condition:existing?.condition||"Good", lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false };
+    if (!isEdit) {
+      const duplicate = EQUIPMENT.find((item) =>
+        !item.deleted &&
+        item.category === "Medical Supplies" &&
+        item.name.trim().toLowerCase() === name.trim().toLowerCase()
+      );
+      if (duplicate) {
+        rec.id = duplicate.id;
+        rec.qty = (Number(duplicate.qty) || 0) + rec.qty;
+        rec.condition = duplicate.condition || "Good";
+        rec.status = duplicate.status || rec.status;
+        rec.lastMaint = rec.lastMaint || duplicate.lastMaint || "";
+        rec.batches = Array.isArray(duplicate.batches) ? duplicate.batches.slice() : [];
+        if (rec.qty > 0) rec.batches.push({ id: `${duplicate.id}-IN-${Date.now()}`, qty: parseInt(document.getElementById('ef-qty').value) || 0, expirationDate: null });
+        existing = duplicate;
+      }
+    }
     const saveButton=document.getElementById('ef-save'),saveLabel=saveButton.innerHTML;saveButton.disabled=true;saveButton.innerHTML='<span class="button-spinner"></span> Saving...';
     saving=true;
     try{const saved=await saveInventoryRecord({itemType:"equipment",records:EQUIPMENT,record:rec,existing,refresh:renderInventoryTabBody});if(saved)closeModal();}

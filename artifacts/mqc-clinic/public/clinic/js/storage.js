@@ -239,7 +239,9 @@ function validateVisitInventoryUsage(visit, previousVisit = null) {
     });
   for (const requirement of visitInventoryRequirements(visit)) {
     const available =
-      (Number(requirement.item.qty) || 0) +
+      (requirement.itemType === "medicine" && typeof medicineAvailableQuantity === "function"
+        ? medicineAvailableQuantity(requirement.item)
+        : Number(requirement.item.qty) || 0) +
       (returning.get(
         inventoryItemKey(requirement.itemType, requirement.itemId),
       ) || 0);
@@ -297,7 +299,9 @@ function applyVisitInventoryUsage(visit, previousVisit = null) {
             medicineIsExpired(requirement.item)) ||
           (requirement.itemType === "equipment" &&
             requirement.item.status !== "Available"))) ||
-      Number(requirement.item.qty) < requirement.quantity
+      (requirement.itemType === "medicine" && typeof medicineAvailableQuantity === "function"
+        ? medicineAvailableQuantity(requirement.item)
+        : Number(requirement.item.qty) || 0) < requirement.quantity
     ) {
       const available = Number(requirement.item.qty) || 0;
       throw new Error(
@@ -314,7 +318,32 @@ function applyVisitInventoryUsage(visit, previousVisit = null) {
       )
     )
       return;
-    requirement.item.qty = Number(requirement.item.qty) - requirement.quantity;
+    if (requirement.itemType === "medicine") {
+      let remaining = requirement.quantity;
+      if (!Array.isArray(requirement.item.batches) || !requirement.item.batches.length) {
+        requirement.item.qty = Math.max(0, (Number(requirement.item.qty) || 0) - remaining);
+      } else {
+        const batches = requirement.item.batches
+          .filter((batch) => batch.status !== "Voided" && batch.deleted !== true)
+          .slice()
+          .sort((a, b) => String(a.exp || a.expirationDate || "9999").localeCompare(String(b.exp || b.expirationDate || "9999")));
+        batches.forEach((batch) => {
+          if (remaining <= 0) return;
+          const days = batch.exp || batch.expirationDate ? clinicDateDaysUntil(batch.exp || batch.expirationDate) : null;
+          if (days !== null && (days < 0 || days === 3)) return;
+          const available = Math.max(0, Number(batch.qty ?? batch.quantity) || 0);
+          const deducted = Math.min(available, remaining);
+          batch.qty = available - deducted;
+          batch.quantity = batch.qty;
+          remaining -= deducted;
+        });
+        requirement.item.qty = requirement.item.batches
+          .filter((batch) => batch.status !== "Voided")
+          .reduce((total, batch) => total + (Number(batch.qty ?? batch.quantity) || 0), 0);
+      }
+    } else {
+      requirement.item.qty = Number(requirement.item.qty) - requirement.quantity;
+    }
     recordInventoryTransaction(
       requirement.itemType,
       requirement.item,
@@ -631,6 +660,8 @@ function applyStoredData(data) {
       ...data.students.filter((s) => !s.deleted),
     );
   if (Array.isArray(data.medicines)) MEDICINES = data.medicines;
+  if (typeof monitorAndVoidMedicineBatches === "function")
+    monitorAndVoidMedicineBatches();
   if (Array.isArray(data.equipment)) EQUIPMENT = data.equipment;
   INVENTORY_TRANSACTIONS = Array.isArray(data.inventoryTransactions)
     ? data.inventoryTransactions

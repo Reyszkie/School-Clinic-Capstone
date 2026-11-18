@@ -96,6 +96,12 @@ create table if not exists public.equipment (
 alter table public.medicines
   add column if not exists production_date date;
 
+alter table public.medicines
+  add column if not exists batches jsonb not null default '[]'::jsonb;
+
+alter table public.equipment
+  add column if not exists batches jsonb not null default '[]'::jsonb;
+
 alter table public.equipment
   add column if not exists category text not null default 'Medical Equipment';
 alter table public.equipment
@@ -298,6 +304,8 @@ declare
   v_stock integer;
   v_item_id text;
   v_item_name text;
+  v_batch_deduction record;
+  v_has_batch_deductions boolean;
   v_has_deductions boolean;
   v_treatment jsonb;
   v_treatment_type text;
@@ -363,9 +371,40 @@ begin
           for update
         loop
           if v_deduction.item_type = 'medicine' then
-            update public.medicines
-            set quantity = quantity + v_deduction.quantity
-            where code = v_deduction.item_id;
+            select exists (
+              select 1
+              from public.medicine_batch_deductions
+              where visit_id = v_previous.id
+                and medicine_code = v_deduction.item_id
+                and reversed_at is null
+            ) into v_has_batch_deductions;
+            if v_has_batch_deductions then
+              for v_batch_deduction in
+                select *
+                from public.medicine_batch_deductions
+                where visit_id = v_previous.id
+                  and medicine_code = v_deduction.item_id
+                  and reversed_at is null
+                for update
+              loop
+                update public.medicine_batches
+                set quantity = quantity + v_batch_deduction.quantity,
+                    updated_at = now()
+                where id = v_batch_deduction.batch_id
+                  and status = 'Available';
+                if found then
+                  perform public.refresh_medicine_batch_snapshot(v_deduction.item_id);
+                end if;
+                update public.medicine_batch_deductions
+                set reversed_at = now()
+                where visit_id = v_batch_deduction.visit_id
+                  and batch_id = v_batch_deduction.batch_id;
+              end loop;
+            else
+              update public.medicines
+              set quantity = quantity + v_deduction.quantity
+              where code = v_deduction.item_id;
+            end if;
           else
             update public.equipment
             set quantity = quantity + v_deduction.quantity
@@ -430,20 +469,16 @@ begin
     if v_quantity is null or v_quantity <= 0 then
       raise exception 'Medication quantity must be a positive whole number.';
     end if;
-    update public.medicines
-    set quantity = quantity - v_quantity
-    where code = v_visit.medicine_code
-      and name = v_visit.medicine_name
-      and quantity >= v_quantity
-      and deleted_at is null
-      and (expiration_date is null or expiration_date >= current_date)
-    returning quantity + v_quantity into v_stock;
-    if not found then
-      select quantity into v_stock from public.medicines where code = v_visit.medicine_code;
-      raise exception 'Insufficient stock for %: % available, % requested.',
-        coalesce(v_visit.medicine_name, v_visit.medicine_code), coalesce(v_stock, 0), v_quantity
-        using errcode = 'P0001';
-    end if;
+    perform public.deduct_medicine_fefo(
+      v_visit.medicine_code,
+      v_visit.medicine_name,
+      v_quantity,
+      v_visit.id,
+      p_user_id,
+      p_username,
+      p_user_name,
+      p_role
+    );
     insert into public.clinical_visit_inventory_deductions (visit_id, item_type, item_id, quantity)
     values (v_visit.id, 'medicine', v_visit.medicine_code, v_quantity);
   end if;
@@ -513,14 +548,16 @@ begin
     end if;
     v_quantity := (v_treatment->>'quantity')::integer;
     if v_treatment_type = 'medicine' then
-      update public.medicines
-      set quantity = quantity - v_quantity
-      where code = v_item_id
-        and name = v_item_name
-        and quantity >= v_quantity
-        and deleted_at is null
-        and (expiration_date is null or expiration_date >= current_date)
-      returning quantity + v_quantity into v_stock;
+      perform public.deduct_medicine_fefo(
+        v_item_id,
+        v_item_name,
+        v_quantity,
+        v_visit.id,
+        p_user_id,
+        p_username,
+        p_user_name,
+        p_role
+      );
     else
       update public.equipment
       set quantity = quantity - v_quantity
@@ -532,7 +569,7 @@ begin
         and deleted_at is null
       returning quantity + v_quantity into v_stock;
     end if;
-    if not found then
+    if v_treatment_type = 'equipment' and not found then
       if v_treatment_type = 'medicine' then
         select quantity into v_stock from public.medicines where code = v_item_id;
       else
@@ -2787,6 +2824,7 @@ declare
   v_deleted_medicines integer := 0;
   v_deleted_equipment integer := 0;
   v_preserved_patients integer := 0;
+  v_voided_batches integer := 0;
   v_result jsonb;
 begin
   v_local_now := v_now at time zone 'Asia/Manila';
@@ -3094,6 +3132,8 @@ begin
     end if;
   end if;
 
+  select public.void_expiring_medicine_batches() into v_voided_batches;
+
   v_result := jsonb_build_object(
     'status', 'success',
     'localDate', v_local_now::date,
@@ -3124,3 +3164,507 @@ $$;
 
 revoke all on function public.run_scheduled_record_maintenance() from public, anon, authenticated;
 grant execute on function public.run_scheduled_record_maintenance() to service_role;
+
+-- Batch-level medicine and supply inventory
+create table if not exists public.medicine_batches (
+  id text primary key,
+  medicine_code text not null references public.medicines(code) on delete restrict,
+  quantity integer not null default 0 check (quantity >= 0),
+  expiration_date date,
+  status text not null default 'Available' check (status in ('Available', 'Voided', 'Expired')),
+  voided_quantity integer not null default 0 check (voided_quantity >= 0),
+  voided_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.medicine_batches
+  drop constraint if exists medicine_batches_medicine_code_expiration_date_key;
+
+create table if not exists public.supply_batches (
+  id text primary key,
+  supply_id text not null references public.equipment(id) on delete restrict,
+  quantity integer not null default 0 check (quantity >= 0),
+  expiration_date date,
+  batch_number text,
+  voided_quantity integer not null default 0 check (voided_quantity >= 0),
+  voided_at timestamptz,
+  status text not null default 'Available',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.medicine_batch_deductions (
+  visit_id text not null references public.clinical_visits(id) on delete cascade,
+  batch_id text not null references public.medicine_batches(id) on delete restrict,
+  medicine_code text not null,
+  quantity integer not null check (quantity > 0),
+  reversed_at timestamptz,
+  created_at timestamptz not null default now(),
+  primary key (visit_id, batch_id)
+);
+
+alter table public.medicine_batch_deductions
+  add column if not exists reversed_at timestamptz;
+
+create index if not exists medicine_batches_fefo_idx
+  on public.medicine_batches (medicine_code, expiration_date, status);
+create index if not exists medicine_batches_void_idx
+  on public.medicine_batches (status, expiration_date);
+
+alter table public.medicine_batches enable row level security;
+alter table public.supply_batches enable row level security;
+alter table public.medicine_batch_deductions enable row level security;
+
+insert into public.medicine_batches (
+  id, medicine_code, quantity, expiration_date, status, voided_quantity, voided_at
+)
+select
+  coalesce(nullif(batch.value->>'id', ''), medicines.code || '-B' || batch.ordinality::text),
+  medicines.code,
+  case when coalesce(batch.value->>'qty', batch.value->>'quantity', '') ~ '^[0-9]{1,10}$'
+    then least(coalesce(batch.value->>'qty', batch.value->>'quantity')::numeric, 2147483647)::integer
+    else 0 end,
+  case when coalesce(batch.value->>'exp', batch.value->>'expirationDate', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+    then coalesce(batch.value->>'exp', batch.value->>'expirationDate')::date
+    else null end,
+  case lower(coalesce(batch.value->>'status', 'available'))
+    when 'voided' then 'Voided'
+    when 'expired' then 'Expired'
+    else 'Available' end,
+  case when coalesce(batch.value->>'voidedQuantity', '') ~ '^[0-9]{1,10}$'
+    then least((batch.value->>'voidedQuantity')::numeric, 2147483647)::integer
+    else 0 end,
+  case when coalesce(batch.value->>'voidedAt', '') = '' then null
+    else (batch.value->>'voidedAt')::timestamptz end
+from public.medicines
+cross join lateral jsonb_array_elements(
+  case when jsonb_typeof(medicines.batches) = 'array' then medicines.batches else '[]'::jsonb end
+) with ordinality as batch(value, ordinality)
+on conflict (id) do nothing;
+
+insert into public.medicine_batches (id, medicine_code, quantity, expiration_date)
+select medicines.code || '-LEGACY', medicines.code, medicines.quantity, medicines.expiration_date
+from public.medicines
+where medicines.quantity > 0
+  and not exists (
+    select 1 from public.medicine_batches
+    where medicine_code = medicines.code
+  )
+on conflict (id) do nothing;
+
+update public.medicines
+set quantity = coalesce((
+  select sum(batches.quantity)::integer
+  from public.medicine_batches as batches
+  where batches.medicine_code = medicines.code
+    and batches.status = 'Available'
+), 0)
+where exists (
+  select 1 from public.medicine_batches as batches
+  where batches.medicine_code = medicines.code
+);
+
+create or replace function public.refresh_medicine_batch_snapshot(p_medicine_code text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_previous_sync_setting text := current_setting('app.syncing_medicine_batches', true);
+begin
+  perform set_config('app.syncing_medicine_batches', 'on', true);
+  update public.medicines
+  set quantity = coalesce((
+        select sum(batches.quantity)::integer
+        from public.medicine_batches as batches
+        where batches.medicine_code = p_medicine_code
+          and batches.status = 'Available'
+      ), 0),
+      batches = coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', batches.id,
+            'qty', batches.quantity,
+            'exp', batches.expiration_date,
+            'status', batches.status,
+            'voidedQuantity', batches.voided_quantity,
+            'voidedAt', batches.voided_at
+          )
+          order by batches.expiration_date asc nulls last, batches.id
+        )
+        from public.medicine_batches as batches
+        where batches.medicine_code = p_medicine_code
+      ), '[]'::jsonb),
+      updated_at = now()
+  where code = p_medicine_code;
+  perform set_config(
+    'app.syncing_medicine_batches',
+    coalesce(v_previous_sync_setting, 'off'),
+    true
+  );
+end;
+$$;
+
+create or replace function public.sync_medicine_batches_from_inventory_row()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_batch jsonb;
+  v_batch_id text;
+  v_batch_expiration date;
+  v_batch_quantity integer;
+  v_batch_status text;
+  v_voided_quantity integer;
+  v_index integer;
+  v_delta integer;
+  v_remaining integer;
+  v_deduct integer;
+  v_existing_batch record;
+  v_previous_sync_setting text;
+begin
+  if current_setting('app.syncing_medicine_batches', true) = 'on' then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' or (
+    new.batches is distinct from old.batches
+    and jsonb_typeof(new.batches) = 'array'
+    and jsonb_array_length(new.batches) > 0
+  ) then
+    if jsonb_typeof(new.batches) = 'array' and jsonb_array_length(new.batches) > 0 then
+      for v_batch, v_index in
+        select entries.value, entries.ordinality::integer
+        from jsonb_array_elements(new.batches) with ordinality as entries(value, ordinality)
+      loop
+        v_batch_id := coalesce(nullif(v_batch->>'id', ''), new.code || '-B' || v_index::text);
+        v_batch_expiration := case
+          when coalesce(v_batch->>'exp', v_batch->>'expirationDate', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            then coalesce(v_batch->>'exp', v_batch->>'expirationDate')::date
+          else null
+        end;
+        v_batch_quantity := case
+          when coalesce(v_batch->>'qty', v_batch->>'quantity', '') ~ '^[0-9]{1,10}$'
+            then least(coalesce(v_batch->>'qty', v_batch->>'quantity')::numeric, 2147483647)::integer
+          else 0
+        end;
+        v_batch_status := case lower(coalesce(v_batch->>'status', 'available'))
+          when 'voided' then 'Voided'
+          when 'expired' then 'Expired'
+          else 'Available'
+        end;
+        v_voided_quantity := case
+          when coalesce(v_batch->>'voidedQuantity', '') ~ '^[0-9]{1,10}$'
+            then least((v_batch->>'voidedQuantity')::numeric, 2147483647)::integer
+          else 0
+        end;
+        insert into public.medicine_batches (
+          id, medicine_code, quantity, expiration_date, status, voided_quantity, voided_at
+        )
+        values (
+          v_batch_id, new.code, v_batch_quantity, v_batch_expiration,
+          v_batch_status, v_voided_quantity,
+          case when nullif(v_batch->>'voidedAt', '') is null then null
+            else (v_batch->>'voidedAt')::timestamptz end
+        )
+        on conflict (id) do update
+        set quantity = excluded.quantity,
+            expiration_date = excluded.expiration_date,
+            status = excluded.status,
+            voided_quantity = excluded.voided_quantity,
+            voided_at = excluded.voided_at,
+            updated_at = now()
+        where public.medicine_batches.medicine_code = excluded.medicine_code;
+      end loop;
+    elsif tg_op = 'INSERT' and new.quantity > 0 then
+      insert into public.medicine_batches (
+        id, medicine_code, quantity, expiration_date
+      )
+      values (
+        new.code || '-LEGACY', new.code, new.quantity, new.expiration_date
+      )
+      on conflict (id) do nothing;
+    end if;
+  elsif tg_op = 'UPDATE' and new.quantity is distinct from old.quantity then
+    v_delta := new.quantity - old.quantity;
+    if v_delta > 0 then
+      select * into v_existing_batch
+      from public.medicine_batches
+      where medicine_code = new.code
+        and expiration_date is not distinct from new.expiration_date
+        and status = 'Available'
+      order by id
+      limit 1
+      for update;
+      if found then
+        update public.medicine_batches
+        set quantity = quantity + v_delta, updated_at = now()
+        where id = v_existing_batch.id;
+      else
+        insert into public.medicine_batches (
+          id, medicine_code, quantity, expiration_date
+        )
+        values (
+          new.code || '-ADJ-' || substr(md5(clock_timestamp()::text || random()::text), 1, 12),
+          new.code,
+          v_delta,
+          new.expiration_date
+        );
+      end if;
+    else
+      v_remaining := abs(v_delta);
+      for v_existing_batch in
+        select id, quantity
+        from public.medicine_batches
+        where medicine_code = new.code and status = 'Available' and quantity > 0
+        order by expiration_date asc nulls last, id
+        for update
+      loop
+        exit when v_remaining = 0;
+        v_deduct := least(v_existing_batch.quantity, v_remaining);
+        update public.medicine_batches
+        set quantity = quantity - v_deduct, updated_at = now()
+        where id = v_existing_batch.id;
+        v_remaining := v_remaining - v_deduct;
+      end loop;
+      if v_remaining > 0 then
+        raise exception 'Inventory adjustment exceeds the batch-level stock for medicine %.', new.code;
+      end if;
+    end if;
+  end if;
+
+  v_previous_sync_setting := current_setting('app.syncing_medicine_batches', true);
+  perform set_config('app.syncing_medicine_batches', 'on', true);
+  update public.medicines
+  set quantity = coalesce((
+        select sum(batches.quantity)::integer
+        from public.medicine_batches as batches
+        where batches.medicine_code = new.code
+          and batches.status = 'Available'
+      ), 0),
+      batches = coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', batches.id,
+            'qty', batches.quantity,
+            'exp', batches.expiration_date,
+            'status', batches.status,
+            'voidedQuantity', batches.voided_quantity,
+            'voidedAt', batches.voided_at
+          )
+          order by batches.expiration_date asc nulls last, batches.id
+        )
+        from public.medicine_batches as batches
+        where batches.medicine_code = new.code
+      ), '[]'::jsonb),
+      updated_at = now()
+  where code = new.code;
+  perform set_config(
+    'app.syncing_medicine_batches',
+    coalesce(v_previous_sync_setting, 'off'),
+    true
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists medicines_sync_batches on public.medicines;
+create trigger medicines_sync_batches
+after insert or update on public.medicines
+for each row execute function public.sync_medicine_batches_from_inventory_row();
+
+do $$
+declare
+  v_medicine_code text;
+begin
+  for v_medicine_code in
+    select code from public.medicines
+  loop
+    perform public.refresh_medicine_batch_snapshot(v_medicine_code);
+  end loop;
+end;
+$$;
+
+create or replace function public.void_expiring_medicine_batches()
+returns integer
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_batch record;
+  v_voided integer := 0;
+  v_previous integer;
+begin
+  perform pg_advisory_xact_lock(hashtext('medicine-expiration-void'));
+  for v_batch in
+    select *
+    from public.medicine_batches
+    where status = 'Available'
+      and expiration_date is not null
+      and expiration_date - (current_timestamp at time zone 'Asia/Manila')::date = 3
+      and quantity > 0
+    for update
+  loop
+    v_previous := v_batch.quantity;
+    update public.medicine_batches
+    set quantity = 0,
+        voided_quantity = v_previous,
+        status = 'Voided',
+        voided_at = now(),
+        updated_at = now()
+    where id = v_batch.id;
+
+    perform public.refresh_medicine_batch_snapshot(v_batch.medicine_code);
+
+    insert into public.audit_logs (
+      user_name, username, role, action, event_details, module, status, created_at
+    )
+    values (
+      'System Automation', 'system_automation', 'System',
+      'Automatic Medicine Voiding',
+      format(
+        'Medicine batch %s for medicine %s was voided three days before expiration. Batch identifier: %s. Previous quantity: %s. Updated quantity: 0. Voided quantity: %s. Expiration date: %s. Reason: exactly three days remaining before expiration.',
+        v_batch.id,
+        coalesce((select name from public.medicines where code = v_batch.medicine_code), v_batch.medicine_code),
+        v_batch.id,
+        v_previous,
+        v_previous,
+        v_batch.expiration_date
+      ),
+      'Medicines', 'Warning', now()
+    );
+    v_voided := v_voided + 1;
+  end loop;
+  return v_voided;
+end;
+$$;
+
+drop function if exists public.deduct_medicine_fefo(text, integer, text);
+
+create or replace function public.deduct_medicine_fefo(
+  p_medicine_code text,
+  p_medicine_name text,
+  p_quantity integer,
+  p_visit_id text,
+  p_user_id text,
+  p_username text,
+  p_user_name text,
+  p_role text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_remaining integer := p_quantity;
+  v_batch record;
+  v_available integer;
+  v_deducted integer;
+  v_medicine record;
+  v_total_before integer;
+  v_total_after integer;
+  v_batch_before integer;
+begin
+  if p_quantity is null or p_quantity <= 0 then
+    raise exception 'Medicine quantity must be a positive whole number.';
+  end if;
+  perform public.void_expiring_medicine_batches();
+  select * into v_medicine
+  from public.medicines
+  where code = p_medicine_code and deleted_at is null
+  for update;
+  if not found then raise exception 'The selected medicine is unavailable.'; end if;
+  if v_medicine.name is distinct from p_medicine_name then
+    raise exception 'The selected medicine does not match the inventory record.';
+  end if;
+  if exists (
+    select 1 from public.medicine_batch_deductions
+    where visit_id = p_visit_id
+      and medicine_code = p_medicine_code
+      and reversed_at is null
+  ) then
+    return jsonb_build_object('status', 'already_deducted', 'visitId', p_visit_id);
+  end if;
+  v_total_before := coalesce(v_medicine.quantity, 0);
+  select coalesce(sum(quantity), 0)::integer into v_available
+  from public.medicine_batches
+  where medicine_code = p_medicine_code
+    and status = 'Available'
+    and quantity > 0
+    and (
+      expiration_date is null or
+      expiration_date - (current_timestamp at time zone 'Asia/Manila')::date > 3
+    );
+  if v_available < p_quantity then
+    raise exception 'Insufficient stock for %: % available, % requested.',
+      v_medicine.name, v_available, p_quantity using errcode = 'P0001';
+  end if;
+  for v_batch in
+    select *
+    from public.medicine_batches
+    where medicine_code = p_medicine_code
+      and status = 'Available'
+      and quantity > 0
+      and (expiration_date is null or expiration_date > (current_timestamp at time zone 'Asia/Manila')::date)
+      and (expiration_date is null or expiration_date - (current_timestamp at time zone 'Asia/Manila')::date > 3)
+    order by expiration_date asc nulls last
+    for update
+  loop
+    exit when v_remaining <= 0;
+    v_batch_before := v_batch.quantity;
+    v_deducted := least(v_batch.quantity, v_remaining);
+    update public.medicine_batches
+    set quantity = quantity - v_deducted, updated_at = now()
+    where id = v_batch.id;
+    insert into public.medicine_batch_deductions (
+      visit_id, batch_id, medicine_code, quantity
+    ) values (p_visit_id, v_batch.id, p_medicine_code, v_deducted)
+    on conflict (visit_id, batch_id) do update
+    set quantity = excluded.quantity,
+        medicine_code = excluded.medicine_code,
+        reversed_at = null;
+    insert into public.audit_logs (
+      user_id, user_name, username, role, action, event_details, module, status, created_at
+    )
+    values (
+      p_user_id,
+      coalesce(nullif(btrim(p_user_name), ''), v_medicine.name),
+      nullif(btrim(p_username), ''),
+      coalesce(nullif(btrim(p_role), ''), 'Unknown'),
+      'FEFO Inventory Deduction',
+      format(
+        'Medicine %s; batch identifier: %s; quantity deducted: %s; previous batch quantity: %s; updated batch quantity: %s; expiration date: %s; reason: Treatment Given FEFO deduction for visit %s.',
+        v_medicine.name, v_batch.id, v_deducted, v_batch_before,
+        v_batch_before - v_deducted, v_batch.expiration_date, p_visit_id
+      ),
+      'Medicines', 'Success', now()
+    );
+    v_remaining := v_remaining - v_deducted;
+  end loop;
+  if v_remaining > 0 then
+    raise exception 'Insufficient medicine stock for %: % requested, % available.', v_medicine.name, p_quantity, p_quantity - v_remaining;
+  end if;
+  perform public.refresh_medicine_batch_snapshot(p_medicine_code);
+  select quantity into v_total_after
+  from public.medicines
+  where code = p_medicine_code;
+  return jsonb_build_object(
+    'status', 'deducted',
+    'medicineCode', p_medicine_code,
+    'quantity', p_quantity,
+    'previousQuantity', v_total_before,
+    'updatedQuantity', v_total_after
+  );
+end;
+$$;
+
+revoke all on function public.void_expiring_medicine_batches() from public, anon, authenticated;
+grant execute on function public.void_expiring_medicine_batches() to service_role;
+revoke all on function public.deduct_medicine_fefo(text, text, integer, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.deduct_medicine_fefo(text, text, integer, text, text, text, text, text) to service_role;
