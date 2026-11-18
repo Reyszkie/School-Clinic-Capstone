@@ -72,6 +72,24 @@ function appendOnlyInventoryTransactions(
   return submitted;
 }
 
+function remapInventoryTransactionItemId(
+  value: unknown,
+  itemType: string,
+  fromId: string,
+  toId: string,
+) {
+  if (!Array.isArray(value)) return value;
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+      return entry;
+    const transaction = entry as Record<string, unknown>;
+    return transaction.itemType === itemType &&
+      String(transaction.itemId ?? "") === fromId
+      ? { ...transaction, itemId: toId }
+      : transaction;
+  });
+}
+
 function toDateValue(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "string") return value;
@@ -305,6 +323,8 @@ function normalizeMedicineRow(row: Record<string, unknown>) {
   return {
     code: row.code ?? null,
     name: row.name ?? "",
+    strength: row.strength ?? "",
+    dosage_form: row.dosageForm ?? row.dosage_form ?? "",
     category: row.category ?? "General",
     quantity: toNumber(row.qty ?? row.quantity) ?? 0,
     unit: row.unit ?? "piece",
@@ -772,6 +792,8 @@ function medicineFromRow(row: Record<string, unknown>) {
   return {
     code: row.code,
     name: row.name,
+    strength: row.strength ?? "",
+    dosageForm: row.dosage_form ?? "",
     category: row.category,
     qty: row.quantity,
     unit: row.unit,
@@ -2111,25 +2133,41 @@ export async function PUT(request: Request) {
             { status: 403, headers: { "Cache-Control": "no-store" } },
           );
         }
-        const insertResponse = await supabaseRequest(table, {
+        const mergeResponse = await supabaseRequest("rpc/merge_inventory_item", {
           method: "POST",
-          headers: { Prefer: "return=minimal" },
-          body: JSON.stringify(normalized),
+          body: JSON.stringify({
+            p_item_type: itemType,
+            p_incoming: normalized,
+          }),
         });
-        if (!insertResponse.ok) {
-          if (insertResponse.status === 409 || insertResponse.status === 422) {
-            return Response.json(
-              {
-                message:
-                  "An inventory item with this ID already exists. Refresh the list and try again.",
-              },
-              { status: 409, headers: { "Cache-Control": "no-store" } },
+        if (!mergeResponse.ok) {
+          const details = await mergeResponse.text();
+          throw new Error(
+            `${table} inventory merge returned ${mergeResponse.status}: ${details}`,
+          );
+        }
+        const mergeResult = (await mergeResponse.json()) as {
+          canonical_id?: unknown;
+        };
+        const canonicalId = String(mergeResult.canonical_id ?? "");
+        if (!canonicalId)
+          throw new Error(`${table} inventory merge returned no canonical item ID.`);
+        if (canonicalId !== itemId) {
+          if (staffSnapshotState) {
+            staffInventoryTransactions = remapInventoryTransactionItemId(
+              staffInventoryTransactions,
+              String(itemType),
+              itemId,
+              canonicalId,
+            ) as unknown[];
+          } else {
+            snapshot.inventoryTransactions = remapInventoryTransactionItemId(
+              snapshot.inventoryTransactions,
+              String(itemType),
+              itemId,
+              canonicalId,
             );
           }
-          const details = await insertResponse.text();
-          throw new Error(
-            `${table} inventory insert returned ${insertResponse.status}: ${details}`,
-          );
         }
       }
       try {

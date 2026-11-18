@@ -1,5 +1,37 @@
 /* ================= INVENTORY ================= */
 const MEDICINE_EXPIRY_ALERT_DAYS=30;
+function inventoryIdentityPart(value) {
+  return String(value || "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+function sameMedicineIdentity(left, right) {
+  return ["name", "strength", "dosageForm", "category", "unit"].every(
+    (key) => inventoryIdentityPart(left[key]) === inventoryIdentityPart(right[key]),
+  );
+}
+function medicineBatchSnapshot(medicine) {
+  if (Array.isArray(medicine?.batches) && medicine.batches.length)
+    return medicine.batches.map((batch) => ({ ...batch }));
+  return Number(medicine?.qty) > 0
+    ? [{
+        id: `${medicine.code}-LEGACY`,
+        qty: Number(medicine.qty) || 0,
+        exp: medicine.exp || null,
+        status: "Available",
+      }]
+    : [];
+}
+function supplyBatchSnapshot(supply) {
+  if (Array.isArray(supply?.batches) && supply.batches.length)
+    return supply.batches.map((batch) => ({ ...batch }));
+  return Number(supply?.qty) > 0
+    ? [{
+        id: `${supply.id}-LEGACY`,
+        qty: Number(supply.qty) || 0,
+        exp: null,
+        batchNumber: "",
+      }]
+    : [];
+}
 function monitorAndVoidMedicineBatches() {
   let changed = false;
   MEDICINES.forEach((medicine) => {
@@ -49,6 +81,7 @@ function medicineBatches(medicine) {
         id: batch.id || `${medicine.code}-B${index + 1}`,
         qty: Math.max(0, Number(batch.qty ?? batch.quantity) || 0),
         exp: batch.exp ?? batch.expirationDate ?? batch.expiration_date ?? "",
+        batchNumber: batch.batchNumber || batch.batch_number || "",
       }));
   }
   return medicine.exp || Number(medicine.qty) > 0
@@ -109,8 +142,9 @@ function renderMedicinesTab(){
   let list = MEDICINES.filter(m=>!m.deleted).filter(m=>{
     const st=medStatus(m).label;
     const matchQ=!q || [
-      m.code,
       m.name,
+      m.strength,
+      m.dosageForm,
       m.category,
       m.qty,
       m.unit,
@@ -126,11 +160,12 @@ function renderMedicinesTab(){
   const totalPages=Math.max(1,Math.ceil(list.length/perPage));
   if(state.medPage>totalPages) state.medPage=totalPages;
   const pageItems=list.slice((state.medPage-1)*perPage, state.medPage*perPage);
-  const rows = pageItems.length===0? `<tr><td colspan="9">${emptyState("No medicines match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="10">${emptyState("No medicines match your filters.")}</td></tr>` :
     pageItems.map(m=>{ const st=medStatus(m); const batches=medicineBatches(m); const earliest=batches.slice().sort((a,b)=>(a.exp||"9999").localeCompare(b.exp||"9999"))[0]; return `
     <tr>
-      <td class="mono">${m.code}</td>
       <td>${escapeHtml(m.name)}</td>
+      <td>${escapeHtml(m.strength || "—")}</td>
+      <td>${escapeHtml(m.dosageForm || "—")}</td>
       <td>${escapeHtml(m.category)}</td>
       <td class="mono">${medicineAvailableQuantity(m)} ${m.unit}</td>
       <td>${fmtDate(m.productionDate)}</td>
@@ -146,7 +181,7 @@ function renderMedicinesTab(){
   return `
   <div class="card">
     <div class="toolbar">
-      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="med-search" placeholder="Search medicines by code, name, category, quantity, expiration, or status..." value="${escapeHtml(rawQ)}"></div>
+      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="med-search" placeholder="Search medicines by name, strength, form, category, quantity, expiration, or status..." value="${escapeHtml(rawQ)}"></div>
       <select class="select-sm" id="med-status">
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Low Stock","Out of Stock","Expiring Soon","Expired"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
@@ -155,7 +190,7 @@ function renderMedicinesTab(){
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Total Quantity</th><th>Production Date</th><th>Nearest Expiration</th><th>Status</th><th>Batches</th><th></th></tr></thead>
+        <thead><tr><th>Medicine</th><th>Strength</th><th>Dosage Form</th><th>Category</th><th>Total Quantity</th><th>Production Date</th><th>Nearest Expiration</th><th>Status</th><th>Batches</th><th></th></tr></thead>
         <tbody id="med-tbody">${rows}</tbody>
       </table>
     </div>
@@ -205,18 +240,27 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
     module:itemType==="medicine"?"Medicines":"Medical Supplies",successTitle:existing?`${noun} updated`:`${noun} added`,
     successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh:()=>{if(state.page==="inventory")refresh();else render();},
   });
+  if (saved) {
+    const refreshed = await hydrateFromSharedStorage();
+    if (refreshed) {
+      if (state.page === "inventory") refresh();
+      else render();
+    }
+    else toast("Inventory saved; refresh failed", "The inventory change was saved, but the latest shared inventory could not be reloaded.", "warn");
+  }
   return saved;
 }
 function openMedicineForm(existing=null){
   if(existing?!canManageInventory():!canAddInventoryItem())return;
   const isEdit=!!existing;
-  const f = existing || {code:uid("MED"), name:"", category:"", qty:0, unit:"tablet", productionDate:"", exp:""};
+  const f = existing || {code:uid("MED"), name:"", strength:"", dosageForm:"", category:"", qty:0, unit:"tablet", productionDate:"", exp:""};
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} Medicine</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
     <form class="form-grid" id="med-form">
-      <div class="f-field"><label>Item Code</label><input type="text" id="mf-code" value="${f.code}" ${isEdit?'readonly style="background:#F7FAFD;"':''}></div>
       <div class="f-field full"><label>Medicine Name <span class="req">*</span></label><input type="text" id="mf-name" value="${escapeHtml(f.name)}" required></div>
+      <div class="f-field"><label>Strength</label><input type="text" id="mf-strength" value="${escapeHtml(f.strength || "")}" placeholder="e.g. 500 mg"></div>
+      <div class="f-field"><label>Dosage Form</label><input type="text" id="mf-dosage-form" value="${escapeHtml(f.dosageForm || "")}" placeholder="e.g. tablet"></div>
       <div class="f-field"><label>Category</label><input type="text" id="mf-category" value="${escapeHtml(f.category)}" placeholder="e.g. Analgesic"></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="mf-qty" value="${f.qty}"></div>
       <div class="f-field"><label>Unit</label><select id="mf-unit">${["tablet","bottle","tube","piece","roll","sachet","box"].map(u=>`<option ${f.unit===u?'selected':''}>${u}</option>`).join("")}</select></div>
@@ -232,7 +276,9 @@ function openMedicineForm(existing=null){
     const name=document.getElementById('mf-name').value.trim();
     if(!name){ toast('Missing information','Medicine name is required.','err'); return; }
     const rec={
-      code: document.getElementById('mf-code').value, name,
+      code: existing?.code || f.code, name,
+      strength: document.getElementById('mf-strength').value.trim(),
+      dosageForm: document.getElementById('mf-dosage-form').value.trim(),
       category: document.getElementById('mf-category').value || "General",
       qty: parseInt(document.getElementById('mf-qty').value)||0,
       unit: document.getElementById('mf-unit').value,
@@ -240,27 +286,41 @@ function openMedicineForm(existing=null){
       exp: document.getElementById('mf-exp').value,
       deleted:false,
     };
+    rec.batches = isEdit
+      ? medicineBatchSnapshot(existing)
+      : [{
+          id: `${rec.code}-B1`,
+          qty: rec.qty,
+          exp: rec.exp || null,
+          status: "Available",
+        }];
     if (!isEdit) {
-      const normalizedName = name.trim().toLowerCase();
       const duplicate = MEDICINES.find((item) =>
         !item.deleted &&
-        item.name.trim().toLowerCase() === normalizedName &&
-        (item.category || "General").trim().toLowerCase() === (rec.category || "General").trim().toLowerCase() &&
-        (item.unit || "tablet").trim().toLowerCase() === rec.unit.trim().toLowerCase()
+        sameMedicineIdentity(item, rec)
       );
       if (duplicate) {
-        const existingBatches = medicineBatches(duplicate).map((batch) => ({ ...batch }));
+        const existingBatches = medicineBatchSnapshot(duplicate);
         const incomingExpiration = rec.exp || null;
-        const matchingBatch = existingBatches.find((batch) => (batch.exp || "") === (incomingExpiration || ""));
-        if (matchingBatch) matchingBatch.qty += rec.qty;
-        else if (incomingExpiration) existingBatches.push({ id: `${duplicate.code}-B${existingBatches.length + 1}`, qty: rec.qty, exp: incomingExpiration });
+        const matchingBatch = existingBatches.find((batch) =>
+          batch.status !== "Voided" &&
+          (batch.exp || batch.expirationDate || "") === (incomingExpiration || "")
+        );
+        if (matchingBatch) {
+          matchingBatch.qty = (Number(matchingBatch.qty ?? matchingBatch.quantity) || 0) + rec.qty;
+          matchingBatch.quantity = matchingBatch.qty;
+        } else {
+          existingBatches.push({
+            ...rec.batches[0],
+            id: `${duplicate.code}-B${existingBatches.length + 1}`,
+          });
+        }
         rec.code = duplicate.code;
-        rec.qty = existingBatches.reduce((total, batch) => total + batch.qty, 0);
-        rec.exp = rec.exp || duplicate.exp;
-        rec.batches = [
-          ...existingBatches,
-          ...(Array.isArray(duplicate.batches) ? duplicate.batches.filter((batch) => batch.status === "Voided").map((batch) => ({ ...batch })) : []),
-        ];
+        rec.qty = existingBatches
+          .filter((batch) => batch.status !== "Voided")
+          .reduce((total, batch) => total + (Number(batch.qty ?? batch.quantity) || 0), 0);
+        rec.exp = duplicate.exp || rec.exp;
+        rec.batches = existingBatches;
         existing = duplicate;
       }
     }
@@ -299,8 +359,8 @@ function bindMedicinesTab(){
         ? medicine.batches.filter((batch) => batch.status === "Voided")
         : [];
       const rows = [
-        ...batches.map((batch) => `<tr><td class="mono">${escapeHtml(batch.id)}</td><td class="mono">${batch.qty} ${escapeHtml(medicine.unit || "unit")}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td><span class="chip chip-available">Available</span></td></tr>`),
-        ...voided.map((batch) => `<tr><td class="mono">${escapeHtml(batch.id)}</td><td class="mono">${Number(batch.voidedQuantity ?? batch.qty) || 0} ${escapeHtml(medicine.unit || "unit")}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td><span class="chip chip-void">Voided / Expiring – 3 Days Remaining</span></td></tr>`),
+        ...batches.map((batch, index) => `<tr><td>${escapeHtml(batch.batchNumber || `Batch ${index + 1}`)}</td><td class="mono">${batch.qty} ${escapeHtml(medicine.unit || "unit")}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td><span class="chip chip-available">Available</span></td></tr>`),
+        ...voided.map((batch, index) => `<tr><td>${escapeHtml(batch.batchNumber || `Voided batch ${batches.length + index + 1}`)}</td><td class="mono">${Number(batch.voidedQuantity ?? batch.qty) || 0} ${escapeHtml(medicine.unit || "unit")}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td><span class="chip chip-void">Voided / Expiring – 3 Days Remaining</span></td></tr>`),
       ].join("");
       openModal(`<div class="modal-head"><h3>${escapeHtml(medicine.name)} — Inventory Batches</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div><div class="modal-body"><p><b>Total available quantity:</b> ${medicineAvailableQuantity(medicine)} ${escapeHtml(medicine.unit || "unit")}</p><div class="table-wrap"><table><thead><tr><th>Batch</th><th>Quantity</th><th>Expiration</th><th>Status</th></tr></thead><tbody>${rows || `<tr><td colspan="4">${emptyState("No batch records.")}</td></tr>`}</tbody></table></div></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button></div>`, "record-detail-modal");
     };
@@ -326,7 +386,6 @@ function renderEquipmentTab(){
   const statusF=document.getElementById('eq-status')?.value||"";
   let list = EQUIPMENT.filter(e=>!e.deleted&&e.category==="Medical Supplies").filter(e=>{
     const matchQ=!q || [
-      e.id,
       e.name,
       e.qty,
       e.lastMaint,
@@ -340,10 +399,9 @@ function renderEquipmentTab(){
   if(state.eqPage>totalPages) state.eqPage=totalPages;
   const pageItems=list.slice((state.eqPage-1)*perPage, state.eqPage*perPage);
   const chipMap={"Available":"chip-available","Under Maintenance":"chip-maint","Damaged":"chip-damaged","Replacement Needed":"chip-out"};
-  const rows = pageItems.length===0? `<tr><td colspan="6">${emptyState("No supplies match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="5">${emptyState("No supplies match your filters.")}</td></tr>` :
     pageItems.map(e=>`
     <tr>
-      <td class="mono">${e.id}</td>
       <td>${escapeHtml(e.name)}</td>
       <td class="mono">${e.qty}</td>
       <td>${fmtDate(e.lastMaint)}</td>
@@ -356,7 +414,7 @@ function renderEquipmentTab(){
   return `
   <div class="card">
     <div class="toolbar">
-      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="eq-search" placeholder="Search supplies by ID, name, quantity, maintenance date, or status..." value="${escapeHtml(rawQ)}"></div>
+      <div class="search-box"><span class="ic">${ICONS.search}</span><input type="text" id="eq-search" placeholder="Search supplies by name, quantity, maintenance date, or status..." value="${escapeHtml(rawQ)}"></div>
       <select class="select-sm" id="eq-status">
         <option value="" ${statusF===""?'selected':''}>All Status</option>
         ${["Available","Under Maintenance","Damaged","Replacement Needed"].map(o=>`<option ${statusF===o?'selected':''}>${o}</option>`).join("")}
@@ -364,7 +422,7 @@ function renderEquipmentTab(){
       ${canAddInventoryItem()?`<button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Supply</button>`:""}
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>ID</th><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
@@ -381,8 +439,9 @@ function openEquipmentForm(existing=null){
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} ${itemLabel}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
     <form class="form-grid" id="eq-form">
-      <div class="f-field"><label>Item ID</label><input type="text" id="ef-id" value="${f.id}" ${isEdit?'readonly style="background:#F7FAFD;"':''}></div>
       <div class="f-field full"><label>${itemLabel} Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
+      <div class="f-field"><label>Batch Number (optional)</label><input type="text" id="ef-batch" value=""></div>
+      <div class="f-field"><label>Expiration Date (optional)</label><input type="date" id="ef-expiration" value=""></div>
       <div class="f-field"><label>Quantity</label><input type="number" min="0" id="ef-qty" value="${f.qty}"></div>
       <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
@@ -395,14 +454,22 @@ function openEquipmentForm(existing=null){
     if(saving)return;
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information',`${itemLabel} name is required.`,'err'); return; }
-    const rec={ id:document.getElementById('ef-id').value, name, category:"Medical Supplies", qty:parseInt(document.getElementById('ef-qty').value)||0,
+    const incomingQuantity=parseInt(document.getElementById('ef-qty').value)||0;
+    const incomingBatch={
+      id:`${existing?.id || f.id}-IN-${Date.now()}`,
+      qty:incomingQuantity,
+      batchNumber:document.getElementById('ef-batch').value.trim(),
+      exp:document.getElementById('ef-expiration').value || null,
+    };
+    const rec={ id:existing?.id || f.id, name, category:"Medical Supplies", qty:incomingQuantity,
       condition:existing?.condition||"Good", lastMaint:document.getElementById('ef-maint').value,
-      status:document.getElementById('ef-status').value, deleted:false };
+      status:document.getElementById('ef-status').value, deleted:false,
+      batches:existing?supplyBatchSnapshot(existing):[incomingBatch] };
     if (!isEdit) {
       const duplicate = EQUIPMENT.find((item) =>
         !item.deleted &&
         item.category === "Medical Supplies" &&
-        item.name.trim().toLowerCase() === name.trim().toLowerCase()
+        inventoryIdentityPart(item.name) === inventoryIdentityPart(name)
       );
       if (duplicate) {
         rec.id = duplicate.id;
@@ -410,8 +477,10 @@ function openEquipmentForm(existing=null){
         rec.condition = duplicate.condition || "Good";
         rec.status = duplicate.status || rec.status;
         rec.lastMaint = rec.lastMaint || duplicate.lastMaint || "";
-        rec.batches = Array.isArray(duplicate.batches) ? duplicate.batches.slice() : [];
-        if (rec.qty > 0) rec.batches.push({ id: `${duplicate.id}-IN-${Date.now()}`, qty: parseInt(document.getElementById('ef-qty').value) || 0, expirationDate: null });
+        rec.batches = [
+          ...supplyBatchSnapshot(duplicate),
+          incomingBatch,
+        ];
         existing = duplicate;
       }
     }

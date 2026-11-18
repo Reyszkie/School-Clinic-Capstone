@@ -742,21 +742,21 @@ function renderDeletedTab() {
         .join("")}</tbody>`
     : "";
   const medRows = delMeds.length
-    ? `<thead><tr><th>Code</th><th>Name</th><th>Production Date</th><th>Archived</th><th></th></tr></thead><tbody>${delMeds
+    ? `<thead><tr><th>Name</th><th>Production Date</th><th>Archived</th><th></th></tr></thead><tbody>${delMeds
         .map(
           (
             m,
-          ) => `<tr><td class="mono">${escapeHtml(m.code)}</td><td>${escapeHtml(m.name)}</td><td>${fmtDate(m.productionDate)}</td><td>${fmtDeletedDate(m.deletedAt)}</td>
+          ) => `<tr><td>${escapeHtml(m.name)}</td><td>${fmtDate(m.productionDate)}</td><td>${fmtDeletedDate(m.deletedAt)}</td>
     <td>${rowActions("restore-dm", m.code)}</td></tr>`,
         )
         .join("")}</tbody>`
     : "";
   const eqRows = delEq.length
-    ? `<thead><tr><th>ID</th><th>Name</th><th>Archived</th><th></th></tr></thead><tbody>${delEq
+    ? `<thead><tr><th>Name</th><th>Archived</th><th></th></tr></thead><tbody>${delEq
         .map(
           (
             e,
-          ) => `<tr><td class="mono">${escapeHtml(e.id)}</td><td>${escapeHtml(e.name)}</td><td>${fmtDeletedDate(e.deletedAt)}</td>
+          ) => `<tr><td>${escapeHtml(e.name)}</td><td>${fmtDeletedDate(e.deletedAt)}</td>
     <td>${rowActions("restore-de", e.id)}</td></tr>`,
         )
         .join("")}</tbody>`

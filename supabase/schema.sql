@@ -66,6 +66,8 @@ where institutional_category is null;
 create table if not exists public.medicines (
   code text primary key,
   name text not null,
+  strength text not null default '',
+  dosage_form text not null default '',
   category text not null default 'General',
   quantity integer not null default 0 constraint medicines_quantity_check check (quantity >= 0),
   unit text not null,
@@ -95,6 +97,10 @@ create table if not exists public.equipment (
 
 alter table public.medicines
   add column if not exists production_date date;
+
+alter table public.medicines
+  add column if not exists strength text not null default '',
+  add column if not exists dosage_form text not null default '';
 
 alter table public.medicines
   add column if not exists batches jsonb not null default '[]'::jsonb;
@@ -3476,6 +3482,322 @@ drop trigger if exists medicines_sync_batches on public.medicines;
 create trigger medicines_sync_batches
 after insert or update on public.medicines
 for each row execute function public.sync_medicine_batches_from_inventory_row();
+
+create or replace function public.merge_inventory_item(
+  p_item_type text,
+  p_incoming jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_medicine public.medicines%rowtype;
+  v_equipment public.equipment%rowtype;
+  v_batches jsonb;
+  v_incoming_batches jsonb;
+  v_batch jsonb;
+  v_batch_expiration date;
+  v_batch_number text;
+  v_batch_quantity integer;
+  v_batch_index integer;
+  v_total_quantity integer;
+  v_identity text;
+  v_incoming_id text;
+  v_merged boolean;
+begin
+  if jsonb_typeof(p_incoming) <> 'object' then
+    raise exception 'Inventory item must be a JSON object.';
+  end if;
+
+  v_incoming_id := coalesce(
+    nullif(p_incoming->>'code', ''),
+    nullif(p_incoming->>'id', '')
+  );
+  if v_incoming_id is null then
+    raise exception 'Inventory item ID is required.';
+  end if;
+
+  if p_item_type = 'medicine' then
+    v_identity := concat_ws(
+      '|',
+      lower(regexp_replace(btrim(coalesce(p_incoming->>'name', '')), '\s+', ' ', 'g')),
+      lower(regexp_replace(btrim(coalesce(p_incoming->>'strength', '')), '\s+', ' ', 'g')),
+      lower(regexp_replace(btrim(coalesce(p_incoming->>'dosage_form', '')), '\s+', ' ', 'g')),
+      lower(regexp_replace(btrim(coalesce(p_incoming->>'category', 'General')), '\s+', ' ', 'g')),
+      lower(regexp_replace(btrim(coalesce(p_incoming->>'unit', 'piece')), '\s+', ' ', 'g'))
+    );
+    perform pg_advisory_xact_lock(hashtext('medicine|' || v_identity));
+
+    select * into v_medicine
+    from public.medicines
+    where deleted_at is null
+      and lower(regexp_replace(btrim(name), '\s+', ' ', 'g')) =
+          lower(regexp_replace(btrim(coalesce(p_incoming->>'name', '')), '\s+', ' ', 'g'))
+      and lower(regexp_replace(btrim(strength), '\s+', ' ', 'g')) =
+          lower(regexp_replace(btrim(coalesce(p_incoming->>'strength', '')), '\s+', ' ', 'g'))
+      and lower(regexp_replace(btrim(dosage_form), '\s+', ' ', 'g')) =
+          lower(regexp_replace(btrim(coalesce(p_incoming->>'dosage_form', '')), '\s+', ' ', 'g'))
+      and lower(regexp_replace(btrim(category), '\s+', ' ', 'g')) =
+          lower(regexp_replace(btrim(coalesce(p_incoming->>'category', 'General')), '\s+', ' ', 'g'))
+      and lower(regexp_replace(btrim(unit), '\s+', ' ', 'g')) =
+          lower(regexp_replace(btrim(coalesce(p_incoming->>'unit', 'piece')), '\s+', ' ', 'g'))
+    order by created_at, code
+    limit 1
+    for update;
+
+    v_merged := found;
+    if not v_merged then
+      insert into public.medicines (
+        code, name, strength, dosage_form, category, quantity, unit,
+        production_date, expiration_date, batches, deleted_at, updated_at
+      )
+      values (
+        v_incoming_id,
+        coalesce(p_incoming->>'name', ''),
+        coalesce(p_incoming->>'strength', ''),
+        coalesce(p_incoming->>'dosage_form', ''),
+        coalesce(p_incoming->>'category', 'General'),
+        greatest(0, coalesce(nullif(p_incoming->>'quantity', '')::integer, 0)),
+        coalesce(p_incoming->>'unit', 'piece'),
+        nullif(p_incoming->>'production_date', '')::date,
+        nullif(p_incoming->>'expiration_date', '')::date,
+        case when jsonb_typeof(p_incoming->'batches') = 'array'
+          then p_incoming->'batches' else '[]'::jsonb end,
+        nullif(p_incoming->>'deleted_at', '')::timestamptz,
+        now()
+      )
+      returning * into v_medicine;
+      return jsonb_build_object('canonical_id', v_medicine.code, 'merged', false);
+    end if;
+
+    v_batches := case
+      when jsonb_typeof(v_medicine.batches) = 'array' then v_medicine.batches
+      else '[]'::jsonb
+    end;
+    if jsonb_array_length(v_batches) = 0 and v_medicine.quantity > 0 then
+      v_batches := jsonb_build_array(jsonb_build_object(
+        'id', v_medicine.code || '-LEGACY',
+        'qty', v_medicine.quantity,
+        'exp', v_medicine.expiration_date,
+        'status', 'Available'
+      ));
+    end if;
+    v_incoming_batches := case
+      when jsonb_typeof(p_incoming->'batches') = 'array' then p_incoming->'batches'
+      else '[]'::jsonb
+    end;
+    if jsonb_array_length(v_incoming_batches) = 0
+      and coalesce(nullif(p_incoming->>'quantity', '')::integer, 0) > 0 then
+      v_incoming_batches := jsonb_build_array(jsonb_build_object(
+        'id', v_incoming_id || '-B1',
+        'qty', (p_incoming->>'quantity')::integer,
+        'exp', nullif(p_incoming->>'expiration_date', ''),
+        'status', 'Available'
+      ));
+    end if;
+
+    for v_batch in select value from jsonb_array_elements(v_incoming_batches)
+    loop
+      v_batch_expiration := nullif(coalesce(
+        v_batch->>'exp',
+        v_batch->>'expirationDate',
+        v_batch->>'expiration_date'
+      ), '')::date;
+      v_batch_quantity := greatest(0, coalesce(
+        nullif(coalesce(v_batch->>'qty', v_batch->>'quantity'), '')::integer,
+        0
+      ));
+      v_batch_index := null;
+      if lower(coalesce(v_batch->>'status', 'available')) = 'available' then
+        select (entry.ordinality - 1)::integer into v_batch_index
+        from jsonb_array_elements(v_batches) with ordinality as entry(value, ordinality)
+        where lower(coalesce(entry.value->>'status', 'available')) = 'available'
+          and nullif(coalesce(
+            entry.value->>'exp',
+            entry.value->>'expirationDate',
+            entry.value->>'expiration_date'
+          ), '')::date is not distinct from v_batch_expiration
+        limit 1;
+      end if;
+      if v_batch_index is not null then
+        v_batch_quantity := v_batch_quantity + greatest(0, coalesce(
+          nullif(coalesce(
+            v_batches->v_batch_index->>'qty',
+            v_batches->v_batch_index->>'quantity'
+          ), '')::integer,
+          0
+        ));
+        v_batches := jsonb_set(
+          v_batches,
+          array[v_batch_index::text, 'qty'],
+          to_jsonb(v_batch_quantity),
+          true
+        );
+      else
+        if nullif(v_batch->>'id', '') is null then
+          v_batch := jsonb_set(v_batch, '{id}', to_jsonb(v_incoming_id || '-B' || (jsonb_array_length(v_batches) + 1)::text), true);
+        end if;
+        if coalesce(v_batch->>'qty', v_batch->>'quantity') is null then
+          v_batch := jsonb_set(v_batch, '{qty}', to_jsonb(v_batch_quantity), true);
+        end if;
+        v_batches := v_batches || jsonb_build_array(v_batch);
+      end if;
+    end loop;
+
+    select coalesce(sum(
+      case when lower(coalesce(entry.value->>'status', 'available')) = 'available'
+        then greatest(0, coalesce(nullif(coalesce(
+          entry.value->>'qty',
+          entry.value->>'quantity'
+        ), '')::integer, 0))
+        else 0 end
+    ), 0)::integer into v_total_quantity
+    from jsonb_array_elements(v_batches) as entry(value);
+
+    update public.medicines
+    set batches = v_batches,
+        quantity = v_total_quantity,
+        updated_at = now()
+    where code = v_medicine.code;
+    return jsonb_build_object('canonical_id', v_medicine.code, 'merged', true);
+  elsif p_item_type = 'equipment' then
+    v_identity := concat_ws(
+      '|',
+      lower(regexp_replace(btrim(coalesce(p_incoming->>'name', '')), '\s+', ' ', 'g')),
+      lower(regexp_replace(btrim(coalesce(p_incoming->>'category', 'Medical Supplies')), '\s+', ' ', 'g'))
+    );
+    perform pg_advisory_xact_lock(hashtext('equipment|' || v_identity));
+
+    select * into v_equipment
+    from public.equipment
+    where deleted_at is null
+      and lower(regexp_replace(btrim(name), '\s+', ' ', 'g')) =
+          lower(regexp_replace(btrim(coalesce(p_incoming->>'name', '')), '\s+', ' ', 'g'))
+      and lower(regexp_replace(btrim(category), '\s+', ' ', 'g')) =
+          lower(regexp_replace(btrim(coalesce(p_incoming->>'category', 'Medical Supplies')), '\s+', ' ', 'g'))
+    order by created_at, id
+    limit 1
+    for update;
+
+    v_merged := found;
+    if not v_merged then
+      insert into public.equipment (
+        id, name, category, quantity, condition, last_maintenance_date,
+        status, batches, deleted_at, updated_at
+      )
+      values (
+        v_incoming_id,
+        coalesce(p_incoming->>'name', ''),
+        coalesce(p_incoming->>'category', 'Medical Supplies'),
+        greatest(0, coalesce(nullif(p_incoming->>'quantity', '')::integer, 0)),
+        coalesce(p_incoming->>'condition', 'Good'),
+        nullif(p_incoming->>'last_maintenance_date', '')::date,
+        coalesce(p_incoming->>'status', 'Available'),
+        case when jsonb_typeof(p_incoming->'batches') = 'array'
+          then p_incoming->'batches' else '[]'::jsonb end,
+        nullif(p_incoming->>'deleted_at', '')::timestamptz,
+        now()
+      )
+      returning * into v_equipment;
+      return jsonb_build_object('canonical_id', v_equipment.id, 'merged', false);
+    end if;
+
+    v_batches := case
+      when jsonb_typeof(v_equipment.batches) = 'array' then v_equipment.batches
+      else '[]'::jsonb
+    end;
+    if jsonb_array_length(v_batches) = 0 and v_equipment.quantity > 0 then
+      v_batches := jsonb_build_array(jsonb_build_object(
+        'id', v_equipment.id || '-LEGACY',
+        'qty', v_equipment.quantity
+      ));
+    end if;
+    v_incoming_batches := case
+      when jsonb_typeof(p_incoming->'batches') = 'array' then p_incoming->'batches'
+      else '[]'::jsonb
+    end;
+    if jsonb_array_length(v_incoming_batches) = 0
+      and coalesce(nullif(p_incoming->>'quantity', '')::integer, 0) > 0 then
+      v_incoming_batches := jsonb_build_array(jsonb_build_object(
+        'id', v_incoming_id || '-B1',
+        'qty', (p_incoming->>'quantity')::integer
+      ));
+    end if;
+
+    for v_batch in select value from jsonb_array_elements(v_incoming_batches)
+    loop
+      v_batch_expiration := nullif(coalesce(
+        v_batch->>'exp',
+        v_batch->>'expirationDate',
+        v_batch->>'expiration_date'
+      ), '')::date;
+      v_batch_number := lower(btrim(coalesce(
+        v_batch->>'batchNumber',
+        v_batch->>'batch_number',
+        ''
+      )));
+      v_batch_quantity := greatest(0, coalesce(
+        nullif(coalesce(v_batch->>'qty', v_batch->>'quantity'), '')::integer,
+        0
+      ));
+      v_batch_index := null;
+      select (entry.ordinality - 1)::integer into v_batch_index
+      from jsonb_array_elements(v_batches) with ordinality as entry(value, ordinality)
+      where lower(btrim(coalesce(
+          entry.value->>'batchNumber',
+          entry.value->>'batch_number',
+          ''
+        ))) = v_batch_number
+        and nullif(coalesce(
+          entry.value->>'exp',
+          entry.value->>'expirationDate',
+          entry.value->>'expiration_date'
+        ), '')::date is not distinct from v_batch_expiration
+      limit 1;
+      if v_batch_index is not null then
+        v_batch_quantity := v_batch_quantity + greatest(0, coalesce(
+          nullif(coalesce(
+            v_batches->v_batch_index->>'qty',
+            v_batches->v_batch_index->>'quantity'
+          ), '')::integer,
+          0
+        ));
+        v_batches := jsonb_set(
+          v_batches,
+          array[v_batch_index::text, 'qty'],
+          to_jsonb(v_batch_quantity),
+          true
+        );
+      else
+        if nullif(v_batch->>'id', '') is null then
+          v_batch := jsonb_set(v_batch, '{id}', to_jsonb(v_incoming_id || '-B' || (jsonb_array_length(v_batches) + 1)::text), true);
+        end if;
+        if coalesce(v_batch->>'qty', v_batch->>'quantity') is null then
+          v_batch := jsonb_set(v_batch, '{qty}', to_jsonb(v_batch_quantity), true);
+        end if;
+        v_batches := v_batches || jsonb_build_array(v_batch);
+      end if;
+    end loop;
+
+    update public.equipment
+    set batches = v_batches,
+        quantity = v_equipment.quantity + greatest(
+          0,
+          coalesce(nullif(p_incoming->>'quantity', '')::integer, 0)
+        ),
+        updated_at = now()
+    where id = v_equipment.id;
+    return jsonb_build_object('canonical_id', v_equipment.id, 'merged', true);
+  else
+    raise exception 'Unsupported inventory item type: %', p_item_type;
+  end if;
+end;
+$$;
+
+revoke all on function public.merge_inventory_item(text, jsonb) from public, anon, authenticated;
+grant execute on function public.merge_inventory_item(text, jsonb) to service_role;
 
 do $$
 declare

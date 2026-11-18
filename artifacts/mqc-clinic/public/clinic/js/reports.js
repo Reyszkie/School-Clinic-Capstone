@@ -349,7 +349,7 @@ function printReports(category = "all") {
     const title = category === "low-stock" ? "Low Stock Medicines" : category === "expiring" ? "Expiring Medicines" : "Expired Medicines";
     printTitle = `MQCQC Clinic — ${title}`;
     printSubtitle = `School Clinic · ${title} Only`;
-    html = `<p class="report-meta">${title} · Printed ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</p>${table(title, ["Code", "Medicine", "Category", "Available Quantity", "Unit", "Expiration Date", "Status"], list.map((item) => [escapeHtml(item.code), escapeHtml(item.name), escapeHtml(item.category || "—"), reportInventoryQuantity(item.qty), escapeHtml(item.unit || "—"), item.exp ? escapeHtml(fmtDate(item.exp)) : "—", escapeHtml(medStatus(item).label)]))}`;
+    html = `<p class="report-meta">${title} · Printed ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</p>${table(title, ["Medicine", "Category", "Available Quantity", "Unit", "Expiration Date", "Status"], list.map((item) => [escapeHtml(item.name), escapeHtml(item.category || "—"), reportInventoryQuantity(item.qty), escapeHtml(item.unit || "—"), item.exp ? escapeHtml(fmtDate(item.exp)) : "—", escapeHtml(medStatus(item).label)]))}`;
   } else {
     html = `<p class="report-meta">Clinical reports · Printed ${escapeHtml(new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }))}</p><p class="summary"><b>Total Patients:</b> ${d.metrics.patients.length}<br><b>Clinic Visits Today:</b> ${d.metrics.todayVisits.length}<br><b>Total Visits This Month:</b> ${d.metrics.monthVisits.length}<br><b>Returning Patients:</b> ${d.metrics.returningPatients}<br><b>Frequent Visitors:</b> ${d.metrics.frequentVisitors}<br><b>Referrals:</b> ${d.metrics.referrals.length}<br><b>Total Clinic Visits:</b> ${d.visits.length}<br><b>Unique Patients Served:</b> ${d.unique}<br><b>Common Reasons:</b> ${Object.keys(d.reasons).length}<br><b>Grade Levels / Sections:</b> ${Object.keys(d.levels).length}<br><b>Patient Dispositions:</b> ${Object.keys(d.outcomes).length}</p>${table("Common Reasons for Visits", ["Reason", "Visits"], summaryRows(d.reasons))}${table("Patient Disposition", ["Outcome", "Visits"], summaryRows(d.outcomes))}${table("Visits by Grade Level / Section", ["Year / Grade", "Visits"], summaryRows(d.levels))}${table("Clinic Visit Trends", ["Record", "Date", "Patient", "Reason", "Outcome"], visitRows)}${table("Frequent Clinic Visitors", ["Patient", "Institutional Category / Year or Personnel Type", "Visits"], frequentRows)}${table("Recorded Referrals This Month", ["Patient", "Referral Visits"], referralRows)}`;
   }
@@ -530,10 +530,9 @@ function monthlyReportHtml(month) {
   const alertMedicineRows = (list) =>
     list.map(
       (item) =>
-        `<tr><td class="mono">${escapeHtml(item.code)}</td><td>${escapeHtml(item.name)}</td><td class="mono">${reportInventoryQuantity(item.qty)} ${escapeHtml(item.unit || "")}</td><td>${item.exp ? escapeHtml(fmtDate(item.exp)) : "—"}</td><td>${item.daysRemaining === undefined ? escapeHtml(medStatus(item).label) : item.daysRemaining === 0 ? "Expires today" : item.daysRemaining < 0 ? `Expired ${Math.abs(item.daysRemaining)} day(s) ago` : `In ${item.daysRemaining} day(s)`}</td></tr>`,
+        `<tr><td>${escapeHtml(item.name)}</td><td class="mono">${reportInventoryQuantity(item.qty)} ${escapeHtml(item.unit || "")}</td><td>${item.exp ? escapeHtml(fmtDate(item.exp)) : "—"}</td><td>${item.daysRemaining === undefined ? escapeHtml(medStatus(item).label) : item.daysRemaining === 0 ? "Expires today" : item.daysRemaining < 0 ? `Expired ${Math.abs(item.daysRemaining)} day(s) ago` : `In ${item.daysRemaining} day(s)`}</td></tr>`,
     );
   const alertHeaders = [
-    "Code",
     "Medicine",
     "Available Qty",
     "Expiration",
