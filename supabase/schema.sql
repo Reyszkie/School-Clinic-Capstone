@@ -4129,24 +4129,28 @@ begin
         nullif(coalesce(v_batch->>'qty', v_batch->>'quantity'), '')::integer,
         0
       ));
-      v_batch_id := nullif(v_batch->>'id', '');
       v_batch_index := jsonb_array_length(v_batches) + 1;
-      if v_batch_id is null or exists (
+      v_batch_id := v_equipment.id || '-B' || v_batch_index::text;
+      while exists (
         select 1
         from jsonb_array_elements(v_batches) as existing_batch(value)
         where existing_batch.value->>'id' = v_batch_id
-      ) then
+          or coalesce(
+            existing_batch.value->>'batchNumber',
+            existing_batch.value->>'batch_number',
+            ''
+          ) = v_batch_id
+      ) or exists (
+        select 1
+        from public.supply_batches
+        where id = v_batch_id or batch_number = v_batch_id
+      ) loop
+        v_batch_index := v_batch_index + 1;
         v_batch_id := v_equipment.id || '-B' || v_batch_index::text;
-        while exists (
-          select 1
-          from jsonb_array_elements(v_batches) as existing_batch(value)
-          where existing_batch.value->>'id' = v_batch_id
-        ) loop
-          v_batch_index := v_batch_index + 1;
-          v_batch_id := v_equipment.id || '-B' || v_batch_index::text;
-        end loop;
-      end if;
+      end loop;
+      v_batch_number := v_batch_id;
       v_batch := jsonb_set(v_batch, '{id}', to_jsonb(v_batch_id), true);
+      v_batch := jsonb_set(v_batch, '{batchNumber}', to_jsonb(v_batch_number), true);
       if coalesce(v_batch->>'qty', v_batch->>'quantity') is null then
         v_batch := jsonb_set(v_batch, '{qty}', to_jsonb(v_batch_quantity), true);
       end if;

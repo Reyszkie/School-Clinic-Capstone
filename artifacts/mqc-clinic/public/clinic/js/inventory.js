@@ -54,6 +54,24 @@ function supplyBatchSnapshot(supply) {
       }]
     : [];
 }
+function nextSupplyBatchIdentifier(supplyId, batches = []) {
+  const prefix = `${supplyId}-B`;
+  const identifiers = new Set(
+    batches.flatMap((batch) => [batch.id, batch.batchNumber]),
+  );
+  const highestSequence = batches.reduce((highest, batch) => {
+    return [batch.id, batch.batchNumber].reduce((current, value) => {
+      if (!String(value || "").startsWith(prefix)) return current;
+      const suffix = String(value).slice(prefix.length);
+      return /^\d+$/.test(suffix)
+        ? Math.max(current, Number(suffix))
+        : current;
+    }, highest);
+  }, 0);
+  let sequence = Math.max(batches.length, highestSequence) + 1;
+  while (identifiers.has(`${prefix}${sequence}`)) sequence += 1;
+  return `${prefix}${sequence}`;
+}
 function supplyAvailableQuantity(supply) {
   if (!supply || supply.deleted) return 0;
   return supplyBatchSnapshot(supply)
@@ -576,9 +594,8 @@ function openEquipmentForm(existing=null){
       ${isEdit && editableBatches.length > 1 ? `<div class="f-field full"><label for="ef-batch-select">Batch to Update</label><select id="ef-batch-select">${batchOptions}</select></div>` : ""}
       ${isEdit && editableBatches.length === 1 ? `<input type="hidden" id="ef-batch-select" value="${escapeHtml(selectedBatch.id)}">` : ""}
       ${selectedBatch || !isEdit ? `<div class="f-field"><label>${isEdit ? "Batch Quantity" : "Incoming Quantity"}</label><input type="number" min="0" id="ef-qty" value="${isEdit ? selectedBatch.qty : f.qty}"></div>
-      <div class="f-field"><label>Batch Number (optional)</label><input type="text" id="ef-batch-number" value="${escapeHtml(isEdit ? selectedBatch.batchNumber : "")}"></div>
       <div class="f-field"><label>Production Date (optional)</label><input type="date" id="ef-production" value="${escapeHtml(isEdit ? selectedBatch.productionDate : "")}"></div>
-      <div class="f-field"><label>Expiration Date (optional)</label><input type="date" id="ef-expiration" value="${escapeHtml(isEdit ? selectedBatch.exp : "")}"></div>`
+      ${!isEdit ? `<div class="f-field full"><p>Batch identifier is assigned automatically when saved.</p></div>` : ""}`
       : `<div class="f-field full"><p>No editable batches are available. To record a delivery, add the same supply again and enter the new batch details.</p></div>`}
       <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
@@ -591,9 +608,7 @@ function openEquipmentForm(existing=null){
     const batch = editableBatches.find((item) => item.id === batchSelect.value);
     if (!batch) return;
     document.getElementById("ef-qty").value = String(batch.qty);
-    document.getElementById("ef-batch-number").value = batch.batchNumber;
     document.getElementById("ef-production").value = batch.productionDate;
-    document.getElementById("ef-expiration").value = batch.exp;
   });
   let saving=false;
   document.getElementById('ef-save').onclick=async()=>{
@@ -611,21 +626,20 @@ function openEquipmentForm(existing=null){
         rec.batches[selectedIndex] = {
           ...rec.batches[selectedIndex],
           qty: incomingQuantity,
-          batchNumber: document.getElementById("ef-batch-number").value.trim(),
           productionDate: document.getElementById("ef-production").value || null,
-          exp: document.getElementById("ef-expiration").value || null,
         };
       }
       rec.qty = rec.batches
         .filter((batch) => batch.status === "Available")
         .reduce((total, batch) => total + batch.qty, 0);
     } else {
+      const batchIdentifier = nextSupplyBatchIdentifier(f.id);
       const incomingBatch={
-        id:`${f.id}-B1`,
+        id:batchIdentifier,
+        batchNumber:batchIdentifier,
         qty:incomingQuantity,
-        batchNumber:document.getElementById('ef-batch-number').value.trim(),
         productionDate:document.getElementById('ef-production').value || null,
-        exp:document.getElementById('ef-expiration').value || null,
+        exp:null,
         status:"Available",
       };
       rec.batches = [incomingBatch];
@@ -641,9 +655,18 @@ function openEquipmentForm(existing=null){
         rec.condition = duplicate.condition || "Good";
         rec.status = duplicate.status || rec.status;
         rec.lastMaint = rec.lastMaint || duplicate.lastMaint || "";
+        const existingBatches = supplyBatchSnapshot(duplicate);
+        const batchIdentifier = nextSupplyBatchIdentifier(
+          duplicate.id,
+          existingBatches,
+        );
         rec.batches = [
-          ...supplyBatchSnapshot(duplicate),
-          ...rec.batches,
+          ...existingBatches,
+          {
+            ...rec.batches[0],
+            id: batchIdentifier,
+            batchNumber: batchIdentifier,
+          },
         ];
         rec.qty = rec.batches
           .filter((batch) => batch.status === "Available")
