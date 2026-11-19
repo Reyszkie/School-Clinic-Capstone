@@ -98,7 +98,7 @@ function renderReports() {
     ["Visits by Grade Level / Section", Object.keys(d.levels).length, "levels"],
     ["Patient Disposition", Object.keys(d.outcomes).length, "disposition"],
   ];
-  return `${clinicDataStatus === "stale" ? '<div class="sync-warning">The latest database refresh failed. Report figures may be out of date.</div>' : ""}<div class="toolbar" style="justify-content:flex-end"><label for="report-print-category" style="font-size:12px;font-weight:700">Print category</label><select class="select-sm" id="report-print-category" aria-label="Report category"><option value="all">Full Clinical Report</option><option value="low-stock">Low Stock Medicines Only</option><option value="expiring">Expiring Medicines Only</option><option value="expired">Expired Medicines Only</option></select><button class="btn btn-dark" id="print-reports">${ICONS.print} Print Report Copy</button></div>
+  return `${clinicDataStatus === "stale" ? '<div class="sync-warning">The latest database refresh failed. Report figures may be out of date.</div>' : ""}<div class="toolbar" style="justify-content:flex-end"><label for="report-print-category" style="font-size:12px;font-weight:700">Print category</label><select class="select-sm" id="report-print-category" aria-label="Report category"><option value="all">Full Clinical Report</option><option value="monthly">Full Monthly Report</option><option value="low-stock">Low Stock Medicines Only</option><option value="expiring">Expiring Medicines Only</option><option value="expired">Expired Medicines Only</option></select><button class="btn btn-dark" id="print-reports">${ICONS.print} Print Report Copy</button></div>
   <div class="grid grid-4">${cards.map((c) => `<button class="card stat-card report-card-clickable" data-report-detail="${c[2]}" style="text-align:left"><div class="stat-label">${c[0]}</div><div class="stat-value">${c[1]}</div><div style="font-size:11.5px;color:var(--blue);margin-top:auto">View details ${ICONS.chevright}</div></button>`).join("")}</div>
   <div class="report-summary-grid">
     <div class="card"><div class="panel-title"><h4>Common Reasons for Visits</h4></div><div class="table-wrap report-summary-table-wrap"><table class="report-summary-table"><colgroup><col><col class="report-summary-count-column"></colgroup><thead><tr><th>Reason</th><th class="report-count">Visits</th></tr></thead><tbody>${summaryList(d.reasons, "reason")}</tbody></table></div></div>
@@ -302,6 +302,10 @@ function reportDetail(key) {
   }
 }
 function printReports(category = "all") {
+  if (category === "monthly") {
+    printMonthlyReport();
+    return;
+  }
   const d = reportData(),
     flagged = referralConcernList();
   const table = (title, headers, rows) =>
@@ -311,6 +315,7 @@ function printReports(category = "all") {
       .sort((a, b) => b[1] - a[1])
       .map(([key, value]) => [escapeHtml(key), value]);
   const visitRows = d.monthVisits
+    .slice()
     .sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1))
     .map((c) => [
       escapeHtml(c.id),
@@ -356,10 +361,22 @@ function printReports(category = "all") {
   printTemplate({
     title: printTitle,
     subtitle: printSubtitle,
-    body: `<div class="clinic-print-kpis">${kpis.map(([label, value]) => `<div class="clinic-print-kpi"><div class="kpi-label">${escapeHtml(label)}</div><div class="kpi-value">${value}</div></div>`).join("")}</div>${html}`,
+    body: `${category === "all" ? `<div class="clinic-print-kpis">${kpis.map(([label, value]) => `<div class="clinic-print-kpi"><div class="kpi-label">${escapeHtml(label)}</div><div class="kpi-value">${value}</div></div>`).join("")}</div>` : ""}${html}`,
     footnote: `Confidential clinic record — for authorized personnel only.${clinicDataStatus === "stale" ? " The latest database refresh failed; data reflects the last successful synchronization." : ""}`,
   });
   logAudit("Clinic Report Printed", "Reports", "Success", false);
+}
+async function printLatestReports(category) {
+  const refreshed = await hydrateFromSharedStorage();
+  if (!refreshed) {
+    toast(
+      "Report printing canceled",
+      "The latest clinic data could not be synchronized. Refresh and try printing again.",
+      "err",
+    );
+    return;
+  }
+  printReports(category);
 }
 function previousMonthKey(month) {
   const [year, monthNumber] = month.split("-").map(Number);
@@ -538,10 +555,17 @@ function monthlyReportHtml(month) {
       });
     },
   );
-  const equipmentInventoryRows = data.equipmentInventory.map(
-    (item) =>
-      `<tr><td>${escapeHtml(item.name)}</td><td>${reportInventoryQuantity(item.qty)}</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
-  );
+  const equipmentInventoryRows = data.equipmentInventory.flatMap((item) => {
+    const batches = supplyBatchSnapshot(item);
+    if (!batches.length)
+      return [
+        `<tr><td>${escapeHtml(item.name)}</td><td>${reportInventoryQuantity(supplyAvailableQuantity(item))}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
+      ];
+    return batches.map(
+      (batch, index) =>
+        `<tr><td>${escapeHtml(item.name)}</td><td>${reportInventoryQuantity(supplyAvailableQuantity(item))}</td><td>${escapeHtml(batch.batchNumber || `Batch ${index + 1}`)}</td><td>${reportInventoryQuantity(batch.qty)}</td><td>${batch.productionDate ? escapeHtml(fmtDate(batch.productionDate)) : "—"}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td>${escapeHtml(batch.status)}</td><td>${escapeHtml(item.status || "—")}</td></tr>`,
+    );
+  });
   const alertMedicineRows = (list) =>
     list.map(
       (item) =>
@@ -560,7 +584,7 @@ function monthlyReportHtml(month) {
     <section class="monthly-report-block"><h5>Common Reasons for Clinic Visits</h5>${monthlyTable(["Reason / Symptom", "Occurrences"], reasons)}</section>
     <section class="monthly-report-block"><h5>Recorded Referrals</h5>${monthlyTable(["Patient", "Date", "Disposition"], referralRows, "No referrals were recorded for this month.")}</section>
     <section class="monthly-report-block"><h5>Medicine Inventory</h5><p class="inventory-report-note">Current medicine stock and batch details as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Medicine", "Category", "Total Available Qty", "Batch Qty", "Unit", "Production Date", "Expiration Date", "Batch Status"], medicineInventoryRows, "No medicine inventory records.")}</section>
-    <section class="monthly-report-block"><h5>Medical Supplies Inventory</h5><p class="inventory-report-note">Current medical supplies stock as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Supply", "Current Qty", "Status"], equipmentInventoryRows, "No medical supplies inventory records.")}</section>
+    <section class="monthly-report-block"><h5>Medical Supplies Inventory</h5><p class="inventory-report-note">Current medical supplies stock and batch details as of ${fmtDate(todayDateString())}.</p>${monthlyTable(["Supply", "Total Available Qty", "Batch", "Batch Qty", "Production Date", "Expiration Date", "Batch Status", "Supply Status"], equipmentInventoryRows, "No medical supplies inventory records.")}</section>
     <section class="monthly-report-block"><h5>Most Frequently Used Medicines / Treatments</h5>${monthlyTable(["Medicine / Treatment", "Uses"], medicineUse)}</section>
     <section class="monthly-report-block"><h5>Most Frequently Recorded Supplies and Tools</h5>${monthlyTable(["Supply / Tool", "Uses"], equipmentUse)}</section>
     <p class="monthly-report-footnote">${monthLabel} · ${data.visits.length} active visit record(s)</p>
@@ -568,7 +592,7 @@ function monthlyReportHtml(month) {
 }
 function renderMonthlyReportSection() {
   const month = state.reportMonth || todayDateString().slice(0, 7);
-  return `<section class="monthly-report-section" id="monthly-report-section"><div class="card"><div class="monthly-report-header"><div><h4>Monthly Report</h4><p>Visit activity and inventory roll-forward by month.</p></div><div class="monthly-report-actions"><label for="monthly-report-month">Month and year</label><input type="month" id="monthly-report-month" value="${escapeHtml(month)}"><button class="btn btn-dark" id="monthly-print-report">${ICONS.print} Print Report</button></div></div><div id="monthly-report-content">${monthlyReportHtml(month)}</div></div></section>`;
+  return `<section class="monthly-report-section" id="monthly-report-section"><div class="card"><div class="monthly-report-header"><div><h4>Monthly Report</h4><p>Visit activity and inventory roll-forward by month.</p></div><div class="monthly-report-actions"><label for="monthly-report-month">Month and year</label><input type="month" id="monthly-report-month" value="${escapeHtml(month)}"><button class="btn btn-dark" id="monthly-print-report">${ICONS.print} Print Full Monthly Report</button></div></div><div id="monthly-report-content">${monthlyReportHtml(month)}</div></div></section>`;
 }
 function printMonthlyReport() {
   const month = state.reportMonth || todayDateString().slice(0, 7),
@@ -585,7 +609,11 @@ function bindReports() {
   if (!clinicDataLoaded) return;
   document
     .getElementById("print-reports")
-    ?.addEventListener("click", () => printReports(document.getElementById("report-print-category")?.value || "all"));
+    ?.addEventListener("click", () =>
+      printLatestReports(
+        document.getElementById("report-print-category")?.value || "all",
+      ),
+    );
   document
     .querySelectorAll("[data-report-detail]")
     .forEach((b) => (b.onclick = () => reportDetail(b.dataset.reportDetail)));
@@ -621,5 +649,5 @@ function bindReports() {
     });
   document
     .getElementById("monthly-print-report")
-    ?.addEventListener("click", printMonthlyReport);
+    ?.addEventListener("click", () => printLatestReports("monthly"));
 }

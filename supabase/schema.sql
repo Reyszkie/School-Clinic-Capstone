@@ -3189,6 +3189,7 @@ create table if not exists public.supply_batches (
   id text primary key,
   supply_id text not null references public.equipment(id) on delete restrict,
   quantity integer not null default 0 check (quantity >= 0),
+  production_date date,
   expiration_date date,
   batch_number text,
   voided_quantity integer not null default 0 check (voided_quantity >= 0),
@@ -3197,6 +3198,30 @@ create table if not exists public.supply_batches (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.supply_batches
+  add column if not exists production_date date;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'supply_batches_status_check'
+      and conrelid = 'public.supply_batches'::regclass
+  ) then
+    alter table public.supply_batches
+      add constraint supply_batches_status_check
+      check (status in ('Available', 'Voided', 'Expired')) not valid;
+  end if;
+end;
+$$;
+
+update public.supply_batches
+set status = case lower(coalesce(status, 'available'))
+  when 'voided' then 'Voided'
+  when 'expired' then 'Expired'
+  else 'Available'
+end;
 
 create table if not exists public.medicine_batch_deductions (
   visit_id text not null references public.clinical_visits(id) on delete cascade,
@@ -3215,10 +3240,72 @@ create index if not exists medicine_batches_fefo_idx
   on public.medicine_batches (medicine_code, expiration_date, status);
 create index if not exists medicine_batches_void_idx
   on public.medicine_batches (status, expiration_date);
+create index if not exists supply_batches_fefo_idx
+  on public.supply_batches (supply_id, expiration_date, status);
+create index if not exists supply_batches_void_idx
+  on public.supply_batches (status, expiration_date);
 
 alter table public.medicine_batches enable row level security;
 alter table public.supply_batches enable row level security;
 alter table public.medicine_batch_deductions enable row level security;
+
+insert into public.supply_batches (
+  id, supply_id, quantity, production_date, expiration_date, batch_number,
+  status, voided_quantity, voided_at
+)
+select
+  coalesce(nullif(batch.value->>'id', ''), equipment.id || '-B' || batch.ordinality::text),
+  equipment.id,
+  case when coalesce(batch.value->>'qty', batch.value->>'quantity', '') ~ '^[0-9]{1,10}$'
+    then least(coalesce(batch.value->>'qty', batch.value->>'quantity')::numeric, 2147483647)::integer
+    else 0 end,
+  case
+    when coalesce(batch.value->>'productionDate', batch.value->>'production_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      then coalesce(batch.value->>'productionDate', batch.value->>'production_date')::date
+    else null end,
+  case
+    when coalesce(batch.value->>'exp', batch.value->>'expirationDate', batch.value->>'expiration_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      then coalesce(batch.value->>'exp', batch.value->>'expirationDate', batch.value->>'expiration_date')::date
+    else null end,
+  nullif(btrim(coalesce(batch.value->>'batchNumber', batch.value->>'batch_number', '')), ''),
+  case lower(coalesce(batch.value->>'status', 'available'))
+    when 'voided' then 'Voided'
+    when 'expired' then 'Expired'
+    else 'Available' end,
+  case when coalesce(batch.value->>'voidedQuantity', batch.value->>'voided_quantity', '') ~ '^[0-9]{1,10}$'
+    then least(coalesce(batch.value->>'voidedQuantity', batch.value->>'voided_quantity')::numeric, 2147483647)::integer
+    else 0 end,
+  case when coalesce(batch.value->>'voidedAt', batch.value->>'voided_at', '') = '' then null
+    else coalesce(batch.value->>'voidedAt', batch.value->>'voided_at')::timestamptz end
+from public.equipment
+cross join lateral jsonb_array_elements(
+  case when jsonb_typeof(equipment.batches) = 'array' then equipment.batches else '[]'::jsonb end
+) with ordinality as batch(value, ordinality)
+where equipment.category = 'Medical Supplies'
+on conflict (id) do update
+set quantity = excluded.quantity,
+    production_date = excluded.production_date,
+    expiration_date = excluded.expiration_date,
+    batch_number = excluded.batch_number,
+    status = excluded.status,
+    voided_quantity = excluded.voided_quantity,
+    voided_at = excluded.voided_at,
+    updated_at = now()
+where public.supply_batches.supply_id = excluded.supply_id;
+
+insert into public.supply_batches (id, supply_id, quantity)
+select equipment.id || '-LEGACY', equipment.id, equipment.quantity
+from public.equipment
+where equipment.category = 'Medical Supplies'
+  and equipment.quantity > 0
+  and jsonb_array_length(
+    case when jsonb_typeof(equipment.batches) = 'array' then equipment.batches else '[]'::jsonb end
+  ) = 0
+  and not exists (
+    select 1 from public.supply_batches
+    where supply_id = equipment.id
+  )
+on conflict (id) do nothing;
 
 insert into public.medicine_batches (
   id, medicine_code, quantity, production_date, expiration_date, status, voided_quantity, voided_at
@@ -3542,6 +3629,244 @@ create trigger medicines_sync_batches
 after insert or update on public.medicines
 for each row execute function public.sync_medicine_batches_from_inventory_row();
 
+create or replace function public.refresh_supply_batch_snapshot(p_supply_id text)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_previous_sync_setting text := current_setting('app.syncing_supply_batches', true);
+begin
+  perform set_config('app.syncing_supply_batches', 'on', true);
+  update public.equipment
+  set quantity = coalesce((
+        select sum(batches.quantity)::integer
+        from public.supply_batches as batches
+        where batches.supply_id = p_supply_id
+          and batches.status = 'Available'
+      ), 0),
+      batches = coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', batches.id,
+            'qty', batches.quantity,
+            'productionDate', batches.production_date,
+            'exp', batches.expiration_date,
+            'batchNumber', batches.batch_number,
+            'status', batches.status,
+            'voidedQuantity', batches.voided_quantity,
+            'voidedAt', batches.voided_at
+          )
+          order by batches.expiration_date asc nulls last,
+            batches.production_date asc nulls last,
+            batches.id
+        )
+        from public.supply_batches as batches
+        where batches.supply_id = p_supply_id
+      ), '[]'::jsonb),
+      updated_at = now()
+  where id = p_supply_id and category = 'Medical Supplies';
+  perform set_config(
+    'app.syncing_supply_batches',
+    coalesce(v_previous_sync_setting, 'off'),
+    true
+  );
+end;
+$$;
+
+create or replace function public.sync_supply_batches_from_inventory_row()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_batch jsonb;
+  v_batch_id text;
+  v_batch_production date;
+  v_batch_expiration date;
+  v_batch_quantity integer;
+  v_batch_status text;
+  v_batch_number text;
+  v_voided_quantity integer;
+  v_index integer;
+  v_delta integer;
+  v_remaining integer;
+  v_deduct integer;
+  v_existing_batch record;
+  v_batch_ids text[] := array[]::text[];
+  v_previous_sync_setting text;
+begin
+  if current_setting('app.syncing_supply_batches', true) = 'on'
+    or new.category <> 'Medical Supplies' then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' or new.batches is distinct from old.batches then
+    if jsonb_typeof(new.batches) = 'array'
+      and jsonb_array_length(new.batches) > 0 then
+      for v_batch, v_index in
+        select entries.value, entries.ordinality::integer
+        from jsonb_array_elements(new.batches) with ordinality as entries(value, ordinality)
+      loop
+        v_batch_id := coalesce(nullif(v_batch->>'id', ''), new.id || '-B' || v_index::text);
+        v_batch_production := case
+          when coalesce(v_batch->>'productionDate', v_batch->>'production_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            then coalesce(v_batch->>'productionDate', v_batch->>'production_date')::date
+          else null
+        end;
+        v_batch_expiration := case
+          when coalesce(v_batch->>'exp', v_batch->>'expirationDate', v_batch->>'expiration_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            then coalesce(v_batch->>'exp', v_batch->>'expirationDate', v_batch->>'expiration_date')::date
+          else null
+        end;
+        v_batch_quantity := case
+          when coalesce(v_batch->>'qty', v_batch->>'quantity', '') ~ '^[0-9]{1,10}$'
+            then least(coalesce(v_batch->>'qty', v_batch->>'quantity')::numeric, 2147483647)::integer
+          else 0
+        end;
+        v_batch_status := case lower(coalesce(v_batch->>'status', 'available'))
+          when 'voided' then 'Voided'
+          when 'expired' then 'Expired'
+          else 'Available'
+        end;
+        v_batch_number := nullif(btrim(coalesce(
+          v_batch->>'batchNumber',
+          v_batch->>'batch_number',
+          ''
+        )), '');
+        v_voided_quantity := case
+          when coalesce(v_batch->>'voidedQuantity', v_batch->>'voided_quantity', '') ~ '^[0-9]{1,10}$'
+            then least(coalesce(v_batch->>'voidedQuantity', v_batch->>'voided_quantity')::numeric, 2147483647)::integer
+          else 0
+        end;
+        v_batch_ids := array_append(v_batch_ids, v_batch_id);
+        insert into public.supply_batches (
+          id, supply_id, quantity, production_date, expiration_date, batch_number,
+          status, voided_quantity, voided_at
+        )
+        values (
+          v_batch_id, new.id, v_batch_quantity, v_batch_production, v_batch_expiration,
+          v_batch_number, v_batch_status, v_voided_quantity,
+          case when nullif(coalesce(v_batch->>'voidedAt', v_batch->>'voided_at', ''), '') is null
+            then null else coalesce(v_batch->>'voidedAt', v_batch->>'voided_at')::timestamptz end
+        )
+        on conflict (id) do update
+        set quantity = excluded.quantity,
+            production_date = excluded.production_date,
+            expiration_date = excluded.expiration_date,
+            batch_number = excluded.batch_number,
+            status = excluded.status,
+            voided_quantity = excluded.voided_quantity,
+            voided_at = excluded.voided_at,
+            updated_at = now()
+        where public.supply_batches.supply_id = excluded.supply_id;
+      end loop;
+      delete from public.supply_batches
+      where supply_id = new.id
+        and not (id = any(v_batch_ids));
+    else
+      delete from public.supply_batches where supply_id = new.id;
+      if new.quantity > 0 then
+        insert into public.supply_batches (id, supply_id, quantity)
+        values (new.id || '-LEGACY', new.id, new.quantity)
+        on conflict (id) do update
+        set quantity = excluded.quantity,
+            production_date = null,
+            expiration_date = null,
+            batch_number = null,
+            status = 'Available',
+            voided_quantity = 0,
+            voided_at = null,
+            updated_at = now()
+        where public.supply_batches.supply_id = excluded.supply_id;
+      end if;
+    end if;
+  elsif tg_op = 'UPDATE' and new.quantity is distinct from old.quantity then
+    v_delta := new.quantity - old.quantity;
+    if v_delta > 0 then
+      insert into public.supply_batches (id, supply_id, quantity, status)
+      values (
+        new.id || '-ADJ-' || substr(md5(clock_timestamp()::text || random()::text), 1, 12),
+        new.id, v_delta, 'Available'
+      );
+    else
+      v_remaining := abs(v_delta);
+      for v_existing_batch in
+        select id, quantity
+        from public.supply_batches
+        where supply_id = new.id and status = 'Available' and quantity > 0
+          and (
+            expiration_date is null or
+            expiration_date - (current_timestamp at time zone 'Asia/Manila')::date > 3
+          )
+        order by expiration_date asc nulls last, production_date asc nulls last, id
+        for update
+      loop
+        exit when v_remaining = 0;
+        v_deduct := least(v_existing_batch.quantity, v_remaining);
+        update public.supply_batches
+        set quantity = quantity - v_deduct, updated_at = now()
+        where id = v_existing_batch.id;
+        v_remaining := v_remaining - v_deduct;
+      end loop;
+      if v_remaining > 0 then
+        raise exception 'Inventory adjustment exceeds the batch-level stock for medical supply %.', new.id;
+      end if;
+    end if;
+  else
+    return new;
+  end if;
+
+  v_previous_sync_setting := current_setting('app.syncing_supply_batches', true);
+  perform set_config('app.syncing_supply_batches', 'on', true);
+  update public.equipment
+  set quantity = coalesce((
+        select sum(batches.quantity)::integer
+        from public.supply_batches as batches
+        where batches.supply_id = new.id
+          and batches.status = 'Available'
+      ), 0),
+      batches = coalesce((
+        select jsonb_agg(
+          jsonb_build_object(
+            'id', batches.id,
+            'qty', batches.quantity,
+            'productionDate', batches.production_date,
+            'exp', batches.expiration_date,
+            'batchNumber', batches.batch_number,
+            'status', batches.status,
+            'voidedQuantity', batches.voided_quantity,
+            'voidedAt', batches.voided_at
+          )
+          order by batches.expiration_date asc nulls last,
+            batches.production_date asc nulls last,
+            batches.id
+        )
+        from public.supply_batches as batches
+        where batches.supply_id = new.id
+      ), '[]'::jsonb),
+      updated_at = now()
+  where id = new.id;
+  perform set_config(
+    'app.syncing_supply_batches',
+    coalesce(v_previous_sync_setting, 'off'),
+    true
+  );
+  return new;
+end;
+$$;
+
+drop trigger if exists equipment_sync_supply_batches on public.equipment;
+create trigger equipment_sync_supply_batches
+after insert or update on public.equipment
+for each row execute function public.sync_supply_batches_from_inventory_row();
+revoke all on function public.refresh_supply_batch_snapshot(text) from public, anon, authenticated;
+grant execute on function public.refresh_supply_batch_snapshot(text) to service_role;
+revoke all on function public.sync_supply_batches_from_inventory_row() from public, anon, authenticated;
+grant execute on function public.sync_supply_batches_from_inventory_row() to service_role;
+
 create or replace function public.merge_inventory_item(
   p_item_type text,
   p_incoming jsonb
@@ -3557,6 +3882,7 @@ declare
   v_batches jsonb;
   v_incoming_batches jsonb;
   v_batch jsonb;
+  v_batch_id text;
   v_batch_production date;
   v_batch_expiration date;
   v_batch_number text;
@@ -3789,65 +4115,57 @@ begin
 
     for v_batch in select value from jsonb_array_elements(v_incoming_batches)
     loop
-      v_batch_expiration := nullif(coalesce(
-        v_batch->>'exp',
-        v_batch->>'expirationDate',
-        v_batch->>'expiration_date'
-      ), '')::date;
-      v_batch_number := lower(btrim(coalesce(
-        v_batch->>'batchNumber',
-        v_batch->>'batch_number',
-        ''
-      )));
+      v_batch_production := case
+        when coalesce(v_batch->>'productionDate', v_batch->>'production_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+          then coalesce(v_batch->>'productionDate', v_batch->>'production_date')::date
+        else null
+      end;
+      v_batch_expiration := case
+        when coalesce(v_batch->>'exp', v_batch->>'expirationDate', v_batch->>'expiration_date', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+          then coalesce(v_batch->>'exp', v_batch->>'expirationDate', v_batch->>'expiration_date')::date
+        else null
+      end;
       v_batch_quantity := greatest(0, coalesce(
         nullif(coalesce(v_batch->>'qty', v_batch->>'quantity'), '')::integer,
         0
       ));
-      v_batch_index := null;
-      select (entry.ordinality - 1)::integer into v_batch_index
-      from jsonb_array_elements(v_batches) with ordinality as entry(value, ordinality)
-      where lower(btrim(coalesce(
-          entry.value->>'batchNumber',
-          entry.value->>'batch_number',
-          ''
-        ))) = v_batch_number
-        and nullif(coalesce(
-          entry.value->>'exp',
-          entry.value->>'expirationDate',
-          entry.value->>'expiration_date'
-        ), '')::date is not distinct from v_batch_expiration
-      limit 1;
-      if v_batch_index is not null then
-        v_batch_quantity := v_batch_quantity + greatest(0, coalesce(
-          nullif(coalesce(
-            v_batches->v_batch_index->>'qty',
-            v_batches->v_batch_index->>'quantity'
-          ), '')::integer,
-          0
-        ));
-        v_batches := jsonb_set(
-          v_batches,
-          array[v_batch_index::text, 'qty'],
-          to_jsonb(v_batch_quantity),
-          true
-        );
-      else
-        if nullif(v_batch->>'id', '') is null then
-          v_batch := jsonb_set(v_batch, '{id}', to_jsonb(v_incoming_id || '-B' || (jsonb_array_length(v_batches) + 1)::text), true);
-        end if;
-        if coalesce(v_batch->>'qty', v_batch->>'quantity') is null then
-          v_batch := jsonb_set(v_batch, '{qty}', to_jsonb(v_batch_quantity), true);
-        end if;
-        v_batches := v_batches || jsonb_build_array(v_batch);
+      v_batch_id := nullif(v_batch->>'id', '');
+      v_batch_index := jsonb_array_length(v_batches) + 1;
+      if v_batch_id is null or exists (
+        select 1
+        from jsonb_array_elements(v_batches) as existing_batch(value)
+        where existing_batch.value->>'id' = v_batch_id
+      ) then
+        v_batch_id := v_equipment.id || '-B' || v_batch_index::text;
+        while exists (
+          select 1
+          from jsonb_array_elements(v_batches) as existing_batch(value)
+          where existing_batch.value->>'id' = v_batch_id
+        ) loop
+          v_batch_index := v_batch_index + 1;
+          v_batch_id := v_equipment.id || '-B' || v_batch_index::text;
+        end loop;
       end if;
+      v_batch := jsonb_set(v_batch, '{id}', to_jsonb(v_batch_id), true);
+      if coalesce(v_batch->>'qty', v_batch->>'quantity') is null then
+        v_batch := jsonb_set(v_batch, '{qty}', to_jsonb(v_batch_quantity), true);
+      end if;
+      v_batches := v_batches || jsonb_build_array(v_batch);
     end loop;
+
+    select coalesce(sum(
+      case when lower(coalesce(entry.value->>'status', 'available')) = 'available'
+        then greatest(0, coalesce(nullif(coalesce(
+          entry.value->>'qty',
+          entry.value->>'quantity'
+        ), '')::integer, 0))
+        else 0 end
+    ), 0)::integer into v_total_quantity
+    from jsonb_array_elements(v_batches) as entry(value);
 
     update public.equipment
     set batches = v_batches,
-        quantity = v_equipment.quantity + greatest(
-          0,
-          coalesce(nullif(p_incoming->>'quantity', '')::integer, 0)
-        ),
+        quantity = v_total_quantity,
         updated_at = now()
     where id = v_equipment.id;
     return jsonb_build_object('canonical_id', v_equipment.id, 'merged', true);
@@ -3920,6 +4238,45 @@ begin
         v_batch.expiration_date
       ),
       'Medicines', 'Warning', now()
+    );
+    v_voided := v_voided + 1;
+  end loop;
+  for v_batch in
+    select *
+    from public.supply_batches
+    where status = 'Available'
+      and expiration_date is not null
+      and expiration_date - (current_timestamp at time zone 'Asia/Manila')::date = 3
+      and quantity > 0
+    for update
+  loop
+    v_previous := v_batch.quantity;
+    update public.supply_batches
+    set quantity = 0,
+        voided_quantity = v_previous,
+        status = 'Voided',
+        voided_at = now(),
+        updated_at = now()
+    where id = v_batch.id;
+
+    perform public.refresh_supply_batch_snapshot(v_batch.supply_id);
+
+    insert into public.audit_logs (
+      user_name, username, role, action, event_details, module, status, created_at
+    )
+    values (
+      'System Automation', 'system_automation', 'System',
+      'Automatic Medical Supply Voiding',
+      format(
+        'Medical supply batch %s for supply %s was voided three days before expiration. Batch identifier: %s. Previous quantity: %s. Updated quantity: 0. Voided quantity: %s. Expiration date: %s. Reason: exactly three days remaining before expiration.',
+        v_batch.id,
+        coalesce((select name from public.equipment where id = v_batch.supply_id), v_batch.supply_id),
+        v_batch.id,
+        v_previous,
+        v_previous,
+        v_batch.expiration_date
+      ),
+      'Medical Supplies', 'Warning', now()
     );
     v_voided := v_voided + 1;
   end loop;

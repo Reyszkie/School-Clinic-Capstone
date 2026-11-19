@@ -27,15 +27,43 @@ function medicineBatchSnapshot(medicine) {
 }
 function supplyBatchSnapshot(supply) {
   if (Array.isArray(supply?.batches) && supply.batches.length)
-    return supply.batches.map((batch) => ({ ...batch }));
+    return supply.batches.map((batch, index) => ({
+      ...batch,
+      id: batch.id || `${supply.id}-B${index + 1}`,
+      qty: Math.max(0, Number(batch.qty ?? batch.quantity) || 0),
+      productionDate:
+        batch.productionDate ?? batch.production_date ?? supply.productionDate ?? "",
+      exp:
+        batch.exp ??
+        batch.expirationDate ??
+        batch.expiration_date ??
+        "",
+      batchNumber: batch.batchNumber || batch.batch_number || "",
+      status: batch.status || "Available",
+      voidedQuantity: batch.voidedQuantity ?? batch.voided_quantity,
+      voidedAt: batch.voidedAt ?? batch.voided_at,
+    }));
   return Number(supply?.qty) > 0
     ? [{
         id: `${supply.id}-LEGACY`,
         qty: Number(supply.qty) || 0,
+        productionDate: supply.productionDate || "",
         exp: null,
         batchNumber: "",
+        status: "Available",
       }]
     : [];
+}
+function supplyAvailableQuantity(supply) {
+  if (!supply || supply.deleted) return 0;
+  return supplyBatchSnapshot(supply)
+    .filter((batch) => {
+      if (batch.status !== "Available" || batch.deleted) return false;
+      if (!batch.exp) return true;
+      const days = clinicDateDaysUntil(batch.exp);
+      return days !== null && days >= 0 && days !== 3;
+    })
+    .reduce((total, batch) => total + batch.qty, 0);
 }
 function monitorAndVoidMedicineBatches() {
   let changed = false;
@@ -228,6 +256,37 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
     : existing
       ? `${noun} Updated — ${record.name} (${previousQuantity} → ${record.qty})`
       : `${noun} Added — ${record.name}`;
+  const priorSupplyBatches =
+    itemType === "equipment" && existing
+      ? supplyBatchSnapshot(existing)
+      : [];
+  const priorSupplyBatchesById = new Map(
+    priorSupplyBatches.map((batch) => [batch.id, batch]),
+  );
+  const changedSupplyBatchDetails =
+    itemType === "equipment"
+      ? record.batches
+          .filter((batch) => {
+            const prior = priorSupplyBatchesById.get(batch.id);
+            return (
+              !prior ||
+              ["qty", "productionDate", "exp", "batchNumber", "status"].some(
+                (field) => prior[field] !== batch[field],
+              )
+            );
+          })
+          .map((batch) => {
+            const prior = priorSupplyBatchesById.get(batch.id);
+            const details = `Batch ${batch.batchNumber || batch.id}: ${Number(batch.qty) || 0}, production ${batch.productionDate || "not set"}, expiration ${batch.exp || "not set"}, status ${batch.status || "Available"}`;
+            return prior
+              ? `${details} (previously ${Number(prior.qty) || 0}, production ${prior.productionDate || "not set"}, expiration ${prior.exp || "not set"})`
+              : details;
+          })
+      : [];
+  const auditDetail = [
+    itemType === "medicine" ? record.code : record.id,
+    ...changedSupplyBatchDetails,
+  ].join("; ");
   const saved=await commitClinicRecordMutation({
     apply:()=>{
       ensureInventoryLedger();
@@ -249,7 +308,7 @@ async function saveInventoryRecord({itemType,records,record,existing,refresh}){
     },
     save:()=>saveInventoryRecordToClinicState(itemType,itemType==="medicine"?record.code:record.id,existing?previousQuantity:null),
     auditAction:inventoryAction,
-    detail:itemType==="medicine"?record.code:record.id,auditBackground:true,
+    detail:auditDetail,auditBackground:true,
     module:itemType==="medicine"?"Medicines":"Medical Supplies",successTitle:existing?`${noun} updated`:`${noun} added`,
     successMessage:existing?`${record.name} has been updated.`:`${record.name} added to inventory.`,refresh:()=>{if(state.page==="inventory")refresh();else render();},
   });
@@ -442,12 +501,20 @@ function renderEquipmentTab(){
   const q=rawQ.trim().toLowerCase();
   const statusF=document.getElementById('eq-status')?.value||"";
   let list = EQUIPMENT.filter(e=>!e.deleted&&e.category==="Medical Supplies").filter(e=>{
+    const batchSearchValues = supplyBatchSnapshot(e).flatMap((batch) => [
+      batch.batchNumber,
+      batch.productionDate,
+      fmtDate(batch.productionDate),
+      batch.exp,
+      fmtDate(batch.exp),
+    ]);
     const matchQ=!q || [
       e.name,
-      e.qty,
+      supplyAvailableQuantity(e),
       e.lastMaint,
       fmtDate(e.lastMaint),
       e.status,
+      ...batchSearchValues,
     ].some(value=>String(value??"").toLowerCase().includes(q));
     const matchStatus = !statusF || e.status===statusF;
     return matchQ && matchStatus;
@@ -456,13 +523,14 @@ function renderEquipmentTab(){
   if(state.eqPage>totalPages) state.eqPage=totalPages;
   const pageItems=list.slice((state.eqPage-1)*perPage, state.eqPage*perPage);
   const chipMap={"Available":"chip-available","Under Maintenance":"chip-maint","Damaged":"chip-damaged","Replacement Needed":"chip-out"};
-  const rows = pageItems.length===0? `<tr><td colspan="5">${emptyState("No supplies match your filters.")}</td></tr>` :
+  const rows = pageItems.length===0? `<tr><td colspan="6">${emptyState("No supplies match your filters.")}</td></tr>` :
     pageItems.map(e=>`
     <tr>
       <td>${escapeHtml(e.name)}</td>
-      <td class="mono">${e.qty}</td>
+      <td class="mono">${supplyAvailableQuantity(e)}</td>
       <td>${fmtDate(e.lastMaint)}</td>
       <td><span class="chip ${chipMap[e.status]}">${e.status}</span></td>
+      <td><button type="button" class="btn btn-teal" data-view-supply-batches="${escapeHtml(e.id)}" title="View batches" aria-label="View batches for ${escapeHtml(e.name)}">${ICONS.search}<span>View Batches</span></button></td>
       <td><div class="row-actions">
         ${canManageInventory()?`<button class="mini-btn" data-edit-eq="${e.id}" title="Edit">${ICONS.edit}</button>`:""}
         ${canDeleteClinicRecords()?`<button class="mini-btn" data-archive-eq="${e.id}" title="Move to Archive">${ICONS.archive}</button>`:""}
@@ -479,7 +547,7 @@ function renderEquipmentTab(){
       ${canAddInventoryItem()?`<button class="btn btn-amber" id="add-eq-btn">${ICONS.plus} Add Supply</button>`:""}
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>Supply</th><th>Qty</th><th>Last Maintenance</th><th>Status</th><th>Batches</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
     <div class="pagination"><span>Page ${state.eqPage} of ${totalPages} · ${list.length} items</span>
@@ -492,36 +560,76 @@ function openEquipmentForm(existing=null){
   const isEdit=!!existing;
   const f=existing||{id:uid("EQP"), name:"", category:"Medical Supplies", qty:1, condition:"Good", lastMaint:"", status:"Available"};
   const itemLabel="Supply";
+  const editableBatches = isEdit
+    ? supplyBatchSnapshot(existing).filter((batch) => !["Voided", "Expired"].includes(batch.status))
+    : [];
+  const selectedBatch = editableBatches[0] || null;
+  const batchOptions = editableBatches.map((batch, index) =>
+    `<option value="${escapeHtml(batch.id)}">${escapeHtml(batch.batchNumber || `Batch ${index + 1}`)} · ${batch.qty} ${escapeHtml(existing.unit || "unit")} · expires ${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "not set"}</option>`
+  ).join("");
   const html=`
   <div class="modal-head"><h3>${isEdit?'Edit':'Add'} ${itemLabel}</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div>
   <div class="modal-body">
     <form class="form-grid" id="eq-form">
       <div class="f-field full"><label>${itemLabel} Name <span class="req">*</span></label><input type="text" id="ef-name" value="${escapeHtml(f.name)}" required></div>
-      <div class="f-field"><label>Batch Number (optional)</label><input type="text" id="ef-batch" value=""></div>
-      <div class="f-field"><label>Expiration Date (optional)</label><input type="date" id="ef-expiration" value=""></div>
-      <div class="f-field"><label>Quantity</label><input type="number" min="0" id="ef-qty" value="${f.qty}"></div>
+      <div class="f-field full"><h4>Batch Details</h4></div>
+      ${isEdit && editableBatches.length > 1 ? `<div class="f-field full"><label for="ef-batch-select">Batch to Update</label><select id="ef-batch-select">${batchOptions}</select></div>` : ""}
+      ${isEdit && editableBatches.length === 1 ? `<input type="hidden" id="ef-batch-select" value="${escapeHtml(selectedBatch.id)}">` : ""}
+      ${selectedBatch || !isEdit ? `<div class="f-field"><label>${isEdit ? "Batch Quantity" : "Incoming Quantity"}</label><input type="number" min="0" id="ef-qty" value="${isEdit ? selectedBatch.qty : f.qty}"></div>
+      <div class="f-field"><label>Batch Number (optional)</label><input type="text" id="ef-batch-number" value="${escapeHtml(isEdit ? selectedBatch.batchNumber : "")}"></div>
+      <div class="f-field"><label>Production Date (optional)</label><input type="date" id="ef-production" value="${escapeHtml(isEdit ? selectedBatch.productionDate : "")}"></div>
+      <div class="f-field"><label>Expiration Date (optional)</label><input type="date" id="ef-expiration" value="${escapeHtml(isEdit ? selectedBatch.exp : "")}"></div>`
+      : `<div class="f-field full"><p>No editable batches are available. To record a delivery, add the same supply again and enter the new batch details.</p></div>`}
       <div class="f-field"><label>Last Maintenance</label><input type="date" id="ef-maint" value="${f.lastMaint||""}"></div>
       <div class="f-field"><label>Status</label><select id="ef-status">${["Available","Under Maintenance","Damaged","Replacement Needed"].map(s=>`<option ${f.status===s?'selected':''}>${s}</option>`).join("")}</select></div>
     </form>
   </div>
   <div class="modal-foot"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-dark" id="ef-save">${ICONS.check} Save ${itemLabel}</button></div>`;
   openModal(html);
+  const batchSelect = document.getElementById("ef-batch-select");
+  batchSelect?.addEventListener("change", () => {
+    const batch = editableBatches.find((item) => item.id === batchSelect.value);
+    if (!batch) return;
+    document.getElementById("ef-qty").value = String(batch.qty);
+    document.getElementById("ef-batch-number").value = batch.batchNumber;
+    document.getElementById("ef-production").value = batch.productionDate;
+    document.getElementById("ef-expiration").value = batch.exp;
+  });
   let saving=false;
   document.getElementById('ef-save').onclick=async()=>{
     if(saving)return;
     const name=document.getElementById('ef-name').value.trim();
     if(!name){ toast('Missing information',`${itemLabel} name is required.`,'err'); return; }
-    const incomingQuantity=parseInt(document.getElementById('ef-qty').value)||0;
-    const incomingBatch={
-      id:`${existing?.id || f.id}-IN-${Date.now()}`,
-      qty:incomingQuantity,
-      batchNumber:document.getElementById('ef-batch').value.trim(),
-      exp:document.getElementById('ef-expiration').value || null,
-    };
+    const incomingQuantity=Math.max(0,parseInt(document.getElementById('ef-qty')?.value || "0",10)||0);
     const rec={ id:existing?.id || f.id, name, category:"Medical Supplies", qty:incomingQuantity,
       condition:existing?.condition||"Good", lastMaint:document.getElementById('ef-maint').value,
       status:document.getElementById('ef-status').value, deleted:false,
-      batches:existing?supplyBatchSnapshot(existing):[incomingBatch] };
+      batches:existing?supplyBatchSnapshot(existing):[] };
+    if (isEdit) {
+      const selectedIndex = rec.batches.findIndex((batch) => batch.id === batchSelect?.value);
+      if (selectedIndex >= 0) {
+        rec.batches[selectedIndex] = {
+          ...rec.batches[selectedIndex],
+          qty: incomingQuantity,
+          batchNumber: document.getElementById("ef-batch-number").value.trim(),
+          productionDate: document.getElementById("ef-production").value || null,
+          exp: document.getElementById("ef-expiration").value || null,
+        };
+      }
+      rec.qty = rec.batches
+        .filter((batch) => batch.status === "Available")
+        .reduce((total, batch) => total + batch.qty, 0);
+    } else {
+      const incomingBatch={
+        id:`${f.id}-B1`,
+        qty:incomingQuantity,
+        batchNumber:document.getElementById('ef-batch-number').value.trim(),
+        productionDate:document.getElementById('ef-production').value || null,
+        exp:document.getElementById('ef-expiration').value || null,
+        status:"Available",
+      };
+      rec.batches = [incomingBatch];
+    }
     if (!isEdit) {
       const duplicate = EQUIPMENT.find((item) =>
         !item.deleted &&
@@ -530,14 +638,16 @@ function openEquipmentForm(existing=null){
       );
       if (duplicate) {
         rec.id = duplicate.id;
-        rec.qty = (Number(duplicate.qty) || 0) + rec.qty;
         rec.condition = duplicate.condition || "Good";
         rec.status = duplicate.status || rec.status;
         rec.lastMaint = rec.lastMaint || duplicate.lastMaint || "";
         rec.batches = [
           ...supplyBatchSnapshot(duplicate),
-          incomingBatch,
+          ...rec.batches,
         ];
+        rec.qty = rec.batches
+          .filter((batch) => batch.status === "Available")
+          .reduce((total, batch) => total + batch.qty, 0);
         existing = duplicate;
       }
     }
@@ -569,6 +679,26 @@ function bindEquipmentTab(){
   document.getElementById('add-eq-btn')?.addEventListener('click',()=>openEquipmentForm());
   document.querySelectorAll('[data-eqpage]').forEach(b=> b.onclick=()=>{ state.eqPage += b.dataset.eqpage==='next'?1:-1; if(state.eqPage<1) state.eqPage=1; rerender(); });
   document.querySelectorAll('[data-edit-eq]').forEach(b=> b.onclick=()=>openEquipmentForm(EQUIPMENT.find(e=>e.id===b.dataset.editEq)));
+  document.querySelectorAll('[data-view-supply-batches]').forEach((button) => {
+    button.onclick = () => {
+      const supply = EQUIPMENT.find((item) => item.id === button.dataset.viewSupplyBatches);
+      if (!supply) return;
+      const batches = supplyBatchSnapshot(supply);
+      const statusDetails = {
+        Available: ["Available", "chip-available"],
+        Expired: ["Expired", "chip-expired"],
+        Voided: ["Voided", "chip-void"],
+      };
+      const rows = batches.map((batch, index) => {
+        const [statusLabel, statusClass] = statusDetails[batch.status] || [batch.status, "chip-available"];
+        const quantity = batch.status === "Voided"
+          ? Number(batch.voidedQuantity ?? batch.qty) || 0
+          : batch.qty;
+        return `<tr><td>${escapeHtml(batch.batchNumber || `Batch ${index + 1}`)}</td><td class="mono">${quantity}</td><td>${batch.productionDate ? escapeHtml(fmtDate(batch.productionDate)) : "—"}</td><td>${batch.exp ? escapeHtml(fmtDate(batch.exp)) : "—"}</td><td><span class="chip ${statusClass}">${escapeHtml(statusLabel)}</span></td></tr>`;
+      }).join("");
+      openModal(`<div class="modal-head"><h3>${escapeHtml(supply.name)} — Inventory Batches</h3><button class="modal-close" onclick="closeModal()">${ICONS.x}</button></div><div class="modal-body"><p><b>Total available quantity:</b> ${supplyAvailableQuantity(supply)}</p><div class="table-wrap"><table><thead><tr><th>Batch</th><th>Quantity</th><th>Production Date</th><th>Expiration Date</th><th>Status</th></tr></thead><tbody>${rows || `<tr><td colspan="5">${emptyState("No batch records.")}</td></tr>`}</tbody></table></div></div><div class="modal-foot"><button class="btn" onclick="closeModal()">Close</button></div>`, "record-detail-modal");
+    };
+  });
   document.querySelectorAll('[data-archive-eq]').forEach(b=>{
     b.onclick=()=>{
       if(!canDeleteClinicRecords())return;

@@ -37,7 +37,7 @@ function renderShell(){
   });
   const lowStockThreshold = Number(state.settings.lowStockThreshold ?? 15);
   const lowStockCount = MEDICINES.filter(m=>!m.deleted && Number(m.qty)<=lowStockThreshold).length
-    + EQUIPMENT.filter(e=>!e.deleted && e.category==="Medical Supplies" && Number(e.qty)<=lowStockThreshold).length;
+    + EQUIPMENT.filter(e=>!e.deleted && e.category==="Medical Supplies" && supplyAvailableQuantity(e)<=lowStockThreshold).length;
   const referralFlagCount = referralConcernList(REFERRAL_THRESHOLD).length;
   const medicineAlerts = medicineAlertData();
   const hasClinicAlerts = lowStockCount>0 || referralFlagCount>0 || medicineAlerts.expiring.length>0 || medicineAlerts.expired.length>0;

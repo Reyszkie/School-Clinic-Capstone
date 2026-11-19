@@ -11,7 +11,7 @@ function renderDashboard(){
   const medicineAlerts=medicineAlertData();
   const lowStock=[
     ...medicineAlerts.lowStock.map(m=>({...m,itemType:"Medicine",itemId:m.code})),
-    ...EQUIPMENT.filter(e=>!e.deleted&&e.category==="Medical Supplies"&&e.qty<=Number(state.settings.lowStockThreshold??15)).map(e=>({...e,itemType:"Medical Supply",itemId:e.id,unit:""})),
+    ...EQUIPMENT.filter(e=>!e.deleted&&e.category==="Medical Supplies"&&supplyAvailableQuantity(e)<=Number(state.settings.lowStockThreshold??15)).map(e=>({...e,qty:supplyAvailableQuantity(e),itemType:"Medical Supply",itemId:e.id,unit:""})),
   ];
   const expiring=medicineAlerts.expiring,expired=medicineAlerts.expired;
   const firstName=(state.currentUser?.name||"").split(" ")[0]||"there",m=dashboardMetrics();

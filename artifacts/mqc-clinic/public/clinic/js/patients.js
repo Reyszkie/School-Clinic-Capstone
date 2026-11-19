@@ -821,7 +821,11 @@ function openConsultationForm(student, existing = null) {
   const medicineAvailable = (item) =>
     (Number(item.qty) || 0) + returnedQuantity("medicine", item.code);
   const equipmentAvailable = (item) =>
-    (Number(item.qty) || 0) + returnedQuantity("equipment", item.id);
+    (item.category === "Medical Supplies" &&
+    typeof supplyAvailableQuantity === "function"
+      ? supplyAvailableQuantity(item)
+      : Number(item.qty) || 0) +
+    returnedQuantity("equipment", item.id);
   const selectedTreatmentMedicine = treatmentItems.find(
     (item) => item.itemType === "medicine",
   );

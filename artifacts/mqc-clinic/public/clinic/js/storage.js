@@ -68,6 +68,7 @@ function recordInventoryTransaction(
   quantity,
   date = todayDateString(),
   referenceId = "",
+  batchAllocations = [],
 ) {
   const amount = Number(quantity);
   if (!Number.isFinite(amount) || amount === 0) return;
@@ -80,6 +81,7 @@ function recordInventoryTransaction(
     quantity: amount,
     date,
     referenceId,
+    ...(batchAllocations.length ? { batchAllocations } : {}),
     createdAt: new Date().toISOString(),
   };
   INVENTORY_TRANSACTIONS.unshift(transaction);
@@ -100,6 +102,14 @@ function captureInventoryState() {
   return {
     medicineQuantities: MEDICINES.map((item) => [item, Number(item.qty) || 0]),
     equipmentQuantities: EQUIPMENT.map((item) => [item, Number(item.qty) || 0]),
+    medicineBatches: MEDICINES.map((item) => [
+      item,
+      Array.isArray(item.batches) ? item.batches.map((batch) => ({ ...batch })) : null,
+    ]),
+    equipmentBatches: EQUIPMENT.map((item) => [
+      item,
+      Array.isArray(item.batches) ? item.batches.map((batch) => ({ ...batch })) : null,
+    ]),
     transactions: INVENTORY_TRANSACTIONS.slice(),
     auditLogs: AUDIT_LOGS.slice(),
   };
@@ -111,6 +121,12 @@ function restoreInventoryState(snapshot) {
   snapshot.equipmentQuantities.forEach(([item, quantity]) => {
     item.qty = quantity;
   });
+  [...snapshot.medicineBatches, ...snapshot.equipmentBatches].forEach(
+    ([item, batches]) => {
+      if (batches) item.batches = batches;
+      else delete item.batches;
+    },
+  );
   INVENTORY_TRANSACTIONS.splice(
     0,
     INVENTORY_TRANSACTIONS.length,
@@ -122,6 +138,131 @@ function inventoryItemForUsage(itemType, itemId) {
   return itemType === "medicine"
     ? MEDICINES.find((item) => item.code === itemId)
     : EQUIPMENT.find((item) => item.id === itemId);
+}
+function inventoryBatchList(itemType, item) {
+  const batches =
+    itemType === "medicine"
+      ? medicineBatchSnapshot(item)
+      : supplyBatchSnapshot(item);
+  item.batches = batches;
+  return batches;
+}
+function inventoryBatchIsAvailable(batch) {
+  if (batch.status !== "Available" || batch.deleted) return false;
+  const expiration = batch.exp ?? batch.expirationDate ?? batch.expiration_date;
+  if (!expiration) return true;
+  const days = clinicDateDaysUntil(expiration);
+  return days !== null && days >= 0 && days !== 3;
+}
+function inventoryQuantityFromBatches(item, batches = item.batches || []) {
+  return batches
+    .filter((batch) => batch.status === "Available" && !batch.deleted)
+    .reduce(
+      (total, batch) =>
+        total + (Number(batch.qty ?? batch.quantity) || 0),
+      0,
+    );
+}
+function deductInventoryBatches(itemType, item, quantity) {
+  const batches = inventoryBatchList(itemType, item);
+  let remaining = quantity;
+  const allocations = [];
+  const eligibleBatches = batches
+    .filter(inventoryBatchIsAvailable)
+    .slice()
+    .sort((left, right) =>
+      String(left.exp || left.expirationDate || "9999").localeCompare(
+        String(right.exp || right.expirationDate || "9999"),
+      ),
+    );
+  const eligibleQuantity = eligibleBatches.reduce(
+    (total, batch) =>
+      total + Math.max(0, Number(batch.qty ?? batch.quantity) || 0),
+    0,
+  );
+  if (eligibleQuantity < quantity)
+    throw new Error(
+      `${item.name} has only ${eligibleQuantity} available in eligible batches; ${quantity} required.`,
+    );
+  eligibleBatches.forEach((batch) => {
+    if (remaining <= 0) return;
+    const available = Math.max(0, Number(batch.qty ?? batch.quantity) || 0);
+    const deducted = Math.min(available, remaining);
+    if (!deducted) return;
+    batch.qty = available - deducted;
+    batch.quantity = batch.qty;
+    allocations.push({ batchId: batch.id, quantity: deducted });
+    remaining -= deducted;
+  });
+  item.qty = inventoryQuantityFromBatches(item, batches);
+  return allocations;
+}
+function restoreInventoryBatches(itemType, item, transaction) {
+  const batches = inventoryBatchList(itemType, item);
+  const allocations = Array.isArray(transaction.batchAllocations)
+    ? transaction.batchAllocations
+    : [];
+  if (allocations.length) {
+    let unallocatedQuantity = 0;
+    allocations.forEach((allocation) => {
+      const batch = batches.find((candidate) => candidate.id === allocation.batchId);
+      const quantity = Math.max(0, Number(allocation.quantity) || 0);
+      if (!batch) {
+        unallocatedQuantity += quantity;
+        return;
+      }
+      if (batch.status === "Voided") {
+        batch.voidedQuantity =
+          (Number(batch.voidedQuantity ?? batch.voided_quantity) || 0) +
+          quantity;
+      } else {
+        batch.qty = (Number(batch.qty ?? batch.quantity) || 0) + quantity;
+        batch.quantity = batch.qty;
+      }
+    });
+    if (unallocatedQuantity > 0) {
+      batches.push({
+        id: `${itemType === "medicine" ? item.code : item.id}-RESTORE-${uid("B")}`,
+        qty: unallocatedQuantity,
+        status: "Available",
+        productionDate: null,
+        exp: null,
+        batchNumber: "",
+      });
+    }
+  } else {
+    const quantity = Number(transaction.quantity) || 0;
+    const restorableBatch = batches.find(
+      (batch) => batch.status === "Available",
+    );
+    if (restorableBatch) {
+      restorableBatch.qty =
+        (Number(restorableBatch.qty ?? restorableBatch.quantity) || 0) +
+        quantity;
+      restorableBatch.quantity = restorableBatch.qty;
+    } else {
+      batches.push({
+        id: `${itemType === "medicine" ? item.code : item.id}-RESTORE-${uid("B")}`,
+        qty: quantity,
+        status: "Available",
+        productionDate: null,
+        exp: null,
+        batchNumber: "",
+      });
+    }
+  }
+  item.qty = inventoryQuantityFromBatches(item, batches);
+}
+function inventoryAvailableQuantity(itemType, item) {
+  if (itemType === "medicine" && typeof medicineAvailableQuantity === "function")
+    return medicineAvailableQuantity(item);
+  if (
+    itemType === "equipment" &&
+    item.category === "Medical Supplies" &&
+    typeof supplyAvailableQuantity === "function"
+  )
+    return supplyAvailableQuantity(item);
+  return Number(item.qty) || 0;
 }
 function activeVisitInventoryTransactions(visitId) {
   const reversedIds = new Set(
@@ -240,9 +381,7 @@ function validateVisitInventoryUsage(visit, previousVisit = null) {
     });
   for (const requirement of visitInventoryRequirements(visit)) {
     const available =
-      (requirement.itemType === "medicine" && typeof medicineAvailableQuantity === "function"
-        ? medicineAvailableQuantity(requirement.item)
-        : Number(requirement.item.qty) || 0) +
+      inventoryAvailableQuantity(requirement.itemType, requirement.item) +
       (returning.get(
         inventoryItemKey(requirement.itemType, requirement.itemId),
       ) || 0);
@@ -300,11 +439,13 @@ function applyVisitInventoryUsage(visit, previousVisit = null) {
             medicineIsExpired(requirement.item)) ||
           (requirement.itemType === "equipment" &&
             requirement.item.status !== "Available"))) ||
-      (requirement.itemType === "medicine" && typeof medicineAvailableQuantity === "function"
-        ? medicineAvailableQuantity(requirement.item)
-        : Number(requirement.item.qty) || 0) < requirement.quantity
+      inventoryAvailableQuantity(requirement.itemType, requirement.item) <
+        requirement.quantity
     ) {
-      const available = Number(requirement.item.qty) || 0;
+      const available = inventoryAvailableQuantity(
+        requirement.itemType,
+        requirement.item,
+      );
       throw new Error(
         `${requirement.item.name} has only ${available} available; ${requirement.quantity} required.`,
       );
@@ -319,29 +460,17 @@ function applyVisitInventoryUsage(visit, previousVisit = null) {
       )
     )
       return;
-    if (requirement.itemType === "medicine") {
-      let remaining = requirement.quantity;
-      if (!Array.isArray(requirement.item.batches) || !requirement.item.batches.length) {
-        requirement.item.qty = Math.max(0, (Number(requirement.item.qty) || 0) - remaining);
-      } else {
-        const batches = requirement.item.batches
-          .filter((batch) => batch.status !== "Voided" && batch.deleted !== true)
-          .slice()
-          .sort((a, b) => String(a.exp || a.expirationDate || "9999").localeCompare(String(b.exp || b.expirationDate || "9999")));
-        batches.forEach((batch) => {
-          if (remaining <= 0) return;
-          const days = batch.exp || batch.expirationDate ? clinicDateDaysUntil(batch.exp || batch.expirationDate) : null;
-          if (days !== null && (days < 0 || days === 3)) return;
-          const available = Math.max(0, Number(batch.qty ?? batch.quantity) || 0);
-          const deducted = Math.min(available, remaining);
-          batch.qty = available - deducted;
-          batch.quantity = batch.qty;
-          remaining -= deducted;
-        });
-        requirement.item.qty = requirement.item.batches
-          .filter((batch) => batch.status !== "Voided")
-          .reduce((total, batch) => total + (Number(batch.qty ?? batch.quantity) || 0), 0);
-      }
+    let batchAllocations = [];
+    if (
+      requirement.itemType === "medicine" ||
+      (requirement.itemType === "equipment" &&
+        requirement.item.category === "Medical Supplies")
+    ) {
+      batchAllocations = deductInventoryBatches(
+        requirement.itemType,
+        requirement.item,
+        requirement.quantity,
+      );
     } else {
       requirement.item.qty = Number(requirement.item.qty) - requirement.quantity;
     }
@@ -352,6 +481,7 @@ function applyVisitInventoryUsage(visit, previousVisit = null) {
       requirement.quantity,
       visit.date,
       visit.id,
+      batchAllocations,
     );
   });
 }
@@ -361,7 +491,16 @@ function reverseVisitInventoryUsage(visit) {
     const item = inventoryItemForUsage(entry.itemType, entry.itemId);
     if (!item) return;
     const quantity = Number(entry.quantity) || 0;
-    item.qty = (Number(item.qty) || 0) + quantity;
+    if (
+      Array.isArray(entry.batchAllocations) ||
+      entry.itemType === "medicine" ||
+      (entry.itemType === "equipment" &&
+        item.category === "Medical Supplies")
+    ) {
+      restoreInventoryBatches(entry.itemType, item, entry);
+    } else {
+      item.qty = (Number(item.qty) || 0) + quantity;
+    }
     const reversal = recordInventoryTransaction(
       entry.itemType,
       item,
@@ -385,6 +524,16 @@ function clinicInventoryAuditActions(snapshot, reference = "") {
       Number(quantity) || 0,
     ]),
   ]);
+  const previousBatches = new Map([
+    ...snapshot.medicineBatches.map(([item, batches]) => [
+      inventoryItemKey("medicine", item.code),
+      batches,
+    ]),
+    ...snapshot.equipmentBatches.map(([item, batches]) => [
+      inventoryItemKey("equipment", item.id),
+      batches,
+    ]),
+  ]);
   return [
     ...MEDICINES.map((item) => ({
       type: "medicine",
@@ -400,12 +549,49 @@ function clinicInventoryAuditActions(snapshot, reference = "") {
     if (!previous.has(key)) return [];
     const prior = previous.get(key),
       current = Number(item.qty) || 0;
+    const priorBatches =
+      previousBatches.get(key) ||
+      (type === "medicine"
+        ? medicineBatchSnapshot({ ...item, qty: prior, batches: null })
+        : supplyBatchSnapshot({ ...item, qty: prior, batches: null }));
+    const currentBatches =
+      type === "medicine"
+        ? medicineBatchSnapshot(item)
+        : supplyBatchSnapshot(item);
+    const priorById = new Map(priorBatches.map((batch) => [batch.id, batch]));
+    const currentById = new Map(currentBatches.map((batch) => [batch.id, batch]));
+    const batchChanges = [
+      ...currentBatches
+        .filter((batch) => {
+          const before = priorById.get(batch.id);
+          return (
+            !before ||
+            ["qty", "status", "productionDate", "exp", "batchNumber"].some(
+              (field) => before[field] !== batch[field],
+            )
+          );
+        })
+        .map((batch) => {
+          const before = priorById.get(batch.id);
+          return before
+            ? `${batch.id}: ${Number(before.qty) || 0} → ${Number(batch.qty) || 0} (${batch.status || "Available"})`
+            : `Added ${batch.id} (${Number(batch.qty) || 0}; production ${batch.productionDate || "not set"}; expiration ${batch.exp || "not set"})`;
+        }),
+      ...priorBatches
+        .filter((batch) => !currentById.has(batch.id))
+        .map((batch) => `Removed ${batch.id}`),
+    ];
     return prior === current
       ? []
       : [
           {
-            action: `Inventory Stock Updated — ${item.name}: ${prior} → ${current}`,
-            module: type === "medicine" ? "Medicines" : "Equipment",
+            action: `Inventory Stock Updated — ${item.name}: ${prior} → ${current}${batchChanges.length ? `; batches ${batchChanges.join("; ")}` : ""}`,
+            module:
+              type === "medicine"
+                ? "Medicines"
+                : item.category === "Medical Supplies"
+                  ? "Medical Supplies"
+                  : "Equipment",
             detail: `${type === "medicine" ? item.code : item.id}${reference ? `; ${reference}` : ""}`,
           },
         ];

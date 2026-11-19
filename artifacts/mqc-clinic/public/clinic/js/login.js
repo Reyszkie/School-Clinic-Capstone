@@ -325,7 +325,7 @@ function buildLoginAlerts() {
   });
 
   EQUIPMENT.filter((item) => !item.deleted && item.category === "Medical Supplies").forEach((item) => {
-    const qty = Number(item.qty) || 0;
+    const qty = supplyAvailableQuantity(item);
     if (qty <= threshold) {
       sections[1].items.push({
         name: item.name,
@@ -336,28 +336,30 @@ function buildLoginAlerts() {
       });
     }
 
-    const expirationDate = item.exp || item.expirationDate || item.expiryDate || item.expiration;
-    if (!expirationDate) return;
-    const remaining = clinicDateDaysUntil(expirationDate);
-    if (remaining === null) return;
-    if (remaining < 0) {
-      sections[3].items.push({
-        name: item.name,
-        availableQuantity: qty,
-        expirationDate,
-        expirationStatus: "Expired",
-        route: "inventory",
-      });
-    } else if (remaining <= MEDICINE_EXPIRY_ALERT_DAYS) {
-      sections[5].items.push({
-        name: item.name,
-        availableQuantity: qty,
-        expirationDate,
-        daysRemaining: remaining,
-        expirationStatus: "Expiring Soon",
-        route: "inventory",
-      });
-    }
+    supplyBatchSnapshot(item).forEach((batch, index) => {
+      if (!batch.exp) return;
+      const remaining = clinicDateDaysUntil(batch.exp);
+      if (remaining === null) return;
+      const batchLabel = batch.batchNumber || `Batch ${index + 1}`;
+      if (batch.status === "Expired" || remaining < 0) {
+        sections[3].items.push({
+          name: `${item.name} — ${batchLabel}`,
+          availableQuantity: batch.qty,
+          expirationDate: batch.exp,
+          expirationStatus: "Expired",
+          route: "inventory",
+        });
+      } else if (remaining <= MEDICINE_EXPIRY_ALERT_DAYS) {
+        sections[5].items.push({
+          name: `${item.name} — ${batchLabel}`,
+          availableQuantity: batch.qty,
+          expirationDate: batch.exp,
+          daysRemaining: remaining,
+          expirationStatus: "Expiring Soon",
+          route: "inventory",
+        });
+      }
+    });
   });
 
   const visitsByPatient = new Map();

@@ -2967,7 +2967,7 @@ tbody tr {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 0;
+    margin: 12mm;
   }
   body {
     margin: 0 !important;
@@ -2984,11 +2984,9 @@ tbody tr {
   }
   #clinic-print-root {
     display: block !important;
-    width: 100%;
+    width: auto;
     box-sizing: border-box;
-    padding: 12mm;
-    -webkit-box-decoration-break: clone;
-    box-decoration-break: clone;
+    padding: 0;
     color: #111;
     background: #fff;
     font:
@@ -3021,6 +3019,40 @@ tbody tr {
     border-collapse: collapse;
     table-layout: fixed;
     font-size: 8.5pt;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  #clinic-print-root thead {
+    display: table-header-group;
+  }
+  #clinic-print-root tfoot {
+    display: table-footer-group;
+  }
+  #clinic-print-root tr,
+  #clinic-print-root img,
+  #clinic-print-root .clinic-print-letterhead,
+  #clinic-print-root .clinic-print-kpi {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  #clinic-print-root h1,
+  #clinic-print-root h2,
+  #clinic-print-root h3,
+  #clinic-print-root h4,
+  #clinic-print-root h5,
+  #clinic-print-root h6 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  #clinic-print-root p,
+  #clinic-print-root td,
+  #clinic-print-root th {
+    orphans: 3;
+    widows: 3;
+  }
+  #clinic-print-root [hidden],
+  #clinic-print-root [aria-hidden="true"] {
+    display: none !important;
   }
   .clinic-print-table,
   .monthly-report-table {
@@ -3332,6 +3364,8 @@ tbody tr {
   .clinic-print-table td {
     border: 0.75pt solid #aab2b8;
     padding: 4px 6px;
+    overflow-wrap: anywhere;
+    word-break: normal;
   }
   .patient-visit-print-table th,
   .patient-visit-print-table td {
